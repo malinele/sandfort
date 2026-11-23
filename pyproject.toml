@@ -1,0 +1,171 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sandfort"
+dynamic = ["version"]
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md"]
+description = "Self-hosted elastic sandbox platform for running AI-generated code"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "pydantic>=2",
+    "sqlalchemy[asyncio]>=2",
+    "aiosqlite",
+    "alembic",
+    "docker",
+    "typer<0.28",
+    "httpx",
+    "pyjwt[crypto]>=2",
+    "prometheus-client",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "websockets",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+postgres = [
+    "asyncpg",
+]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-timeout",
+    "mcp>=2,<3",
+    "mypy",
+    "ruff",
+    "setuptools-scm",
+    "import-linter",
+    "types-docker",
+    "respx",
+    "anyio",
+    "uvicorn",
+    "websockets",
+    "asyncpg",
+    "pyyaml",
+]
+
+[project.scripts]
+sandfort-server = "sandfort.main:main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+fallback_version = "0.1.0.dev0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sandfort"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sandfort"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "src"
+packages = ["sandfort"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "docker: requires a Docker daemon",
+]
+
+[tool.coverage.run]
+source = ["sandfort"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.$",
+]
+
+[tool.importlinter]
+root_package = "sandfort"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layers: api -> services/workers/toolbox -> auth/webhooks/images -> drivers/db -> domain"
+type = "layers"
+layers = [
+    "sandfort.api",
+    "sandfort.services : sandfort.workers : sandfort.toolbox",
+    "sandfort.auth | sandfort.webhooks | sandfort.images",
+    "sandfort.drivers | sandfort.db",
+    "sandfort.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "toolbox is independent of services"
+type = "independence"
+modules = [
+    "sandfort.toolbox",
+    "sandfort.services",
+]
+
+[[tool.importlinter.contracts]]
+name = "toolbox is independent of workers"
+type = "independence"
+modules = [
+    "sandfort.toolbox",
+    "sandfort.workers",
+]
+
+[[tool.importlinter.contracts]]
+name = "domain depends on stdlib and pydantic only"
+type = "forbidden"
+source_modules = ["sandfort.domain"]
+forbidden_modules = [
+    "sandfort.api",
+    "sandfort.auth",
+    "sandfort.clock",
+    "sandfort.config",
+    "sandfort.db",
+    "sandfort.drivers",
+    "sandfort.errors",
+    "sandfort.ids",
+    "sandfort.images",
+    "sandfort.services",
+    "sandfort.toolbox",
+    "sandfort.webhooks",
+    "sandfort.workers",
+    "fastapi",
+    "sqlalchemy",
+]
+
+[[tool.importlinter.contracts]]
+name = "drivers depend on domain, errors, clock and config only"
+type = "forbidden"
+source_modules = ["sandfort.drivers"]
+forbidden_modules = [
+    "sandfort.api",
+    "sandfort.auth",
+    "sandfort.db",
+    "sandfort.services",
+    "sandfort.toolbox",
+    "sandfort.webhooks",
+    "sandfort.workers",
+    "fastapi",
+    "sqlalchemy",
+]

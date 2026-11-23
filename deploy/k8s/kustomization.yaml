@@ -1,0 +1,29 @@
+# Apply with the load restrictor lifted, because the seccomp profile lives outside this
+# directory (deploy/seccomp.json stays the single copy):
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k8s | kubectl apply -f -
+# Plain `kubectl apply -k deploy/k8s` fails with "file is not in or below" for that file.
+# See README.md for the full apply order.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: sandfort
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api.yaml
+  # worker.yaml is deliberately NOT listed: role "all" in api.yaml already runs the workers,
+  # and a second host-networked pod would collide on port 8000 (see worker.yaml).
+  - networkpolicy.yaml
+  - ingress.yaml
+  # Needs the Prometheus Operator CRD (monitoring.coreos.com). Remove if it is not installed.
+  - prometheusrule.yaml
+configMapGenerator:
+  # Mounted at /etc/sandfort/seccomp in api.yaml. The name gets a content hash suffix, which
+  # kustomize rewrites in the Deployment, so a changed profile rolls the pod (the server reads
+  # the file once at startup).
+  - name: sandfort-seccomp
+    files:
+      - seccomp.json=../seccomp.json
+# Pin the image here instead of editing api.yaml, for example:
+# images:
+#   - name: registry.example.com/sandfort
+#     newTag: "0.1.0"

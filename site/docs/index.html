@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en" class="always-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API reference - Sandfort docs</title>
+<meta name="description" content="Sandfort REST API reference, rendered from the OpenAPI specification.">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#0b0d11">
+<link rel="canonical" href="https://docs.sandfort.dev/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/" aria-current="page">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<main id="main">
+<p class="api-note" id="redoc-status" hidden>The interactive reference could not load. The raw specification is available as <a href="openapi.json">openapi.json</a>.</p>
+<div id="redoc">
+<div class="frame"><div class="doc"><article class="prose api-static">
+<h1>Sandfort API reference</h1>
+<p>REST API version 0.1.0: 91 operations in 12 groups. Every operation except the health and status routes needs an API key sent as <code>Authorization: Bearer</code>. This list is the plain version of the interactive reference; the full specification is <a href="openapi.json">openapi.json</a>.</p>
+<h2 id="tag-health">health</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/healthz</code> - Healthz</li>
+<li><code class="method">GET</code> <code>/readyz</code> - Readyz</li>
+<li><code class="method">GET</code> <code>/v1/status</code> - Status</li>
+</ul>
+<h2 id="tag-api-keys">api-keys</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/api-keys</code> - List Api Keys</li>
+<li><code class="method">POST</code> <code>/v1/api-keys</code> - Create Api Key</li>
+<li><code class="method">DELETE</code> <code>/v1/api-keys/{key_id}</code> - Revoke Api Key</li>
+</ul>
+<h2 id="tag-audit">audit</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/audit-events</code> - List Audit Events</li>
+<li><code class="method">GET</code> <code>/v1/audit-events/export</code> - Export Audit Events</li>
+<li><code class="method">GET</code> <code>/v1/audit-events/verify</code> - Verify Audit Chain</li>
+</ul>
+<h2 id="tag-auth">auth</h2>
+<ul class="ops">
+<li><code class="method">POST</code> <code>/v1/auth/sso/exchange</code> - Exchange</li>
+</ul>
+<h2 id="tag-image-builds">image-builds</h2>
+<ul class="ops">
+<li><code class="method">POST</code> <code>/v1/images/builds</code> - Build Image</li>
+<li><code class="method">GET</code> <code>/v1/images/builds/{snapshot_id}/logs</code> - Stream Build Logs</li>
+</ul>
+<h2 id="tag-sandboxes">sandboxes</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/isolation</code> - List Isolation</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes</code> - List Sandboxes</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes</code> - Create Sandbox</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}</code> - Get Sandbox</li>
+<li><code class="method">DELETE</code> <code>/v1/sandboxes/{sandbox_id}</code> - Delete Sandbox</li>
+<li><code class="method">PATCH</code> <code>/v1/sandboxes/{sandbox_id}</code> - Update Sandbox</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/logs</code> - Stream Sandbox Logs</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/preview-tokens</code> - Mint Preview Token</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/reset</code> - Reset Sandbox</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/resize</code> - Resize Sandbox</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/start</code> - Start Sandbox</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/stop</code> - Stop Sandbox</li>
+</ul>
+<h2 id="tag-jobs">jobs</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/jobs</code> - List Jobs</li>
+<li><code class="method">GET</code> <code>/v1/jobs/{job_id}</code> - Get Job</li>
+</ul>
+<h2 id="tag-org">org</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/org/members</code> - List Members</li>
+<li><code class="method">POST</code> <code>/v1/org/members</code> - Create Member</li>
+<li><code class="method">DELETE</code> <code>/v1/org/members/{user_id}</code> - Remove Member</li>
+<li><code class="method">PATCH</code> <code>/v1/org/members/{user_id}</code> - Update Member</li>
+<li><code class="method">GET</code> <code>/v1/org/quota</code> - Get Quota</li>
+<li><code class="method">PUT</code> <code>/v1/org/quota</code> - Put Quota</li>
+<li><code class="method">GET</code> <code>/v1/org/quota/recount</code> - Get Recount</li>
+<li><code class="method">GET</code> <code>/v1/org/usage</code> - Get Usage</li>
+</ul>
+<h2 id="tag-toolbox">toolbox</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/code-contexts</code> - List code contexts</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/code-contexts</code> - Create a code context</li>
+<li><code class="method">DELETE</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/code-contexts/{context_id}</code> - Delete a code context</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/code-contexts/{context_id}/interrupt</code> - Interrupt the running cell of a code context</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/code-contexts/{context_id}/run</code> - Run a cell in a code context</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/code-contexts/{context_id}/run/stream</code> - Run a cell in a code context and stream its output</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/delete</code> - Delete Path</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/download</code> - Download Path</li>
+<li><code class="method">HEAD</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/download</code> - Download headers</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/list</code> - List Directory</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/mkdir</code> - Make Directory</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/move</code> - Move Path</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/stat</code> - Stat Path</li>
+<li><code class="method">PUT</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/fs/upload</code> - Upload File</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/git/add</code> - Add Files</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/git/clone</code> - Clone Repository</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/git/commit</code> - Commit Changes</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/git/pull</code> - Pull Changes</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/git/push</code> - Push Changes</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/git/status</code> - Repository Status</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/git/status</code> - Repository Status By Body</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/code-run</code> - Run Code</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/execute</code> - Execute Command</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions</code> - List Sessions</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions</code> - Create Session</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions/{session_id}</code> - Get Session</li>
+<li><code class="method">DELETE</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions/{session_id}</code> - Delete Session</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions/{session_id}/commands</code> - Execute Command</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions/{session_id}/commands/{command_id}</code> - Get Command</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions/{session_id}/commands/{command_id}/kill</code> - Kill Command</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions/{session_id}/commands/{command_id}/logs</code> - Get Command Logs</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/process/sessions/{session_id}/commands/{command_id}/logs/follow</code> - Follow Command Logs</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/pty</code> - List Ptys</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/pty</code> - Create Pty</li>
+<li><code class="method">GET</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/pty/{pty_id}</code> - Get Pty</li>
+<li><code class="method">DELETE</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/pty/{pty_id}</code> - Close Pty</li>
+<li><code class="method">POST</code> <code>/v1/sandboxes/{sandbox_id}/toolbox/pty/{pty_id}/resize</code> - Resize Pty</li>
+</ul>
+<h2 id="tag-snapshots">snapshots</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/snapshots</code> - List Snapshots</li>
+<li><code class="method">POST</code> <code>/v1/snapshots</code> - Register Snapshot</li>
+<li><code class="method">POST</code> <code>/v1/snapshots/from-sandbox</code> - Create Snapshot From Sandbox</li>
+<li><code class="method">GET</code> <code>/v1/snapshots/{snapshot_id}</code> - Get Snapshot</li>
+<li><code class="method">DELETE</code> <code>/v1/snapshots/{snapshot_id}</code> - Delete Snapshot</li>
+<li><code class="method">GET</code> <code>/v1/snapshots/{snapshot_id}/export</code> - Export Snapshot</li>
+</ul>
+<h2 id="tag-volumes">volumes</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/volumes</code> - List Volumes</li>
+<li><code class="method">POST</code> <code>/v1/volumes</code> - Create Volume</li>
+<li><code class="method">GET</code> <code>/v1/volumes/{volume_id}</code> - Get Volume</li>
+<li><code class="method">DELETE</code> <code>/v1/volumes/{volume_id}</code> - Delete Volume</li>
+<li><code class="method">GET</code> <code>/v1/volumes/{volume_id}/export</code> - Export Volume</li>
+<li><code class="method">POST</code> <code>/v1/volumes/{volume_id}/restore</code> - Restore Volume</li>
+</ul>
+<h2 id="tag-webhooks">webhooks</h2>
+<ul class="ops">
+<li><code class="method">GET</code> <code>/v1/webhooks</code> - List Endpoints</li>
+<li><code class="method">POST</code> <code>/v1/webhooks</code> - Create Endpoint</li>
+<li><code class="method">GET</code> <code>/v1/webhooks/{endpoint_id}</code> - Get Endpoint</li>
+<li><code class="method">DELETE</code> <code>/v1/webhooks/{endpoint_id}</code> - Delete Endpoint</li>
+<li><code class="method">PATCH</code> <code>/v1/webhooks/{endpoint_id}</code> - Update Endpoint</li>
+<li><code class="method">GET</code> <code>/v1/webhooks/{endpoint_id}/deliveries</code> - List Deliveries</li>
+<li><code class="method">GET</code> <code>/v1/webhooks/{endpoint_id}/deliveries/{delivery_id}</code> - Get Delivery</li>
+<li><code class="method">POST</code> <code>/v1/webhooks/{endpoint_id}/deliveries/{delivery_id}/redeliver</code> - Redeliver</li>
+</ul>
+</article></div></div>
+</div>
+<noscript><p class="api-note">The interactive view needs JavaScript; the list above works without it. The raw specification is available as <a href="openapi.json">openapi.json</a>.</p></noscript>
+</main>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/redoc@2.2.0/bundles/redoc.standalone.js"
+  integrity="sha384-bhu6JhWKMHdb3pqlE9NXT5CzRVPNj+jiENmqnbjSX8b1g88rfhWpJFCFB5G+X8x0" crossorigin="anonymous"></script>
+<script src="redoc-init.js"></script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sandfort hosted beta: quickstart - Sandfort docs</title>
+<meta name="description" content="One page from delivery package to a working sandbox. Every step here is a condensed copy of the connect guide; when anything is unclear or fails, the guide section named in each step is the...">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<link rel="canonical" href="https://docs.sandfort.dev/quickstart">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart" aria-current="page">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<main id="main">
+<div class="frame"><div class="doc has-toc">
+<details class="toc"><summary>On this page</summary><ul><li><a href="#1-verify-the-delivery-1-minute">1. Verify the delivery (1 minute)</a></li><li><a href="#2-save-the-key-install-the-sdk-2-minutes">2. Save the key, install the SDK (2 minutes)</a></li><li><a href="#3-first-sandbox-2-minutes">3. First sandbox (2 minutes)</a></li><li><a href="#4-where-to-go-next">4. Where to go next</a></li></ul></details>
+<article class="prose">
+<h1 id="sandfort-hosted-beta-quickstart">Sandfort hosted beta: quickstart<a class="anchor" href="#sandfort-hosted-beta-quickstart" aria-label="Link to section: Sandfort hosted beta: quickstart">#</a></h1>
+<p>One page from delivery package to a working sandbox. Every step here is a condensed copy of the
+<a href="https://docs.sandfort.dev/guide">connect guide</a>; when anything is unclear or fails, the
+guide section named in each step is the authority. The beta is an invite-only evaluation
+instance: shared, no SLA, not for production secrets (guide §5).</p>
+<h2 id="1-verify-the-delivery-1-minute">1. Verify the delivery (1 minute)<a class="anchor" href="#1-verify-the-delivery-1-minute" aria-label="Link to section: 1. Verify the delivery (1 minute)">#</a></h2>
+<p>You received a package with the SDK files, <code>SHA256SUMS</code>, <code>SHA256SUMS.sig</code>,
+<code>release-allowed-signers</code> and <code>RELEASE.txt</code>. In the directory that holds them:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 1" data-copy>Copy</button></div><pre class="code"><code>ssh-keygen -Y verify -f release-allowed-signers -I release@sandfort.dev \
+  -n sandfort-release -s SHA256SUMS.sig &lt; SHA256SUMS   # prints &quot;Good ...&quot; and exits 0
+shasum -a 256 -c SHA256SUMS                            # every file: OK</code></pre></div>
+<p>Install nothing that fails either check. Details: guide §1, &quot;What you receive from the maintainer&quot;.</p>
+<h2 id="2-save-the-key-install-the-sdk-2-minutes">2. Save the key, install the SDK (2 minutes)<a class="anchor" href="#2-save-the-key-install-the-sdk-2-minutes" aria-label="Link to section: 2. Save the key, install the SDK (2 minutes)">#</a></h2>
+<p>Open the one-time secret link, save the <code>sf_</code> key in your secret manager (it is shown exactly
+once), and export it:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 2" data-copy>Copy</button></div><pre class="code"><code>export SANDFORT_API_KEY=sf_...                 # from the secret link
+pip install ./sandfort_sdk-*.whl               # Python SDK (always included)
+# npm install ./sandfort-sdk-*.tgz             # TypeScript SDK, if your package includes it</code></pre></div>
+<p>Install details per stack (CLI, MCP server, TypeScript): guide §2.</p>
+<h2 id="3-first-sandbox-2-minutes">3. First sandbox (2 minutes)<a class="anchor" href="#3-first-sandbox-2-minutes" aria-label="Link to section: 3. First sandbox (2 minutes)">#</a></h2>
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 3" data-copy>Copy</button></div><pre class="code"><code>import os
+from sandfort_sdk import Client
+
+client = Client(base_url=&quot;https://api.sandfort.dev&quot;, api_key=os.environ[&quot;SANDFORT_API_KEY&quot;])
+sbx = client.create_sandbox(
+    name=&quot;first&quot;,
+    snapshot=&quot;python:3.12-slim&quot;,
+    labels={&quot;purpose&quot;: &quot;quickstart&quot;},
+    auto_delete_minutes=60,
+    wait=True,
+)
+try:
+    print(sbx.code_run(&quot;python&quot;, &quot;print(21 * 2)&quot;).stdout.strip())   # 42
+    sbx.fs.upload_file(&quot;/tmp/hello.txt&quot;, b&quot;hello\n&quot;)
+    print(sbx.fs.read_bytes(&quot;/tmp/hello.txt&quot;))                      # b&#x27;hello\n&#x27;
+finally:
+    sbx.delete()</code></pre></div>
+<p><code>labels=</code> makes the sandbox findable later; <code>auto_delete_minutes=</code> removes one you forgot.
+The default image (<code>python:3.12-slim</code> without <code>snapshot=</code>) has Python and pip but no git, curl or
+build tools; pick another image when you need them. Full walkthrough and the CLI alternative:
+guide §3.</p>
+<h2 id="4-where-to-go-next">4. Where to go next<a class="anchor" href="#4-where-to-go-next" aria-label="Link to section: 4. Where to go next">#</a></h2>
+<div class="tbl-wrap" role="region" aria-label="Table: 4. Where to go next" tabindex="0"><table><thead><tr><th scope="col">You want</th><th scope="col">Guide section</th></tr></thead><tbody><tr><td>Exec, sessions, PTY, code contexts (state between runs)</td><td>§3 and &quot;Code contexts&quot;</td></tr><tr><td>Files, git, snapshots, volumes</td><td>the matching toolbox sections</td></tr><tr><td>Narrow keys for CI, label-scoped keys</td><td>§1 &quot;Scopes&quot; and &quot;Keys limited to labelled sandboxes&quot;</td></tr><tr><td>Isolation tiers (<code>container</code>, <code>gvisor</code>, <code>microvm</code>) and their limits</td><td>&quot;Isolation tiers&quot;</td></tr><tr><td>What the beta does and does not guarantee</td><td>§5 and the <a href="https://docs.sandfort.dev/beta-terms">beta terms</a></td></tr></tbody></table></div>
+<p>Support: <code>office@sandfort.dev</code>, response target next business day (Monday–Friday, CET), best
+effort (<a href="https://docs.sandfort.dev/beta-terms">beta terms</a>).</p>
+</article>
+</div></div>
+</main>
+<div class="sr" id="copy-status" role="status" aria-live="polite" aria-atomic="true"></div>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+
+</body>
+</html>

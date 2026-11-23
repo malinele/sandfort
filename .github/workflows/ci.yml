@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-latest
+    # The non-Docker suite passed 16k tests and was still at 73% when the old
+    # 20-minute limit cancelled the job (run 43400929663); local wall time is
+    # ~12 min, shared runners need roughly double.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # test_release_page_shows_the_current_tag_and_commit_from_git runs
+          # `git describe --tags`, which needs the tag history a shallow
+          # clone does not have.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Ruff
+        run: python -m ruff check src tests
+      - name: Mypy (strict)
+        run: python -m mypy --strict src/sandfort
+      - name: Import contracts
+        run: lint-imports
+      - name: Tests (no Docker)
+        run: python -m pytest tests/ -q -m "not docker"
+
+  docker:
+    name: Docker-backed tests
+    runs-on: ubuntu-latest
+    needs: checks
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      # Registry pulls from inside the tests are the flaky part on shared
+      # runners (two runs hung for hours before any test output); pulling
+      # up front with retries keeps the stall in a visible, retryable step.
+      - name: Pre-pull test images
+        run: |
+          for image in alpine:3.20 python:3.12-slim python:3.12 \
+              python:3.13-slim postgres:16-alpine debian:bookworm-slim \
+              alpine/git:latest; do
+            for attempt in 1 2 3; do
+              if timeout 180 docker pull "$image"; then break; fi
+              echo "retry $attempt for $image"; sleep 15
+            done
+          done
+      # tests/load is a perf profile with latency gates tuned for a local
+      # daemon; shared runners are too noisy for it, so it stays owner-run.
+      # The healthy suite finishes in about a minute; the thread-method
+      # timeout dumps every thread's stack and kills the run instead of
+      # hanging silently (signal method cannot interrupt a worker thread
+      # blocked on a daemon socket).
+      - name: Tests (Docker daemon)
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: >-
+          python -m pytest tests/ -q -m docker --ignore=tests/load
+          --timeout=300 --timeout-method=thread

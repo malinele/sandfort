@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sandfort-sdk"
+dynamic = ["version"]
+description = "Python SDK (sync and async) for the Sandfort sandbox platform"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography",
+    "httpx",
+    "websockets",
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+root = "../.."
+relative_to = "pyproject.toml"
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+fallback_version = "0.1.0.dev0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sandfort_sdk"]
+# Written by the release tooling just before the build and removed afterwards; listed as an
+# artifact so it ships even if a VCS ignore rule ever matches it.
+artifacts = ["src/sandfort_sdk/_build_info.json"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

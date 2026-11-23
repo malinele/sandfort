@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Releases - Sandfort docs</title>
+<meta name="description" content="A release is a git tag v0.1.0-beta.N on main, created after the gate passes. The tag fixes the commit. The artifacts are the Python SDK wheel, the CLI wheel and the server wheel (the sandfort...">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<link rel="canonical" href="https://docs.sandfort.dev/release">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release" aria-current="page">Releases</a><a href="/governance">Governance page</a></nav></div>
+<main id="main">
+<div class="frame"><div class="doc has-toc">
+<details class="toc"><summary>On this page</summary><ul><li><a href="#what-a-release-is">What a release is</a></li><li><a href="#how-artifacts-are-built-and-signed">How artifacts are built and signed</a></li><li><a href="#verify-a-download">Verify a download</a></li><li><a href="#release-note-file-and-build-info-stamp">Release note file and build-info stamp</a></li><li><a href="#self-host-from-the-server-wheel">Self-host from the server wheel</a></li><li><a href="#version-numbers">Version numbers</a></li><li><a href="#image-provenance">Image provenance</a></li><li><a href="#docs-site-specification-copy">Docs site specification copy</a></li><li><a href="#server-build">Server build</a></li><li><a href="#self-host-install-bundle">Self-host install bundle</a></li></ul></details>
+<article class="prose">
+<h1 id="releases">Releases<a class="anchor" href="#releases" aria-label="Link to section: Releases">#</a></h1>
+<h2 id="what-a-release-is">What a release is<a class="anchor" href="#what-a-release-is" aria-label="Link to section: What a release is">#</a></h2>
+<p>A release is a git tag <code>v0.1.0-beta.N</code> on <code>main</code>, created after the gate passes. The tag fixes
+the commit. The artifacts are the Python SDK wheel, the CLI wheel and the server wheel (the
+<code>sandfort</code> package, for self-hosting without the container image) built from that commit, plus
+a signed checksum file. Nothing is built from a dirty tree or from a commit that is not
+the tag.</p>
+<p>During the beta the code is delivered as these signed wheels and the repository is private.
+The license is source-available (FSL-1.1-Apache-2.0); see <code>LICENSE.md</code>.</p>
+<h2 id="how-artifacts-are-built-and-signed">How artifacts are built and signed<a class="anchor" href="#how-artifacts-are-built-and-signed" aria-label="Link to section: How artifacts are built and signed">#</a></h2>
+<p><code>deploy/release-wheels.sh &lt;tag&gt; [out-dir]</code> does the whole job. The output directory defaults to
+<code>dist/&lt;tag&gt;</code>. The maintainer runs it with the signing key in the environment:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 1" data-copy>Copy</button></div><pre class="code"><code>SANDFORT_RELEASE_KEY=~/.ssh/sandfort-release deploy/release-wheels.sh v0.1.0-beta.N</code></pre></div>
+<p>The script:</p>
+<ol>
+<li>Refuses to run unless the working tree is clean and <code>HEAD</code> equals the tag&#x27;s commit.</li>
+<li>Writes a build-info stamp into the server, SDK and CLI package directories, builds the three
+wheels with <code>pip wheel --no-deps</code>, and removes the stamps again (also on failure). It stops
+unless the output directory holds exactly one server wheel (<code>sandfort-&lt;version&gt;-*.whl</code>).</li>
+<li>Copies <code>deploy/release-allowed-signers</code> into the output directory, and writes <code>SHA256SUMS</code>
+(<code>shasum -a 256</code> over all three wheels, so the signature covers the server wheel too) and
+<code>RELEASE.txt</code>.</li>
+<li>Signs <code>SHA256SUMS</code> with <code>ssh-keygen -Y sign -n sandfort-release</code>, which produces
+<code>SHA256SUMS.sig</code>. The key path comes from <code>SANDFORT_RELEASE_KEY</code>; the script stops with a
+message when it is unset.</li>
+<li>Verifies the signature against the copied <code>release-allowed-signers</code> and the sums with
+<code>shasum -a 256 -c</code>.</li>
+<li>Installs the SDK and CLI wheels into a throwaway venv and runs <code>sandfort version</code>, failing
+unless the output contains the commit. The server wheel is not installed in this step; the
+sums in step 5 cover it.</li>
+</ol>
+<h2 id="verify-a-download">Verify a download<a class="anchor" href="#verify-a-download" aria-label="Link to section: Verify a download">#</a></h2>
+<p>The directory that holds the wheels also holds <code>release-allowed-signers</code>, so nothing else has to
+be fetched. Check the signature and the sums in that directory:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 2" data-copy>Copy</button></div><pre class="code"><code>ssh-keygen -Y verify -f release-allowed-signers -I release@sandfort.dev \
+    -n sandfort-release -s SHA256SUMS.sig &lt; SHA256SUMS
+shasum -a 256 -c SHA256SUMS</code></pre></div>
+<p>The first command must print <code>Good &quot;sandfort-release&quot; signature</code>; the second must report <code>OK</code>
+for every wheel. Install the wheels only after both pass.</p>
+<p>The signers file that came with the wheels is only as trustworthy as the channel that delivered
+it. Compare the key in it with the signing key fingerprint printed in <code>RELEASE.txt</code> and with the
+file <code>deploy/release-allowed-signers</code> in the repository at the release tag. To print the
+fingerprint of the key in the delivered file yourself, copy its key type and key (the second
+and third fields of the line) into a file and run <code>ssh-keygen -lf</code> on that file.</p>
+<h2 id="release-note-file-and-build-info-stamp">Release note file and build-info stamp<a class="anchor" href="#release-note-file-and-build-info-stamp" aria-label="Link to section: Release note file and build-info stamp">#</a></h2>
+<p><code>RELEASE.txt</code> holds the build line, the file name of the server wheel, the fingerprint of the
+signing key (<code>ssh-keygen -lf</code> of the public key in <code>release-allowed-signers</code>) and the verify
+command:</p>
+<div class="slab"><div class="rail"><span class="tab static">text</span><button class="tool" type="button" aria-label="Copy code: text block 3" data-copy>Copy</button></div><pre class="code"><code>built from sandfort main &lt;commit&gt; (tag &lt;tag&gt;) on &lt;utc time&gt;
+server wheel: sandfort-&lt;version&gt;-py3-none-any.whl
+signing key fingerprint: &lt;bits&gt; SHA256:&lt;hash&gt; no comment (&lt;type&gt;)
+verify with: ssh-keygen -Y verify -f release-allowed-signers -I release@sandfort.dev ...
+then: shasum -a 256 -c SHA256SUMS</code></pre></div>
+<p><strong>Current signing key fingerprint.</strong> The wheels release note of the current tag <code>v0.1.0-beta.80</code> (commit <code>f0f276f66d1669c88262613947baa67988fe55a2</code>) holds this
+line, as <code>deploy/release-wheels.sh</code> writes it. The key is unchanged since <code>v0.1.0-beta.64</code>:</p>
+<div class="slab"><div class="rail"><span class="tab static">text</span><button class="tool" type="button" aria-label="Copy code: text block 4" data-copy>Copy</button></div><pre class="code"><code>signing key fingerprint: 256 SHA256:UWtIFenxp6dnXQyEpqi644mbBZlV5BLPrq9e/MctZfg no comment (ED25519)</code></pre></div>
+<p>The <code>SHA256:</code> value is the fingerprint to compare. It must be identical in <code>RELEASE.txt</code>, on
+this page and in the fingerprint you compute from the delivered signers file (see &quot;Verify a
+download&quot;). If one of the three differs, do not install the wheels.</p>
+<p>The verify command is the one <code>RELEASE.txt</code> carries on its <code>verify with:</code> line, followed by the
+<code>then:</code> line (the same two commands as under &quot;Verify a download&quot;):</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 5" data-copy>Copy</button></div><pre class="code"><code>ssh-keygen -Y verify -f release-allowed-signers -I release@sandfort.dev \
+    -n sandfort-release -s SHA256SUMS.sig &lt; SHA256SUMS
+shasum -a 256 -c SHA256SUMS</code></pre></div>
+<p>The stamp is <code>_build_info.json</code> with the keys <code>commit</code>, <code>tag</code> and <code>built_at</code>. It sits inside
+the <code>sandfort</code>, <code>sandfort_sdk</code> and <code>sandfort_cli</code> packages of the built wheels only; a source
+checkout has none. <code>sandfort version</code> shows the first 12 characters of the commit and the tag
+for the CLI and the SDK, and <code>sandfort_sdk.build_info()</code> returns the same fields. Both report
+<code>unknown</code> when no stamp is present. The server does not read its stamp; <code>GET /v1/status</code>
+reports <code>build_sha</code> from <code>SANDFORT_BUILD_SHA</code> (see &quot;Server build&quot;).</p>
+<h2 id="self-host-from-the-server-wheel">Self-host from the server wheel<a class="anchor" href="#self-host-from-the-server-wheel" aria-label="Link to section: Self-host from the server wheel">#</a></h2>
+<p>The server ships as a container image (see &quot;Image provenance&quot;) and, from the same release, as
+the wheel <code>sandfort-&lt;version&gt;-py3-none-any.whl</code>. Use the wheel when the image is not available
+to you, for example while the image registry is unreachable. Its version is the tag version
+(<code>0.1.0bN</code> for <code>v0.1.0-beta.N</code>, see &quot;Version numbers&quot;).</p>
+<ol>
+<li><p>Verify the download first (see &quot;Verify a download&quot;). <code>SHA256SUMS</code> lists the server wheel,
+so <code>shasum -a 256 -c SHA256SUMS</code> must report <code>OK</code> for it.</p></li>
+<li><p>Install it with Python 3.12 into a fresh virtual environment. The wheel was built with
+<code>--no-deps</code>, so <code>pip</code> fetches the server dependencies from the package index:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 6" data-copy>Copy</button></div><pre class="code"><code>python3.12 -m venv .venv
+.venv/bin/pip install sandfort-&lt;version&gt;-py3-none-any.whl</code></pre></div>
+<p>For Postgres, install the extra: <code>.venv/bin/pip install &quot;sandfort-&lt;version&gt;-py3-none-any.whl[postgres]&quot;</code>.</p></li>
+<li><p>Set the <code>SANDFORT_</code> environment (database URL, environment, role; see
+<code>docs/operations.md</code>), apply the migrations and start the server:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 7" data-copy>Copy</button></div><pre class="code"><code>.venv/bin/python -m sandfort.admin_cli migrate
+.venv/bin/python -m sandfort.main --host 0.0.0.0 --port 8000</code></pre></div>
+<p><code>python -m sandfort.main</code> is the same entry point as the <code>sandfort-server</code> console script
+(<code>--role</code>, <code>--host</code> and <code>--port</code> override <code>SANDFORT_ROLE</code>, <code>SANDFORT_HOST</code> and
+<code>SANDFORT_PORT</code>). It does not migrate on start, unlike the image&#x27;s default command.</p></li>
+</ol>
+<p>The wheel carries the server only. The host still needs a Docker daemon and the host steps
+from <code>docs/operations.md</code> (&quot;Node preparation&quot; and <code>deploy/host-setup.sh</code>); the <code>prod</code>
+environment refuses to start on a weakly isolated host.</p>
+<h2 id="version-numbers">Version numbers<a class="anchor" href="#version-numbers" aria-label="Link to section: Version numbers">#</a></h2>
+<p>The version comes from git, not from a file: the server, SDK and CLI <code>pyproject.toml</code> files use
+<code>hatch-vcs</code> (<code>version_scheme = &quot;guess-next-dev&quot;</code>, <code>local_scheme = &quot;no-local-version&quot;</code>). A tag
+<code>v0.1.0-beta.N</code> gives the version <code>0.1.0bN</code>. A commit after a tag gives a dev version for the
+next beta, for example <code>0.1.0b60.devN</code> when the last tag is <code>v0.1.0-beta.59</code> and <code>N</code> is the
+number of commits since that tag. Without git metadata the fallback is <code>0.1.0.dev0</code>. A wheel
+built by <code>deploy/release-wheels.sh</code> sits on a tagged commit, so its version has no <code>.dev</code> part.</p>
+<p>The API image is built from a checkout copy without git metadata, so the fallback would apply.
+<code>deploy/Dockerfile</code> therefore has the build argument <code>SANDFORT_VERSION</code> (empty by default). When
+it is set, the build exports <code>SETUPTOOLS_SCM_PRETEND_VERSION</code> with that value and the installed
+server package carries it, so <code>GET /v1/status</code> reports it. <code>deploy/redeploy-beta.sh api</code> computes
+the value from <code>git describe</code>: <code>0.1.0b61</code> when <code>HEAD</code> is the tag <code>v0.1.0-beta.61</code>, otherwise the
+dev version for the next beta, for example <code>0.1.0b62.dev41</code> for 41 commits after that tag. It
+passes it with <code>--build-arg SANDFORT_VERSION=...</code> next to the build commit. The CI image workflow
+has to pass the same argument.</p>
+<h2 id="image-provenance">Image provenance<a class="anchor" href="#image-provenance" aria-label="Link to section: Image provenance">#</a></h2>
+<p>The <code>Release image</code> workflow (<code>.github/workflows/release.yml</code>) runs on every pushed tag <code>v*</code>. It
+builds <code>deploy/Dockerfile</code> and publishes the API image to the GitHub container registry as
+<code>ghcr.io/malinele/sandfort:&lt;tag&gt;</code> and <code>ghcr.io/malinele/sandfort:sha-&lt;commit&gt;</code>. The commit is
+baked into the image in two places:</p>
+<ul>
+<li>the file <code>/app/BUILD_SHA</code>, written from the build argument <code>SANDFORT_BUILD_SHA</code>;</li>
+<li>the OCI label <code>org.opencontainers.image.revision</code>. The image also carries the labels
+<code>org.opencontainers.image.source</code> and <code>org.opencontainers.image.version</code> (the tag).</li>
+</ul>
+<p>The unauthenticated <code>GET /v1/status</code> route reports <code>image_sha</code> (the content of <code>/app/BUILD_SHA</code>,
+or <code>null</code> when the file is absent or empty) next to <code>build_sha</code> (from <code>SANDFORT_BUILD_SHA</code>).
+<code>build_matches_image</code> is <code>true</code> when both are set and equal, <code>false</code> when they differ, and <code>null</code>
+when either is missing. A <code>false</code> value means the container runs an image that was not built from
+the commit it claims.</p>
+<p><code>deploy/redeploy-beta.sh api --image &lt;ref&gt;</code> deploys a CI-built image instead of building on the
+VM. The script:</p>
+<ol>
+<li>Pulls the image on the VM and refuses it unless its <code>org.opencontainers.image.revision</code> label
+equals the commit being deployed.</li>
+<li>Tags the running image as <code>sandfort-api:previous</code> before every recreate, then recreates the
+API with <code>--no-build</code>.</li>
+<li>Downloads the live OpenAPI document and compares its paths with <code>openapi/sandfort.v1.json</code>.</li>
+</ol>
+<p><code>deploy/redeploy-beta.sh rollback</code> is the rollback target: it retags <code>sandfort-api:previous</code> as
+the compose image name and recreates the API. The image that was running becomes the new
+<code>sandfort-api:previous</code>, so a second rollback swaps back. Add <code>--dry-run</code> to print the steps.</p>
+<h2 id="docs-site-specification-copy">Docs site specification copy<a class="anchor" href="#docs-site-specification-copy" aria-label="Link to section: Docs site specification copy">#</a></h2>
+<p>The docs site serves <code>openapi.json</code>, a compact re-serialisation of <code>openapi/sandfort.v1.json</code>
+(no indentation, same key order, so it fits the ConfigMap budget). It is semantically equal to
+the repository file, not byte-identical, so a hash of the copy will not match the repository
+file. The byte-exact specification is <code>openapi/sandfort.v1.json</code> in the repository and the API&#x27;s
+own specification route.</p>
+<p>The docs site build writes <code>openapi.json.sha256</code> next to the copy: the SHA-256 of the repository
+file, in <code>sha256sum</code> format. The sidecar is informational and is not published to the docs site.
+To compare, from the repository root:</p>
+<ol>
+<li><code>sha256sum -c site/docs/openapi.json.sha256</code> checks that the repository file is the one the
+copy was built from (use <code>shasum -a 256 -c</code> on macOS).</li>
+<li>To compare content, load both files as JSON and check that the parsed values are equal.</li>
+</ol>
+<h2 id="server-build">Server build<a class="anchor" href="#server-build" aria-label="Link to section: Server build">#</a></h2>
+<p>The server reports its own build on the unauthenticated <code>GET /v1/status</code> route: <code>build_sha</code>
+(from <code>SANDFORT_BUILD_SHA</code>), <code>image_sha</code> (the commit baked into the image) and
+<code>build_matches_image</code>, which compares the two (see &quot;Image provenance&quot;). Compare <code>build_sha</code> with
+the commit in <code>RELEASE.txt</code> to confirm that a server and a wheel come from the same release.</p>
+<h2 id="self-host-install-bundle">Self-host install bundle<a class="anchor" href="#self-host-install-bundle" aria-label="Link to section: Self-host install bundle">#</a></h2>
+<p>For a design partner who has no repository access, <code>deploy/release-bundle.sh</code> packs one signed
+tarball from the output of <code>deploy/release-wheels.sh</code>:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 8" data-copy>Copy</button></div><pre class="code"><code>SANDFORT_RELEASE_KEY=~/.ssh/sandfort-release \
+    deploy/release-bundle.sh v0.1.0-beta.N dist/v0.1.0-beta.N dist/v0.1.0-beta.N-bundle</code></pre></div>
+<p>The arguments are the tag, the wheels directory and an optional output directory (default
+<code>dist/&lt;tag&gt;-bundle</code>). The output is <code>sandfort-selfhost-&lt;tag&gt;.tar.gz</code>, plus copies of
+<code>BUNDLE-SHA256SUMS</code> and <code>BUNDLE-SHA256SUMS.sig</code> beside it. The tarball has one top directory of
+the same name. It holds the three wheels, <code>SHA256SUMS</code>, <code>SHA256SUMS.sig</code>,
+<code>release-allowed-signers</code>, <code>RELEASE.txt</code>, <code>deploy/host-setup.sh</code>, <code>deploy/node-setup.sh</code>,
+<code>deploy/seccomp.json</code>, <code>deploy/selfhost/{Dockerfile,compose.yml,sandfort.env.example}</code> and
+<code>INSTALL.md</code> (from <code>deploy/selfhost/INSTALL.md</code>).</p>
+<p><code>BUNDLE-SHA256SUMS</code> lists every file except itself and its signature. It is signed with the same
+key, principal (<code>release@sandfort.dev</code>) and namespace (<code>sandfort-release</code>) as the wheels, so the
+partner checks one signature for the whole bundle (the wheels&#x27; own signature stays valid inside
+it). The script refuses to run unless the wheels still match their signature, <code>HEAD</code> is the
+commit named in <code>RELEASE.txt</code> and <code>deploy/</code> is clean, and it unpacks and verifies the finished
+tarball before it reports success.</p>
+<p>Send the partner the tarball, and send the signing key fingerprint over a different channel: the
+public key travels inside the bundle, so it proves nothing by itself.</p>
+</article>
+</div></div>
+</main>
+<div class="sr" id="copy-status" role="status" aria-live="polite" aria-atomic="true"></div>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+
+</body>
+</html>

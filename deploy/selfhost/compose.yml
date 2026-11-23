@@ -1,0 +1,64 @@
+# Self-host profile: API + Postgres 16, built from the signed server wheel in this bundle.
+# Run it from this directory after you verified the bundle and created two files here:
+#   sandfort.env  a copy of sandfort.env.example with your secrets filled in
+#   .env          POSTGRES_PASSWORD=<url-safe secret> and DOCKER_GID=<docker socket group id>
+#                 (DOCKER_GID: stat -c %g /var/run/docker.sock)
+#   docker compose up -d --build
+# INSTALL.md walks through every step. The bundle root is the build context, so the wheel that
+# the Dockerfile installs is the one you verified.
+
+name: sandfort
+
+services:
+  api:
+    image: sandfort-api  # keep this name: tagging the old image sandfort-api:previous is the rollback
+    build:
+      context: ../..
+      dockerfile: deploy/selfhost/Dockerfile
+      # Build on the host network: the default-bridge egress chain installed by
+      # deploy/host-setup.sh rejects private ranges, so a build that resolved names through a
+      # private upstream would fail. The build must not depend on the bridge rules.
+      network: host
+      args:
+        SANDFORT_BUILD_SHA: "${SANDFORT_BUILD_SHA:-}"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./sandfort.env
+    environment:
+      SANDFORT_ENVIRONMENT: prod
+      SANDFORT_DATABASE_URL: "postgresql+asyncpg://sandfort:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/sandfort"
+      SANDFORT_DATABASE_POOL_SIZE: "10"
+      SANDFORT_DATABASE_MAX_OVERFLOW: "20"
+      SANDFORT_SECCOMP_PROFILE_PATH: /etc/sandfort/seccomp/seccomp.json
+    ports:
+      - "127.0.0.1:8000:8000"  # front with a TLS reverse proxy if anyone else must reach it
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw  # Docker driver
+      - ../seccomp.json:/etc/sandfort/seccomp/seccomp.json:ro
+      # Optional operator notice (GET /v1/status). To use it: create the directory and the file
+      # on the host, set SANDFORT_STATUS_NOTICE_FILE=/etc/sandfort/notice/notice.txt in
+      # sandfort.env and remove the "#" below. Without it the feature is off.
+      # - /etc/sandfort/notice:/etc/sandfort/notice:ro
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in .env to the docker socket group id}"
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sandfort
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      POSTGRES_DB: sandfort
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sandfort -d sandfort"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  pgdata:

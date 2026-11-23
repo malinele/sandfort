@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sandfort vs E2B vs Daytona vs OpenSandbox: running sandboxes on your own hardware</title>
+<meta name="description" content="What Sandfort, E2B, Daytona and OpenSandbox each document about running sandboxes for AI-generated code on your own hardware. Every statement about another project has a source link and a check date; Sandfort statements point to repository files.">
+<meta property="og:title" content="Sandfort vs E2B vs Daytona vs OpenSandbox: running sandboxes on your own hardware">
+<meta property="og:description" content="What Sandfort, E2B, Daytona and OpenSandbox each document about running sandboxes for AI-generated code on your own hardware. Every statement about another project has a source link and a check date; Sandfort statements point to repository files.">
+<meta name="theme-color" content="#0b0d11">
+<link rel="canonical" href="https://sandfort.dev/compare.html">
+<meta property="og:url" content="https://sandfort.dev/compare.html">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://sandfort.dev/compare.html","url":"https://sandfort.dev/compare.html","name":"Sandfort vs E2B vs Daytona vs OpenSandbox: running sandboxes on your own hardware","description":"What Sandfort, E2B, Daytona and OpenSandbox each document about running sandboxes for AI-generated code on your own hardware. Every statement about another project has a source link and a check date; Sandfort statements point to repository files.","inLanguage":"en","dateModified":"2026-11-22"},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Sandfort","item":"https://sandfort.dev/"},{"@type":"ListItem","position":2,"name":"Comparison","item":"https://sandfort.dev/compare.html"}]}]}</script>
+<style>
+:root{
+  --bg:#0b0d11; --bg-1:#101319; --bg-2:#151922; --bg-3:#1c212c;
+  --line:#222834; --line-2:#2f3746;
+  --text:#e9ebef; --text-2:#b4bac6; --muted:#8c94a3; --faint:#7a8296;
+  --accent:#e0a458; --accent-ink:#1a1206; --accent-2:#f0bd7a; --accent-wash:rgba(224,164,88,.08); --accent-line:rgba(224,164,88,.38);
+  --ok:#8fc18a; --bad:#e58a76;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+  --wrap:1200px; --gut:clamp(16px,4vw,40px);
+  --r:10px; --r-s:6px;
+  --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:76px;scrollbar-color:var(--line-2) var(--bg)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
+::selection{background:var(--accent);color:var(--accent-ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:10px;border:3px solid var(--bg)}
+a{color:inherit;text-decoration-color:var(--line-2);text-underline-offset:.22em;text-decoration-thickness:1px;transition:text-decoration-color .2s}
+a:hover{text-decoration-color:var(--accent)}
+code,kbd,samp,pre{font-family:var(--mono)}
+:where(p,li,td,dd,summary,.fine,h3,.fd) code{color:var(--text);background:var(--bg-2);border:1px solid var(--line);padding:.05em .35em;border-radius:4px;font-size:.84em;white-space:nowrap}
+svg{display:block}
+.skip{position:absolute;left:-9999px;top:8px;z-index:100;background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:6px;font-weight:600;text-decoration:none}
+.skip:focus{left:8px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* frame + rails */
+.frame{max-width:var(--wrap);margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.sec{border-top:1px solid var(--line);position:relative;padding:clamp(64px,9vw,120px) var(--gut)}
+.sec::before,.sec::after{content:"";position:absolute;top:-5px;width:9px;height:9px;background:linear-gradient(var(--faint),var(--faint)) center/1px 9px no-repeat,linear-gradient(var(--faint),var(--faint)) center/9px 1px no-repeat}
+.sec::before{left:-5px}.sec::after{right:-5px}
+.sec.first{border-top:0;padding-top:clamp(48px,6vw,80px);padding-bottom:clamp(40px,5vw,64px)}
+.sec.first::before,.sec.first::after{display:none}
+
+/* type */
+h1,h2,h3,h4{font-family:var(--sans);margin:0;color:var(--text);text-wrap:balance}
+h1{font-weight:600;font-size:clamp(2.2rem,1.3rem + 3.2vw,3.8rem);line-height:1.04;letter-spacing:-.04em;max-width:22ch}
+h1 span{color:var(--muted)}
+h2{font-weight:600;font-size:clamp(1.8rem,1.3rem + 1.6vw,2.7rem);line-height:1.08;letter-spacing:-.035em}
+h3{font-weight:600;font-size:1.1rem;line-height:1.35;letter-spacing:-.012em}
+.lede{font-size:clamp(1.06rem,1rem + .3vw,1.22rem);line-height:1.55;color:var(--text-2);max-width:68ch;margin:22px 0 0}
+.lede + .lede{margin-top:14px}
+.lede strong{color:var(--text);font-weight:600}
+.fine{font-size:.8rem;line-height:1.6;color:var(--muted);max-width:96ch;margin:20px 0 0}
+.head{max-width:780px}
+.head + *{margin-top:clamp(32px,4vw,48px)}
+.crumb{margin:0 0 22px;font:400 12px/1.2 var(--mono);color:var(--faint)}
+.crumb a{text-decoration:none;color:var(--muted)}
+.crumb a:hover{color:var(--text)}
+.stamp{display:inline-flex;flex-wrap:wrap;gap:6px 14px;margin:28px 0 0;padding:12px 16px;border:1px solid var(--accent-line);border-radius:var(--r-s);background:var(--accent-wash);font:400 13px/1.5 var(--mono);color:var(--text-2)}
+.stamp b{font-weight:600;color:var(--text)}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:50;background:rgba(11,13,17,.86);backdrop-filter:saturate(140%) blur(12px);-webkit-backdrop-filter:saturate(140%) blur(12px);border-bottom:1px solid var(--line)}
+.nav .in{max-width:var(--wrap);margin:0 auto;height:62px;display:flex;align-items:center;gap:30px;padding:0 var(--gut);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:600 17px/1 var(--sans);letter-spacing:-.02em;color:var(--text)}
+.mark{width:26px;height:26px;border-radius:6px;background:var(--bg-2);border:1px solid var(--line-2);display:grid;place-items:center;color:var(--accent);font:700 15px/1 var(--mono)}
+.nav ul{display:flex;gap:24px;list-style:none;margin:0;padding:0}
+.nav ul a,.nav .docs{font-size:14px;color:var(--text-2);text-decoration:none;transition:color .2s}
+.nav ul a:hover,.nav .docs:hover{color:var(--text)}
+.nav ul a[aria-current="page"]{color:var(--text)}
+.nav .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:10px;height:46px;padding:0 20px;border-radius:8px;font:500 15px/1 var(--sans);text-decoration:none;border:1px solid transparent;transition:background .2s var(--ease),border-color .2s var(--ease),transform .15s var(--ease);white-space:nowrap}
+.btn-p{background:var(--accent);color:var(--accent-ink)}
+.btn-p:hover{background:var(--accent-2)}
+.btn:active{transform:translateY(1px)}
+.nav .btn{height:36px;padding:0 14px;font-size:14px}
+
+/* comparison tables */
+.scroll-hint{display:none;margin:0 0 10px;font:400 12px/1.4 var(--mono);color:var(--faint)}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.tbl-wrap:focus-visible{outline-offset:2px}
+.cmp{width:100%;min-width:1080px;border-collapse:separate;border-spacing:0;font-size:.88rem}
+.cmp.narrow{min-width:640px}
+.cmp th,.cmp td{text-align:left;vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--line);line-height:1.55}
+.cmp tr:last-child th,.cmp tr:last-child td{border-bottom:0}
+.cmp td + td,.cmp th + th,.cmp tbody th + td{border-left:1px solid var(--line)}
+.cmp thead th{font:600 .95rem/1.3 var(--sans);color:var(--text);background:var(--bg-1);white-space:nowrap}
+.cmp thead th small{display:block;margin-top:4px;font:400 11px/1.3 var(--mono);color:var(--faint)}
+.cmp thead .us{box-shadow:inset 0 2px 0 var(--accent)}
+.cmp tbody th{font:500 12px/1.6 var(--mono);color:var(--faint);width:150px;min-width:150px;background:var(--bg-1);position:sticky;left:0;z-index:1}
+.cmp thead th:first-child{position:sticky;left:0;z-index:2}
+.cmp td{color:var(--text-2);min-width:230px}
+.cmp td.us{background:var(--bg-2);color:var(--text)}
+.cmp.narrow td{min-width:0}
+.cmp.narrow td:first-child{width:50%}
+.cmp code{white-space:normal;overflow-wrap:anywhere}
+.cmp a.ref{font:500 12px/1 var(--mono);color:var(--accent);text-decoration:none;white-space:nowrap}
+.cmp a.ref:hover{color:var(--accent-2)}
+.na{color:var(--muted)}
+
+/* prose + sources */
+.prose{display:grid;gap:0;margin:0;padding:0;list-style:none;border-top:1px solid var(--line);max-width:90ch}
+.prose li{padding:18px 0;border-bottom:1px solid var(--line);color:var(--text-2);font-size:.96rem;line-height:1.6}
+.prose li b{color:var(--text);font-weight:600}
+.src{margin:0;padding:0;list-style:none;display:grid;gap:0;border-top:1px solid var(--line);max-width:100ch}
+.src li{padding:16px 0;border-bottom:1px solid var(--line);color:var(--text-2);font-size:.9rem;line-height:1.6;scroll-margin-top:84px}
+.src li > b:first-child{font:600 12px/1 var(--mono);color:var(--accent);margin-right:6px}
+.src .urls{display:block;margin-top:8px;font:400 12px/1.7 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.src .urls a{display:block;color:var(--muted)}
+.src .urls a:hover{color:var(--text)}
+.src-h{margin:34px 0 0;font:600 1rem/1.3 var(--sans);color:var(--text);display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
+.src-h:first-child{margin-top:0}
+.src-h small{font:400 12px/1.3 var(--mono);color:var(--faint)}
+.src-h + .src{margin-top:12px}
+.note{margin:28px 0 0;max-width:90ch;color:var(--text-2);font-size:.94rem;line-height:1.6;padding-left:16px;border-left:2px solid var(--line-2)}
+
+/* footer */
+footer{border-top:1px solid var(--line)}
+footer .in{max-width:var(--wrap);margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line);padding:44px var(--gut) 32px;display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr));gap:32px;font-size:.9rem;color:var(--muted)}
+footer .fh{margin:0 0 14px;font:500 12px/1 var(--mono);color:var(--faint)}
+footer ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+footer a{text-decoration:none;color:var(--text-2);transition:color .2s}
+footer a:hover{color:var(--text)}
+footer .about p{margin:14px 0 0;max-width:36ch;line-height:1.55}
+footer .legal{grid-column:1/-1;border-top:1px solid var(--line);padding-top:20px;display:flex;flex-wrap:wrap;gap:8px 24px;font-size:.8rem;color:var(--faint)}
+
+@media (max-width:1060px){
+  .nav ul{display:none}
+  .scroll-hint{display:block}
+  footer .in{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .nav .docs{display:none}
+  .nav .in{gap:16px}
+  .frame,.nav .in,footer .in{border-left:0;border-right:0}
+  .sec::before,.sec::after{display:none}
+  footer .in{grid-template-columns:1fr}
+  .cmp tbody th{width:120px;min-width:120px}
+}
+@media (max-width:400px){.nav .btn{padding:0 10px;font-size:13px}}
+</style>
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="31bd681a-5195-4cec-a448-0a635c2c6736" data-domains="sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+        <li><a href="/compare.html" aria-current="page">Comparison</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="https://docs.sandfort.dev/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="frame" id="top">
+
+<section class="sec first" aria-labelledby="h-title">
+  <p class="crumb"><a href="/">Sandfort</a> / Comparison</p>
+  <h1 id="h-title">Sandfort vs E2B vs Daytona vs OpenSandbox: <span>running sandboxes on your own hardware</span></h1>
+  <p class="lede">This page compares four ways to run sandboxes for AI-generated code, with a focus on what each project says about running on your own hardware. It is written by the Sandfort maintainer, so read it with that in mind: every statement about another project has a source link and the date we checked it, and Sandfort claims are drawn from the repository files listed under the table. Where we did not check something, the cell says so. We do not compare prices, speed or &ldquo;which is better&rdquo;. You may already use one of these projects.</p>
+  <p class="lede">Facts about other projects go out of date. Check dates are in the Sources section below. <strong>If a date is more than a few weeks old, treat the cell as a lead, not a fact.</strong></p>
+  <p class="stamp"><b>Facts checked: 2026-11-22</b><span>E2B, Daytona, OpenSandbox: sources re-checked on that date.</span></p>
+</section>
+
+<section class="sec" id="at-a-glance" aria-labelledby="h-glance">
+  <div class="head"><h2 id="h-glance">At a glance</h2></div>
+  <p class="scroll-hint" aria-hidden="true">Scroll sideways to see all four columns.</p>
+  <div class="tbl-wrap" role="region" aria-label="Comparison table, scrolls horizontally" tabindex="0">
+    <table class="cmp" aria-label="Sandfort, E2B, Daytona and OpenSandbox compared">
+      <thead>
+        <tr>
+          <th scope="col"><span class="sr">Topic</span></th>
+          <th scope="col" class="us">Sandfort<small>repository files</small></th>
+          <th scope="col">E2B<small>checked 2026-11-22</small></th>
+          <th scope="col">Daytona<small>checked 2026-11-22</small></th>
+          <th scope="col">OpenSandbox<small>checked 2026-11-22</small></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">What you run on your own hardware</th>
+          <td class="us">A server (REST API, Python SDK, CLI) as one Python process, or <code>api</code> and <code>worker</code> roles on Kubernetes with Postgres</td>
+          <td>E2B Embed: the full stack on one Linux machine with KVM (Docker Compose); the same package as Terraform modules for GCP, AWS and Azure and as a Kubernetes manifest, each setting up one node <a class="ref" href="#e1">[E1]</a></td>
+          <td>BYOC (&ldquo;Bring Your Own Compute&rdquo;): your runners in custom regions, managed by Daytona&rsquo;s control plane; enabled per organization; Helm charts available <a class="ref" href="#d3">[D3]</a></td>
+          <td>Start locally with Docker (Docker is required for local execution); also deployed on Kubernetes <a class="ref" href="#o1">[O1]</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Host requirement</th>
+          <td class="us">A host with a Docker daemon for the <code>container</code> tier. The <code>gvisor</code> tier also needs the gVisor <code>runsc</code> runtime registered with Docker. KVM and Kata Containers only for the optional <code>microvm</code> tier. XFS project quotas for enforced per-sandbox disk limits</td>
+          <td>Linux with KVM, x86-64 <a class="ref" href="#e1">[E1]</a></td>
+          <td class="na">Not covered here</td>
+          <td>Docker for local execution; gVisor and Kata (QEMU, Firecracker, Cloud Hypervisor) are configurable secure runtimes <a class="ref" href="#o1">[O1]</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Isolation</th>
+          <td class="us">Three tiers exist: <code>container</code> (runc, shares the host kernel), <code>gvisor</code> (user-space kernel, not a hardware boundary) and <code>microvm</code> (Kata Containers, needs KVM). A deployment offers only <code>container</code> unless the operator enables the others by mapping runtimes in <code>SANDFORT_ISOLATION_RUNTIMES</code>; the tier is then chosen per sandbox. The Firecracker driver in the repo is a skeleton and is not offered</td>
+          <td>One Firecracker microVM per sandbox <a class="ref" href="#e2">[E2]</a></td>
+          <td class="na">Not covered here</td>
+          <td><code>runc</code> by default; gVisor or Kata configurable per their secure-container guide; a separate Fast Sandbox runtime on Kubernetes uses Firecracker <a class="ref" href="#o1">[O1]</a></td>
+        </tr>
+        <tr>
+          <th scope="row">License</th>
+          <td class="us">Server: FSL-1.1-Apache-2.0 (source-available; each version becomes Apache-2.0 two years after release). Python SDK, TypeScript SDK, CLI and MCP server: Apache-2.0</td>
+          <td>Runtime (<code>e2b-dev/runtime</code>): Apache-2.0 <a class="ref" href="#e2">[E2]</a></td>
+          <td>Last public server code (tag <code>v0.190.0</code>): AGPL-3.0. SDKs in <code>daytona/clients</code>: Apache-2.0; CLI: AGPL-3.0. Helm charts: Elastic License 2.0 <a class="ref" href="#d2">[D2]</a>, <a class="ref" href="#d4">[D4]</a>, <a class="ref" href="#d5">[D5]</a></td>
+          <td>Apache-2.0 <a class="ref" href="#o1">[O1]</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Status of the public code</th>
+          <td class="us">Source-available; the public repository is not yet published. Version <code>0.1.0</code>, pre-1.0 beta</td>
+          <td>Public runtime repository, Apache-2.0 <a class="ref" href="#e2">[E2]</a></td>
+          <td>On 2026-06-11 Daytona announced moving its production codebase to closed source. The public repository <code>daytonaio/daytona</code> has been archived (read-only) since 2026-10-03; its last push by the GitHub API was 2026-07-24 <a class="ref" href="#d1">[D1]</a>, <a class="ref" href="#d2">[D2]</a></td>
+          <td>Public repository <a class="ref" href="#o1">[O1]</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Multi-tenant governance in the same package</th>
+          <td class="us">Organizations, scoped API keys, roles, OIDC SSO (one org), SCIM Users, per-org quotas, metering, signed webhooks, a hash-chained audit log with a verify command. The chain is tamper-evident only when <code>SANDFORT_AUDIT_CHAIN_KEY</code> is set; it is not set by default, and an unkeyed chain can be rewritten consistently by someone who can write to the database</td>
+          <td class="na">Not covered here</td>
+          <td class="na">Not covered here</td>
+          <td>Per their documentation, per-tenant API keys require the Kubernetes runtime (with tenants enabled on Docker the server refuses to start) <a class="ref" href="#o2">[O2]</a>. Their roadmap lists an in-sandbox agent audit trail as Planned and an optional eBPF in-sandbox observation feature as Implementing <a class="ref" href="#o2">[O2]</a>. Control-plane audit logging: not covered here</td>
+        </tr>
+        <tr>
+          <th scope="row">SDKs</th>
+          <td class="us">Python (sync and async), TypeScript (subset), CLI, REST and OpenAPI</td>
+          <td class="na">Not covered here</td>
+          <td>SDKs moved to <a href="https://github.com/daytona">github.com/daytona</a> (Apache-2.0 per the changelog) <a class="ref" href="#d5">[D5]</a></td>
+          <td>SDKs in five languages <a class="ref" href="#o1">[O1]</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Production references</th>
+          <td class="us">None yet</td>
+          <td class="na">Not covered here</td>
+          <td class="na">Not covered here</td>
+          <td class="na">Not covered here</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="fine">Sandfort column sources: <code>README.md</code>, <code>docs/operations.md</code>, <code>docs/isolation-tiers.md</code>, <code>docs/governance.md</code>, <code>LICENSE.md</code>, the <code>LICENSE</code> files under <code>sdk/</code>, <code>cli/</code> and <code>mcp_server/</code>, and <code>src/sandfort/</code>.</p>
+</section>
+
+<section class="sec" id="sources" aria-labelledby="h-sources">
+  <div class="head">
+    <h2 id="h-sources">Sources for the other columns</h2>
+    <p class="lede">All dates are the day the fact was checked. Every item below was re-read against its primary source on 2026-11-22.</p>
+  </div>
+
+  <p class="src-h">E2B <small>verified 2026-11-22; first checked 2026-11-10</small></p>
+  <ul class="src">
+    <li id="e1"><b>[E1]</b> E2B Embed runs the full stack on one machine: per its README, one node holds the complete E2B runtime, deployed with Docker Compose on a Linux machine you already have. The same package exists as Terraform modules for GCP, AWS and Azure and as a Kubernetes manifest (<code>kubectl apply -k</code>, on a node in an existing cluster), but each of them sets up a single node. The README states that no E2B account and no license key are needed, that Embed answers over HTTP at the machine&rsquo;s own address without TLS of its own, and that it needs hardware virtualization; the enterprise page lists Linux x86-64 with KVM as the requirement. Azure was added on 2026-10-12 per the changelog. The enterprise page still lists Terraform install for AWS and GCP only; the README and changelog include Azure.
+      <span class="urls"><a href="https://github.com/e2b-dev/runtime/blob/main/embed/README.md">https://github.com/e2b-dev/runtime/blob/main/embed/README.md</a><a href="https://e2b.dev/enterprise">https://e2b.dev/enterprise</a><a href="https://docs.e2b.dev/changelog.md">https://docs.e2b.dev/changelog.md</a></span></li>
+    <li id="e2"><b>[E2]</b> The runtime (control-plane API, per-node orchestrator that drives Firecracker, in-VM agent, edge router, template builder) lives in <code>e2b-dev/runtime</code>; the earlier <code>e2b-dev/infra</code> URL redirects there (HTTP 301, checked 2026-11-22). License: Apache-2.0 (GitHub API: <code>apache-2.0</code>; repository not archived). The repository describes one Firecracker microVM per sandbox.
+      <span class="urls"><a href="https://github.com/e2b-dev/runtime">https://github.com/e2b-dev/runtime</a><a href="https://api.github.com/repos/e2b-dev/runtime">https://api.github.com/repos/e2b-dev/runtime</a></span></li>
+    <li id="e3"><b>[E3]</b> For installations larger than one node, E2B points to BYOC: an Enterprise-only feature with a managed installation in your cloud account. The BYOC page describes it as a managed deployment in your account rather than self-hosting, available on AWS, Google Cloud and Azure; the enterprise page says it is in production on AWS and GCP. The enterprise page also lists a Private cloud option (control plane and data plane inside the customer boundary) as in development, next to E2B Embed as available. We have not established whether the one-node limit belongs to the product or only to the packages.
+      <span class="urls"><a href="https://docs.e2b.dev/byoc.md">https://docs.e2b.dev/byoc.md</a><a href="https://e2b.dev/enterprise">https://e2b.dev/enterprise</a></span></li>
+  </ul>
+
+  <p class="src-h">Daytona <small>verified 2026-11-22; first checked 2026-11-10</small></p>
+  <ul class="src">
+    <li id="d1"><b>[D1]</b> On 2026-06-11 Daytona announced that it was moving its production codebase to closed source; the stated reason is security.
+      <span class="urls"><a href="https://daytona.io/dotfiles/updates/daytona-is-going-closed-source">https://daytona.io/dotfiles/updates/daytona-is-going-closed-source</a></span></li>
+    <li id="d2"><b>[D2]</b> The public repository <code>daytonaio/daytona</code> was archived (read-only) by its owner on 2026-10-03; its README says it is no longer maintained and will receive no changes, fixes or releases. The last push per the GitHub API was 2026-07-24. The <code>LICENSE</code> at tag <code>v0.190.0</code> is the GNU Affero General Public License v3 (raw file read directly); the <code>license</code> field of the GitHub API for the repository is <code>null</code>.
+      <span class="urls"><a href="https://github.com/daytonaio/daytona">https://github.com/daytonaio/daytona</a><a href="https://api.github.com/repos/daytonaio/daytona">https://api.github.com/repos/daytonaio/daytona</a><a href="https://raw.githubusercontent.com/daytonaio/daytona/v0.190.0/LICENSE">https://raw.githubusercontent.com/daytonaio/daytona/v0.190.0/LICENSE</a></span></li>
+    <li id="d3"><b>[D3]</b> The documentation describes one path with your own compute: BYOC, with your runners in custom regions and Daytona&rsquo;s control plane managing them; it is an opt-in feature enabled per organization, and official Helm charts deploy the region components on Kubernetes. The pricing page lists BYOC under the Enterprise tier. The pages we read do not say whether you can run the whole control plane yourself (open question).
+      <span class="urls"><a href="https://www.daytona.io/docs/en/bring-your-own-compute.md">https://www.daytona.io/docs/en/bring-your-own-compute.md</a><a href="https://www.daytona.io/pricing">https://www.daytona.io/pricing</a></span></li>
+    <li id="d4"><b>[D4]</b> The Helm charts repository README says the charts are covered by the Elastic License 2.0 except where noted; the repository is not archived (GitHub API, last push 2026-11-19).
+      <span class="urls"><a href="https://github.com/daytonaio/helm-charts">https://github.com/daytonaio/helm-charts</a></span></li>
+    <li id="d5"><b>[D5]</b> SDKs and guides are published under <code>github.com/daytona</code> (<code>daytona/clients</code>, <code>daytona/guides</code>). In <code>daytona/clients</code>: SDKs under Apache-2.0, CLI under AGPL-3.0; the changelog records a client-repo restructure and Apache-2.0 relicense in V0.191.0 (2026-06-23) and the introduction of a Contributor License Agreement in V0.196.0 (2026-07-10). <code>daytonaio/docs</code> is archived (GitHub API); <code>daytona/clients</code> is not.
+      <span class="urls"><a href="https://github.com/daytona/clients">https://github.com/daytona/clients</a><a href="https://www.daytona.io/changelog">https://www.daytona.io/changelog</a></span></li>
+  </ul>
+  <p class="note">A neutral note, with no comment on Daytona&rsquo;s decision: for people who self-hosted the last public Daytona version, Sandfort is a maintained self-hosted option. We have not measured API compatibility, and Sandfort&rsquo;s server license (FSL-1.1-Apache-2.0, source-available) is not the same as the last public Daytona license (AGPL-3.0).</p>
+
+  <p class="src-h">OpenSandbox <small>verified 2026-11-22; first checked 2026-11-11; README, ROADMAP and guides read as raw files</small></p>
+  <p class="fine">The project moves fast, so re-check before relying on a cell.</p>
+  <ul class="src">
+    <li id="o1"><b>[O1]</b> Repository <code>opensandbox-group/OpenSandbox</code> (the older <code>alibaba/OpenSandbox</code> URL redirects to it). License Apache-2.0 (GitHub API). README: &ldquo;Start locally with Docker and deploy on Kubernetes through a unified sandbox API&rdquo;; &ldquo;Docker (required for local execution)&rdquo;; SDKs for &ldquo;Python, Java/Kotlin, TypeScript/JavaScript, C#/.NET, or Go&rdquo;. Their secure-container guide lists <code>runc</code> (default), gVisor, Kata (QEMU), Kata (Firecracker) and Kata (Cloud Hypervisor) as runtimes; the README&rsquo;s separate Fast Sandbox runtime on Kubernetes uses Firecracker.
+      <span class="urls"><a href="https://github.com/opensandbox-group/OpenSandbox">https://github.com/opensandbox-group/OpenSandbox</a><a href="https://github.com/opensandbox-group/OpenSandbox/blob/main/README.md">https://github.com/opensandbox-group/OpenSandbox/blob/main/README.md</a><a href="https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/guides/secure-container.md">https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/guides/secure-container.md</a><a href="https://api.github.com/repos/opensandbox-group/OpenSandbox">https://api.github.com/repos/opensandbox-group/OpenSandbox</a></span></li>
+    <li id="o2"><b>[O2]</b> Multi-tenancy guide: tenants get dedicated API keys and are isolated per Kubernetes namespace; it requires the Kubernetes runtime and states &ldquo;If <code>runtime.type = "docker"</code> is configured and tenants are enabled, the server refuses to start with a fatal error.&rdquo; The ROADMAP lists &ldquo;Agent in-sandbox audit trail&rdquo; as Planned (records of agent actions inside sandboxes: command execution, file operations, network access) and &ldquo;eBPF in-sandbox observation&rdquo; as Implementing (optional, writes a local rotating JSONL audit file). That planned trail covers actions inside sandboxes, so it is not the same thing as Sandfort&rsquo;s per-org audit chain of API operations. Whether OpenSandbox has a control-plane audit log, we did not check.
+      <span class="urls"><a href="https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/guides/multi-tenancy.md">https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/guides/multi-tenancy.md</a><a href="https://github.com/opensandbox-group/OpenSandbox/blob/main/ROADMAP.md">https://github.com/opensandbox-group/OpenSandbox/blob/main/ROADMAP.md</a></span></li>
+  </ul>
+</section>
+
+<section class="sec" id="requirements" aria-labelledby="h-req">
+  <div class="head"><h2 id="h-req">What the facts above say, by requirement</h2></div>
+  <ul class="prose">
+    <li><b>You need a hardware-virtualization boundary for every sandbox in production.</b> E2B&rsquo;s runtime isolates each sandbox in a Firecracker microVM <a href="#e2">[E2]</a>. Sandfort always has the <code>container</code> tier; <code>gvisor</code> and <code>microvm</code> are offered only when the operator maps those runtimes in <code>SANDFORT_ISOLATION_RUNTIMES</code> (the hosted beta offers all three), and the <code>microvm</code> tier is Kata Containers behind the same Docker driver and needs KVM. If microVM isolation for all production sandboxes is a requirement, Sandfort does not meet it today.</li>
+    <li><b>You want to run on a plain Docker host, with governance in the same package.</b> Sandfort&rsquo;s <code>container</code> tier needs only a Docker daemon (<code>gvisor</code> also needs the <code>runsc</code> runtime), and organizations, scoped keys, roles, quotas, metering and a verifiable audit chain are part of the same server; the chain is tamper-evident only when <code>SANDFORT_AUDIT_CHAIN_KEY</code> is set. OpenSandbox also starts from plain Docker <a href="#o1">[O1]</a>; per its documentation its per-tenant API keys require Kubernetes, and its in-sandbox agent audit trail is planned <a href="#o2">[O2]</a>. Re-check that before relying on it, and note that their planned audit trail covers actions inside sandboxes, not API operations, so the two are not like-for-like.</li>
+    <li><b>You want an Apache-2.0 server.</b> E2B&rsquo;s runtime and OpenSandbox are Apache-2.0 <a href="#e2">[E2]</a>, <a href="#o1">[O1]</a>. Sandfort&rsquo;s server is source-available under FSL-1.1-Apache-2.0: self-hosting and changes are permitted, a competing commercial service is not, and each version becomes Apache-2.0 two years after release.</li>
+    <li><b>You want a vendor-operated installation in your cloud account.</b> E2B offers BYOC on its Enterprise plan <a href="#e3">[E3]</a>; Daytona describes BYOC <a href="#d3">[D3]</a>. Sandfort has no such offering: production is self-hosted by you. The hosted beta is an invite-only, shared evaluation instance: no SLA, not for production secrets or sensitive data, and it may be upgraded with downtime.</li>
+    <li><b>You need a mature, referenced product.</b> Sandfort is <code>0.1.0</code> (pre-1.0 beta) with no production references and no certifications.</li>
+  </ul>
+</section>
+
+<section class="sec" id="adds" aria-labelledby="h-adds">
+  <div class="head"><h2 id="h-adds">What Sandfort provides, and what it does not claim</h2></div>
+  <p class="scroll-hint" aria-hidden="true">Scroll sideways to see both columns.</p>
+  <div class="tbl-wrap" role="region" aria-label="Sandfort features and non-claims, scrolls horizontally" tabindex="0">
+    <table class="cmp narrow" aria-label="What Sandfort provides and what it does not claim">
+      <thead>
+        <tr>
+          <th scope="col" class="us">Sandfort provides (source in repo)</th>
+          <th scope="col">Sandfort does not claim</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="us">Hash-chained per-org audit log, <code>audit-verify</code> with exit code 3 on a broken chain, <code>audit-export</code> with head lines, signed when <code>SANDFORT_AUDIT_SIGNING_KEY</code> is set (<code>src/sandfort/services/audit_chain.py</code>, <code>src/sandfort/admin_cli.py</code>). Tamper-evident when <code>SANDFORT_AUDIT_CHAIN_KEY</code> is set; not set by default</td>
+          <td>That the log is immutable (it is tamper-evident, and only with the chain key set), or any compliance certification</td>
+        </tr>
+        <tr>
+          <td class="us">Scoped API keys, roles <code>admin</code>, <code>developer</code>, <code>viewer</code>, label-scoped keys, OIDC SSO into one org, SCIM 2.0 Users (<code>src/sandfort/auth/</code>, <code>scim.py</code>)</td>
+          <td>SSO per tenant, SCIM groups, &ldquo;full SCIM&rdquo;</td>
+        </tr>
+        <tr>
+          <td class="us">Per-org quotas, metering and a usage report, signed webhooks (<code>README.md</code>)</td>
+          <td>Billing (metering records allocation only)</td>
+        </tr>
+        <tr>
+          <td class="us">Docker driver with hardening and a per-sandbox egress allowlist through a CONNECT proxy: hostnames only, set at create, not available in jobs mode (<code>docs/egress-allowlist-design.md</code>)</td>
+          <td>Stronger isolation than microVM-based products; &ldquo;full egress control&rdquo;</td>
+        </tr>
+        <tr>
+          <td class="us">Multi-node MVP: node registry, placement at create, cross-node toolbox routing. It requires jobs mode, which refuses volumes and egress allowlists and has no reset; the Kubernetes kit covers one sandbox node (<code>docs/roadmap.md</code>)</td>
+          <td>Elastic scheduling, rescheduling or live migration; &ldquo;API parity&rdquo; with any other product</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="sec" id="honest" aria-labelledby="h-honest">
+  <div class="head"><h2 id="h-honest">How we keep this page honest</h2></div>
+  <ul class="prose">
+    <li>Each cell about another project has a link and a check date. We re-read each page before publishing and update the date.</li>
+    <li>If you see a cell that is wrong or stale, write to <a href="mailto:office@sandfort.dev?subject=Comparison%20page%20correction">office@sandfort.dev</a>. Corrections are reviewed on a best-effort basis; when a cell changes, its check date is updated.</li>
+    <li>We do not compare prices, because Sandfort has no published prices and we will not guess at anyone else&rsquo;s.</li>
+    <li>Documentation pages for E2B and Daytona were read through a fetch tool that returns a summary, not verbatim text, so their statements are paraphrased here, not quoted. GitHub API fields and raw files (Daytona <code>LICENSE</code>, the OpenSandbox README, ROADMAP and guides) were read directly and may be quoted. Read the original before you rely on a cell.</li>
+  </ul>
+</section>
+
+</div>
+</main>
+
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="https://docs.sandfort.dev/">API reference</a></li><li><a href="https://docs.sandfort.dev/governance">Governance page</a></li><li><a href="https://docs.sandfort.dev/release">Releases</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li><li><a href="/compare.html" aria-current="page">Comparison</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal"><span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span><span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span><span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span><span>This page sets no cookies.</span></div>
+  </div>
+</footer>
+</body>
+</html>

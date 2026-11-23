@@ -1,0 +1,5 @@
+User-agent: *
+Disallow:
+
+Sitemap: https://sandfort.dev/sitemap.xml
+Sitemap: https://docs.sandfort.dev/sitemap.xml

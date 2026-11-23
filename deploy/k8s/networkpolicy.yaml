@@ -1,0 +1,60 @@
+# Ingress policy for the sandfort pod.
+#
+# READ THIS FIRST: the pod is host-networked (api.yaml). Most CNI plugins do not apply
+# NetworkPolicy to host-networked pods, because their traffic is the node's own traffic;
+# Calico host endpoints or Cilium host policies are needed to enforce rules on it. Check
+# that your CNI enforces these before you rely on them, and ALSO restrict node ports
+# 8000 and 8001 with the node firewall to the ingress controller and Prometheus addresses.
+#
+# NetworkPolicy works on addresses and ports, not on HTTP paths. /metrics is served on the
+# API port (8000) with no authentication, so "only monitoring may scrape /metrics" cannot be
+# expressed here: anything allowed to reach port 8000 can read /metrics. Therefore:
+#   - the ingress must not publish /metrics (ingress.yaml returns 404 for it), and
+#   - the second policy below admits the monitoring namespace to the same port.
+#
+# Policies are additive: a peer allowed by any of them is admitted. Pods outside the
+# namespaces named here are denied on the selected ports; egress is not restricted.
+#
+# Namespace names are the standard kubernetes.io/metadata.name label. Change them to match
+# your cluster (ingress-nginx and monitoring below are the common defaults).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandfort-allow-ingress-controller
+  namespace: sandfort
+spec:
+  podSelector:
+    matchLabels:
+      app: sandfort
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000 # API
+        - protocol: TCP
+          port: 8001 # preview proxy
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandfort-allow-monitoring
+  namespace: sandfort
+spec:
+  podSelector:
+    matchLabels:
+      app: sandfort
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000 # GET /metrics (same port as the API; see the note above)

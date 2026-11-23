@@ -1,0 +1,36 @@
+# Sandfort
+
+> Sandboxes for AI-generated code, on infrastructure you control. Sandfort is a self-hosted sandbox platform: a REST API, a Python SDK and a CLI over isolated Docker sandboxes, with a TypeScript SDK covering a subset of the API.
+
+Sandfort covers the work cycle of an AI coding agent (exec, files, git, PTY, snapshots, volumes) and the management a multi-tenant deployment needs (quotas, metering, signed webhooks, a hash-chained audit log, RBAC, OIDC SSO). It runs on a host with a Docker daemon or on a Kubernetes cluster with Postgres. The same API, SDK and CLI work against the invite-only hosted beta and against your own hosts; only `base_url` changes.
+
+Limits that apply today:
+- Isolation is container-based. Tiers: `container` (shares the host kernel), `gvisor` and `microvm` (Kata Containers, needs KVM). There is no Firecracker driver.
+- The hosted beta is an invite-only evaluation instance with no SLA. It is not a production managed service.
+- The server is source-available under FSL-1.1-Apache-2.0; the SDKs and CLI are Apache-2.0.
+- Version 0.1.0, beta releases only. Several limits are listed on the landing page under "What it does not do yet".
+
+## Start here
+
+- [Landing page](https://sandfort.dev/): what it does, the two ways to run it, isolation tiers, governance and limits.
+- [Comparison](https://sandfort.dev/compare.html): Sandfort, E2B, Daytona and OpenSandbox on running sandboxes on your own hardware, with sources and check dates.
+- [Quickstart](https://docs.sandfort.dev/quickstart): from the delivery package to a working sandbox on the hosted beta.
+- [Connect guide](https://docs.sandfort.dev/guide): the full reference behind the quickstart for the hosted beta.
+
+## Reference
+
+- [API reference](https://docs.sandfort.dev/): the interactive REST API reference.
+- [OpenAPI specification (JSON)](https://docs.sandfort.dev/openapi.json): the exported spec for the REST API.
+- [Isolation tiers](https://docs.sandfort.dev/isolation-tiers): what each tier isolates and where its limits are.
+- [Security](https://docs.sandfort.dev/security): what the platform protects and where a protection does not apply.
+- [Governance](https://docs.sandfort.dev/governance): reference for platform and compliance reviewers, checked against the server source.
+- [Runbook](https://docs.sandfort.dev/operations): Kubernetes and docker compose deployments.
+
+## Releases and terms
+
+- [Releases](https://docs.sandfort.dev/release): git tags `v0.1.0-beta.N` with the Python SDK, CLI and server wheels.
+- [Beta terms](https://docs.sandfort.dev/beta-terms): terms of the hosted evaluation instance.
+
+## Contact
+
+- office@sandfort.dev

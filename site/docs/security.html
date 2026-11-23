@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security - Sandfort docs</title>
+<meta name="description" content="This page answers the questions a security team asks before a pilot. Each statement is checked against the server source, docs/architecture.md, [operations] or deploy/. Where a protection does not...">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<link rel="canonical" href="https://docs.sandfort.dev/security">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security" aria-current="page">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<main id="main">
+<div class="frame"><div class="doc has-toc">
+<details class="toc"><summary>On this page</summary><ul><li><a href="#1-threat-model-summary">1. Threat model summary</a></li><li><a href="#2-sandbox-isolation-as-configured-by-the-docker-driver">2. Sandbox isolation as configured by the Docker driver</a><ul><li><a href="#network">Network</a></li><li><a href="#image-build-runtime">Image build runtime</a></li></ul></li><li><a href="#3-what-is-outside-the-sandbox-boundary">3. What is outside the sandbox boundary</a></li><li><a href="#4-control-plane">4. Control plane</a></li><li><a href="#5-audit-and-tamper-evidence">5. Audit and tamper evidence</a></li><li><a href="#6-operational-hardening-checklist">6. Operational hardening checklist</a></li><li><a href="#7-reporting-a-vulnerability">7. Reporting a vulnerability</a></li></ul></details>
+<article class="prose">
+<h1 id="security">Security<a class="anchor" href="#security" aria-label="Link to section: Security">#</a></h1>
+<p>This page answers the questions a security team asks before a pilot. Each statement is
+checked against the server source, <code>docs/architecture.md</code>, [operations] or <code>deploy/</code>.
+Where a protection does not exist, the same section says so. Sandfort is version <code>0.1.0</code>
+and has no production references; read this page as a description of the code, not as an
+assurance.</p>
+<p>Paths such as <code>docs/architecture.md</code>, <code>SECURITY.md</code> and <code>deploy/</code> are repository paths, not
+published pages: read them in the source repository, the docs site does not serve them.</p>
+<h2 id="1-threat-model-summary">1. Threat model summary<a class="anchor" href="#1-threat-model-summary" aria-label="Link to section: 1. Threat model summary">#</a></h2>
+<p>Users and AI agents submit code that Sandfort runs inside sandboxes. That code may be buggy
+or hostile. The platform tries to do three things with it:</p>
+<ul>
+<li>keep it contained: one sandbox should not reach the host, the control plane, other
+sandboxes or the platform&#x27;s secrets;</li>
+<li>keep it resource-bounded: CPU, memory, processes and disk are capped per sandbox;</li>
+<li>keep the actions around it auditable: lifecycle and toolbox calls are recorded per
+organization.</li>
+</ul>
+<p>The production driver is the Docker driver, and each sandbox runs on one of three isolation
+tiers, chosen per sandbox (<code>isolation</code> on create). The <code>container</code> tier (runc) and the <code>gvisor</code>
+tier (runsc) share the host kernel: under <code>gvisor</code> a user-space kernel handles the sandbox&#x27;s
+system calls, which narrows what reaches the host kernel but is not a hardware boundary. The
+<code>microvm</code> tier (Kata Containers) gives each sandbox its own guest kernel in a lightweight VM and
+needs KVM. On the hosted beta the <code>microvm</code> tier runs on nested KVM, and a hypervisor or Kata bug
+is in scope for that tier. A kernel or runtime escape from a <code>container</code> or <code>gvisor</code> sandbox is
+therefore in scope for the host, and the controls below reduce that risk without removing it.
+The Firecracker driver
+in the tree is a skeleton exercised against a mock agent and is not supported
+(<code>src/sandfort/drivers/firecracker/driver.py</code>).</p>
+<p>Tiers are mapped to Docker runtimes by the isolation tier map,
+<code>SANDFORT_ISOLATION_RUNTIMES</code> (for example <code>container=runc,gvisor=runsc,microvm=kata</code>), and the
+default tier is <code>SANDFORT_DEFAULT_ISOLATION</code>; see [isolation-tiers]. The runtimes must be
+installed and registered on each node. Without a map, the only tier is the default one on
+<code>SANDFORT_CONTAINER_RUNTIME</code> (empty means the daemon&#x27;s default runtime). In <code>prod</code> the server
+refuses to start when a configured runtime is not among the daemon&#x27;s runtimes.</p>
+<p>Not covered by this page&#x27;s protections: a malicious operator or database administrator, a
+compromised Docker daemon, and anyone who already holds control of a sandbox node.</p>
+<h2 id="2-sandbox-isolation-as-configured-by-the-docker-driver">2. Sandbox isolation as configured by the Docker driver<a class="anchor" href="#2-sandbox-isolation-as-configured-by-the-docker-driver" aria-label="Link to section: 2. Sandbox isolation as configured by the Docker driver">#</a></h2>
+<p>The container settings are built in <code>src/sandfort/drivers/docker/hardening.py</code> and asserted
+by unit tests. Every sandbox gets:</p>
+<div class="tbl-wrap" role="region" aria-label="Table: 2. Sandbox isolation as configured by the Docker driver" tabindex="0"><table><thead><tr><th scope="col">Control</th><th scope="col">Setting</th></tr></thead><tbody><tr><td>Capabilities</td><td><code>cap_drop=ALL</code></td></tr><tr><td>Added back</td><td><code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>, <code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>, <code>NET_BIND_SERVICE</code></td></tr><tr><td>Privilege</td><td><code>privileged=False</code>, <code>no-new-privileges:true</code>, <code>init=True</code></td></tr><tr><td>Processes</td><td><code>pids_limit=512</code></td></tr><tr><td>CPU</td><td><code>nano_cpus</code> from the requested millicores</td></tr><tr><td>Memory</td><td><code>mem_limit</code> from the request, <code>memswap_limit</code> equal to it (no swap)</td></tr><tr><td>Shared memory</td><td><code>shm_size</code> is the smaller of 64 MiB and a quarter of memory</td></tr><tr><td>Open files</td><td><code>nofile</code> soft and hard limit 4096</td></tr><tr><td>Logs</td><td><code>local</code> log driver, 10 MB per file, 3 files</td></tr><tr><td>Docker socket</td><td>not mounted into sandboxes</td></tr></tbody></table></div>
+<p>What the table does not say:</p>
+<ul>
+<li><strong>Seccomp is optional, and only the Kubernetes kit sets it.</strong> <code>deploy/seccomp.json</code> is
+derived from the moby v28.3.3 default profile, with some syscalls removed and extra rules
+on <code>clone</code> arguments (see its <code>_comment</code>). The driver passes it as a <code>security_opt</code> only
+when <code>SANDFORT_SECCOMP_PROFILE_PATH</code> points at it. The default is empty, which keeps
+Docker&#x27;s own default profile. The file is read and validated once at startup.
+<ul>
+<li><code>deploy/k8s/</code>: the ConfigMap (<code>configmap.yaml</code>) sets
+<code>SANDFORT_SECCOMP_PROFILE_PATH=/etc/sandfort/seccomp/seccomp.json</code>, and <code>api.yaml</code>
+mounts the <code>sandfort-seccomp</code> ConfigMap, which kustomize generates from
+<code>deploy/seccomp.json</code>, at <code>/etc/sandfort/seccomp</code>. Apply the kit with the load
+restrictor lifted (<code>deploy/k8s/kustomization.yaml</code>, <code>deploy/k8s/README.md</code>).</li>
+<li><code>deploy/compose.prod.yml</code> and <code>deploy/Dockerfile</code>: neither sets the path or mounts the
+profile. To use it with compose, add the setting and a bind mount of the file yourself.</li>
+<li>The driver passes the profile as a security option for every runtime once the path is set
+(<code>src/sandfort/drivers/docker/hardening.py</code>): the daemon passes it, but under <code>runsc</code> it is
+not applied to the sandboxed processes&#x27; syscalls the way <code>runc</code> applies it. On the <code>gvisor</code>
+tier gVisor&#x27;s own Sentry filters the syscalls, and the host-side <code>runsc</code> processes run
+under gVisor&#x27;s own seccomp filters ([isolation-tiers]). The Kubernetes kit defaults to
+<code>gvisor</code> (<code>SANDFORT_DEFAULT_ISOLATION</code>), so the profile there covers the <code>container</code> tier.</li>
+<li>The Kubernetes <code>api</code> manifest (<code>deploy/k8s/api.yaml</code>) also sets <code>seccompProfile</code> to
+<code>RuntimeDefault</code> in the pod <code>securityContext</code> of the API pod itself. That is a different
+thing from the sandbox profile above: it confines the API process, not the sandboxes.</li>
+</ul></li>
+<li><strong>User-namespace remapping and the cgroup parent are opt-in; no AppArmor profile is set.</strong>
+Remapping (<code>userns-remap</code>) is a Docker daemon option that is daemon-wide; Sandfort does not
+turn it on, but it reads whether it is active and acts on it. Three server settings
+(<code>src/sandfort/config.py</code>): <code>SANDFORT_USERNS_HOST_TIERS</code> (default <code>microvm</code>; a blank value
+removes the opt-out) lists the tiers created with the host user namespace, because Kata
+cannot run remapped; <code>SANDFORT_REQUIRE_USERNS_REMAP</code> (default <code>false</code>) makes <code>prod</code> refuse
+to start without remapping; <code>SANDFORT_CGROUP_PARENT</code> (default empty; must be a systemd slice
+name such as <code>sandfort.slice</code>) sets the cgroup parent of every sandbox. Without remapping,
+container root maps to host root for every tier; with it, the tiers not in the opt-out list
+run remapped. Details, validation and the gate texts: <code>docs/architecture.md</code>, &quot;Container
+hardening&quot;; node steps in [operations]. The driver sets no AppArmor option, so the
+daemon&#x27;s default applies where AppArmor is enabled, and no setting feeds the <code>user</code> field.</li>
+<li><strong>Disk limits need host support.</strong> The driver sets <code>storage_opt.size</code> from <code>disk_gib</code>
+when <code>SANDFORT_ENVIRONMENT=prod</code>. Docker honours it on <code>overlay2</code> over XFS mounted with
+<code>pquota</code>, or on btrfs or zfs. The startup check reads <code>docker info</code>, which does not show
+mount options, so XFS without <code>pquota</code> passes the check and then fails at sandbox create.
+Outside <code>prod</code> the driver sets no disk limit unless <code>SANDFORT_ENFORCE_DISK_QUOTA=true</code>, which
+enforces it in any environment (the hosted beta uses it; see [isolation-tiers], &quot;Disk
+size&quot;).</li>
+<li><strong><code>prod</code> refuses to start on a weak host.</strong> The startup self-check (<code>check_isolation</code> in
+<code>src/sandfort/api/app.py</code>) refuses the start when disk quota support is missing, when the
+configured runtime is not registered with the daemon, or when
+<code>SANDFORT_EGRESS_ACKNOWLEDGED</code> is not <code>true</code>. In <code>dev</code> these findings are only logged.
+Two daemon-level findings follow different rules. The user-namespace remapping finding
+refuses a <code>prod</code> start only when <code>SANDFORT_REQUIRE_USERNS_REMAP=true</code>; with the flag off it
+is logged as a warning (<code>isolation advisory (does not refuse startup)</code>), and outside <code>prod</code>
+it is logged and tolerated. The default-runtime finding (the daemon default runtime is not
+one of the runtimes the tiers use, so tenant image builds run on it) is advisory in every
+environment: a warning, never a refusal. Both texts are in <code>docs/architecture.md</code>,
+&quot;Container hardening&quot;.</li>
+</ul>
+<h3 id="network">Network<a class="anchor" href="#network" aria-label="Link to section: Network">#</a></h3>
+<p>All networked sandboxes join the bridge network <code>sf-net</code>, created with inter-container
+traffic disabled (<code>enable_icc=false</code>). Three controls sit on top of that.</p>
+<ul>
+<li><strong>Cloud metadata and private ranges.</strong> The driver itself does not filter addresses. The
+block comes from <code>deploy/host-setup.sh</code>, which installs iptables rules in <code>DOCKER-USER</code>
+that reject traffic from the sandbox bridge to <code>169.254.0.0/16</code> (including the metadata
+address <code>169.254.169.254</code>), <code>100.64.0.0/10</code>, the Azure wire server <code>168.63.129.16</code>, and
+the RFC 1918 ranges. It also rejects new connections from sandboxes to the host&#x27;s own
+address on the bridge. Without the script none of this applies.</li>
+<li><strong>Full block per sandbox.</strong> <code>network.block_all</code> at create time runs the sandbox with
+Docker network mode <code>none</code>. It takes precedence over everything else, and combining it
+with an egress allowlist is refused.</li>
+<li><strong>Egress allowlist.</strong> <code>egress_allowlist</code> at create time (at most 16 host names by default)
+puts the sandbox on a second bridge, <code>sf-egress-net</code>, whose firewall chain admits only the
+egress proxy address (<code>SF_EGRESS_PROXY</code>). The proxy is a separate process,
+<code>python -m sandfort.egress.proxy</code>, that checks signed tokens made with
+<code>SANDFORT_EGRESS_SECRET</code>. If the proxy address or secret is not configured, an allowlisted
+create is refused with 409 and never runs with open egress. Allowlisted creates are also
+refused when sandboxes are created by jobs.</li>
+</ul>
+<p>Limits of the network controls, stated in <code>deploy/host-setup.sh</code> and [operations]:</p>
+<ul>
+<li>The script supports Linux hosts with the iptables backend and a <code>DOCKER-USER</code> chain. It
+refuses to run elsewhere, and Docker&#x27;s nftables firewall backend is not supported. Docker
+Desktop is out of scope.</li>
+<li>The server cannot observe the rules. <code>prod</code> relies on the operator setting
+<code>SANDFORT_EGRESS_ACKNOWLEDGED=true</code> after running the script. Setting it without running
+the script removes the protection while passing the check.</li>
+<li>IPv6 is filtered only for <code>fe80::/10</code> and <code>fc00::/7</code>, and only if <code>ip6tables</code> exists.
+Public IPv6 destinations are not filtered.</li>
+<li>A sandbox without <code>block_all</code> and without an allowlist can reach the public internet.</li>
+<li>The default <code>SF_EGRESS_PROXY</code> is <code>127.0.0.1</code>, which admits no real destination. Set it to
+the proxy host&#x27;s address. A proxy on the Docker host itself needs its own INPUT rule.</li>
+</ul>
+<h3 id="image-build-runtime">Image build runtime<a class="anchor" href="#image-build-runtime" aria-label="Link to section: Image build runtime">#</a></h3>
+<p>Tenant image builds do not run on a sandbox tier runtime. They run on the Docker daemon&#x27;s
+default runtime, with Docker&#x27;s default capabilities, no pids limit and no seccomp profile. When
+a tier offers a strong runtime (a name containing <code>runsc</code> or <code>kata</code>) but the daemon default
+runtime is not one of them, the capability check reports a build-runtime finding
+(<code>src/sandfort/drivers/docker/capabilities.py</code>). Nothing is reported while no tier offers a
+strong runtime.</p>
+<ul>
+<li><strong>Production gate.</strong> With <code>SANDFORT_ENVIRONMENT=prod</code> and <code>SANDFORT_REQUIRE_BUILD_RUNTIME</code>
+on, that finding refuses startup. The setting defaults to <code>true</code> when read from the
+environment. Outside prod the finding is a logged warning.</li>
+<li><strong>Fix.</strong> Set the daemon&#x27;s <code>default-runtime</code> to the strong runtime. Setting
+<code>SANDFORT_REQUIRE_BUILD_RUNTIME=false</code> starts the server anyway and accepts that tenant
+builds run with the weaker defaults.</li>
+</ul>
+<h2 id="3-what-is-outside-the-sandbox-boundary">3. What is outside the sandbox boundary<a class="anchor" href="#3-what-is-outside-the-sandbox-boundary" aria-label="Link to section: 3. What is outside the sandbox boundary">#</a></h2>
+<ul>
+<li><strong>The Docker socket.</strong> It is never mounted into a sandbox. It is mounted into the server
+pod: <code>deploy/k8s/api.yaml</code> mounts <code>/var/run/docker.sock</code> and carries a warning that this
+grants host-level control of the node. <code>deploy/k8s/worker.yaml</code> is intentionally empty and
+mounts nothing; the supported topology is one pod with <code>SANDFORT_ROLE=all</code>. The api
+manifest keeps the pod on a dedicated node with a <code>nodeSelector</code>
+(<code>sandfort.dev/sandbox-node: &quot;true&quot;</code>) and a matching toleration of the
+<code>sandfort.dev/sandbox-node=true:NoSchedule</code> taint. [operations] recommends
+running sandbox workloads on dedicated nodes.</li>
+<li><strong>Namespace access is node root.</strong> <code>deploy/k8s/namespace.yaml</code> sets pod security admission
+to <code>privileged</code> for the <code>sandfort</code> namespace, because the server pod uses <code>hostNetwork</code>
+and a <code>hostPath</code> socket. Anyone who is allowed to create pods in the <code>sandfort</code> namespace is
+effectively root on the node.</li>
+<li><strong>Socket holder threat statement.</strong> The socket is never mounted into a sandbox, but any
+code execution in the server process is node root: the process holds the Docker client,
+and the daemon runs as root. Planned mitigations, in order and without dates: a Docker
+daemon authorization plugin next, a node agent later. Neither exists in this repository
+yet, so today the controls are the dedicated node, the namespace access above, and the
+sandbox hardening.</li>
+<li><strong>Platform environment variables.</strong> Names starting with <code>SANDFORT_</code> are reserved. A
+create request that sets one is rejected (422), and the driver rejects them again. The
+server&#x27;s own settings are not passed to sandboxes, and a test checks that no <code>SANDFORT_*</code>
+variable is visible inside one. This protects the server&#x27;s secrets from sandbox code. It
+does not stop a sandbox from reading anything that was deliberately put into it.</li>
+<li><strong>Git credentials.</strong> A credential sent with a git call is written to a temporary helper
+for that one operation and removed in a <code>finally</code> step
+(<code>src/sandfort/toolbox/git_credentials.py</code>). It is not stored, and tests check that the
+token is absent from process environments, audit rows and stored logs.
+<ul>
+<li><strong>Any credential handed to a sandbox is disclosed to the code running there.</strong> The
+helper and the git binary both live in the sandbox filesystem. Code in the sandbox can
+read the token while the operation runs, or replace <code>git</code> with a program that copies
+the token out. Code can also keep running between calls and wait for the next
+credentialed operation, so one leaked token is not limited to one call. Treat every
+token you send as given to the sandbox code.</li>
+<li><strong>Push and pull are bound to the caller&#x27;s host.</strong> A credentialed push or pull must
+carry <code>remote_url</code>. The server reads the repository&#x27;s remote, refuses with 422
+<code>UNPROCESSABLE</code> when its scheme or host differs from <code>remote_url</code>, and runs git
+against <code>remote_url</code> itself, not the remote name. The helper answers only password
+prompts for that host. A planted remote url or <code>insteadOf</code> rule therefore cannot send
+the token to another host through git. This does not protect against the disclosure
+described above.</li>
+<li><strong>Mitigation.</strong> Send only short-lived tokens scoped to the one repository and the
+least permission the operation needs (read-only for clone and pull). Revoke or let
+them expire right after the call. Do not send a credential to a sandbox that runs code
+you would not give that token to. Uncredentialed push and pull by remote name are
+unchanged.</li>
+</ul></li>
+<li><strong>Volumes and snapshots.</strong> Their contents are whatever sandbox code wrote. Treat them as
+untrusted data.</li>
+</ul>
+<h2 id="4-control-plane">4. Control plane<a class="anchor" href="#4-control-plane" aria-label="Link to section: 4. Control plane">#</a></h2>
+<p><strong>API keys.</strong> A key has the form <code>sf_&lt;env&gt;_&lt;prefix8&gt;_&lt;secret43&gt;</code>, with the secret drawn from
+<code>secrets.token_urlsafe(32)</code>. The plaintext is returned once. The database stores the lookup
+prefix and <code>v1$&lt;salt&gt;$&lt;HMAC-SHA256(pepper, salt || key)&gt;</code> with a random salt per key, and
+verification is constant-time (<code>src/sandfort/auth/api_keys.py</code>). The pepper comes from
+<code>SANDFORT_API_KEY_PEPPER</code> and is empty by default, so it must be set.</p>
+<p><strong>Scopes and roles.</strong> Each key carries scopes and each route requires scopes; a missing
+scope is a 403. Human members have the role <code>admin</code>, <code>developer</code> or <code>viewer</code>, and each role
+maps to a set of scopes. Repository methods take <code>org_id</code> as a required argument, so
+queries are scoped to one organization.</p>
+<p><strong>Key rotation and cascade.</strong> A key records the key that minted it (<code>created_by</code>). Revoking a
+key (<code>DELETE /v1/api-keys/{id}</code>) revokes only that key by default. Its live descendants
+(children, grandchildren, and so on) stay valid unless the request sets <code>cascade=true</code>, in the
+JSON body or the query string. The response always lists those descendants under <code>dependants</code>
+and carries a <code>cascade</code> flag: with <code>cascade=true</code> they were just revoked, otherwise they are
+still alive. Rotate by minting the new key with the old one, then revoking the old one without
+cascade; the new key survives. If you revoke a key because it leaked, use <code>cascade=true</code>, or
+every key it minted keeps working. The cascade also runs for a key that is already revoked,
+to clean up its remaining children. Source: <code>src/sandfort/services/api_key_admin.py</code>.</p>
+<p><strong>Child expiry bound.</strong> A key minted by a key that has an <code>expires_at</code> must set its own
+<code>expires_at</code>, and it may not be later than the creator&#x27;s. Otherwise the create is refused with
+422 and <code>details.max_expires_at</code> names the bound. A child key therefore never outlives a
+creator that expires.</p>
+<p><strong>SSO.</strong> <code>POST /v1/auth/sso/exchange</code> verifies an OIDC identity token and returns a signed
+session token (<code>sfs_...</code>, HMAC-SHA-256 under <code>SANDFORT_SESSION_SECRET</code>, at least 32
+characters). Its lifetime is configurable between 60 seconds and 24 hours. Verification
+accepts RS256 only and checks signature, issuer, audience, expiry, <code>email_verified</code>, and a
+header type of <code>JWT</code>. The key set URL must be <code>https</code> (plain <code>http</code> only for localhost).
+SSO is bound to one organization (<code>SANDFORT_OIDC_ORG_ID</code>), and the user must already be a
+member.</p>
+<p><strong>SCIM.</strong> Off by default (<code>SANDFORT_SCIM_ENABLED</code>). A SCIM token (<code>sf_scim_...</code>) belongs to
+one organization, is hashed like an API key, is shown once, works only on <code>/scim/v2</code>, and
+has a <code>max_role</code> ceiling: it cannot create or promote a member above that role. An
+organization may hold at most 5 active tokens. Tokens do not expire; rotate by minting a
+new one and revoking the old one. Removing a member through SCIM does not revoke API keys
+that person created earlier.</p>
+<p><strong>Webhook secrets.</strong> A webhook signing secret (<code>whsec_...</code>) is shown once and stored encrypted
+with a Fernet key (<code>SANDFORT_WEBHOOK_SECRET_KEY</code>). Production (<code>SANDFORT_ENVIRONMENT=prod</code>)
+refuses to start without the key. Outside prod an empty key stores new secrets in plaintext.
+Details are in
+<a href="https://docs.sandfort.dev/governance">the governance page</a>, section &quot;Webhooks&quot;. The
+repository&#x27;s security policy, with the reporting
+channel and the supported versions, is <code>SECURITY.md</code> at the repository root.</p>
+<p><strong>Limits to plan around:</strong></p>
+<ul>
+<li><strong>No built-in TLS.</strong> The server runs uvicorn without TLS options (<code>deploy/Dockerfile</code>,
+<code>src/sandfort/main.py</code>), and the Kubernetes Service is <code>ClusterIP</code>. API keys, session
+tokens and sandbox data travel in clear text unless you terminate TLS in front of the API.</li>
+<li><strong><code>/metrics</code> has no authentication.</strong> The runbook says to keep it cluster-internal.</li>
+<li><strong>The node-to-node hop is not encrypted.</strong> With cross-node routing, a request for a
+sandbox on another node is forwarded over plain HTTP. The hop carries a route token
+(HMAC-SHA-256 under <code>SANDFORT_ROUTING_SECRET</code>, valid 30 seconds, no principal) that proves
+the sender is a platform node, and the owning node still authenticates the forwarded API
+key. The API key, file contents and command output cross the internal network
+unencrypted, so a private network or an encrypted overlay between nodes is a requirement.</li>
+<li><strong>No fine-grained revocation for sessions.</strong> Session tokens are stateless and valid
+until they expire; the runbook documents that a removed member&#x27;s token stops working
+because the membership check fails.</li>
+<li><strong>No SCIM groups, no per-tenant SSO.</strong> See [operations].</li>
+</ul>
+<h2 id="5-audit-and-tamper-evidence">5. Audit and tamper evidence<a class="anchor" href="#5-audit-and-tamper-evidence" aria-label="Link to section: 5. Audit and tamper evidence">#</a></h2>
+<p>The audit log is chained per organization. Each row stores <code>prev_hash</code> and
+<code>hash = HMAC-SHA256(key, prev_hash + canonical(row))</code>, where <code>key</code> is
+<code>SANDFORT_AUDIT_CHAIN_KEY</code> (at least 32 bytes) and the canonical form covers the fixed
+fields of the row (<code>src/sandfort/services/audit_chain.py</code>). With no key set the hash is plain
+<code>sha256</code> over the same input, and <code>prod</code> logs a warning at startup. Audit rows are written in the
+same transaction as the change they describe. The rule is one event per mutating call, with
+named exceptions: a meta-test checks that every non-GET route writes one row for what it did.
+A call refused after a valid key writes a <code>request.denied</code> row instead (a create or start
+refused for host capacity writes <code>sandbox.create_refused</code> or <code>sandbox.start_refused</code>, at most
+one per API key and reason per 60 seconds, the suppressed ones counted in
+<code>refusals_coalesced</code>). A call that fails after it was accepted adds a failure row
+(<code>sandbox.failed</code>, <code>sandbox.reset_failed</code>). Read (<code>GET</code>) calls write no rows, except the few
+that read sandbox content. Details are redacted: no request bodies, no stdin, long commands
+truncated, credentials dropped. A row also stores the client <code>ip</code> and <code>user_agent</code>; both are
+stored unhashed and are not part of the hash, so they are readable by anyone with <code>audit:read</code>.
+The full list of actions and the exceptions are on
+<a href="https://docs.sandfort.dev/governance">the governance page</a>, section Audit.</p>
+<p>Two admin commands work on the chain:</p>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 1" data-copy>Copy</button></div><pre class="code"><code>python -m sandfort.admin_cli audit-verify   # re-computes every chain; exit 3 if any row fails
+python -m sandfort.admin_cli audit-export   # ndjson with hash fields; --org-id, --output
+python -m sandfort.admin_cli audit-verify --head export.ndjson   # also check signed heads</code></pre></div>
+<p><code>audit-verify</code> reports a hash mismatch, a broken link or a missing hash, and exits 3 when
+there is any finding, so it can run from cron or CI.</p>
+<p>Keyed chain. With <code>SANDFORT_AUDIT_CHAIN_KEY</code> set, a database writer without the key cannot
+recompute the hashes of a rewritten history, so <code>audit-verify</code> fails on it. Rows written
+before the key was set stay unkeyed. <code>SANDFORT_AUDIT_CHAIN_ACCEPT_UNKEYED</code> (default <code>true</code>)
+lets verify accept and count them, but only before the first keyed row: an unkeyed row after
+a keyed one is a finding, and so is a chain whose newest row is unkeyed while the key is
+set, whatever the flag says. To migrate: set the key and restart, make one audited write per
+org, run <code>audit-verify</code> and check it exits 0, then set the flag to <code>false</code>. Details are in
+<a href="https://docs.sandfort.dev/governance">the governance page</a>, section Audit. Hashes read
+from the database are compared as bytes in
+constant time.</p>
+<p>Signed head. With the key set, <code>audit-export</code> ends each org&#x27;s rows with one trailer line of
+type <code>audit_head</code> (newest row id, its hash and an HMAC over them). Consumers of the export
+must skip that line. <code>audit-verify --head &lt;file&gt;</code> checks the signature and that the live
+chain still reaches the head row, which catches deleting the newest rows.</p>
+<p>Ed25519 signature. With <code>SANDFORT_AUDIT_SIGNING_KEY</code> set as well, the head also carries <code>alg</code>,
+<code>public_key</code>, <code>signed_at</code> (UTC, to the second) and <code>signature</code>. The HMAC needs the secret chain
+key; the signature needs only the public key, so an auditor with no secret can check it.
+<code>GET /v1/status</code> (no key needed) publishes <code>audit_public_key</code> and <code>audit_key_fingerprint</code>
+(first 16 hex of sha256 over the raw public key), both <code>null</code> unless heads are signed. Pin the
+fingerprint out of band, from the release notes or the operator&#x27;s own channel, not from the
+server that is being checked; the <code>public_key</code> inside a trailer is not a trust anchor.</p>
+<p><code>sandfort audit verify-head &lt;file&gt;</code> checks an export against that key. It proves that the
+signature verifies, that the file&#x27;s last row is the row the head names with the head&#x27;s hash,
+and that each row&#x27;s <code>prev_hash</code> is the hash of the row before it. It does not prove the rows
+before the last one: someone who rewrites <code>prev_hash</code> and <code>hash</code> consistently still passes,
+a row edited without touching its hashes passes, and an older genuine export still verifies
+(compare <code>signed_at</code>). Row hashes are keyed, so a client cannot recompute them. Only the
+server-side check (<code>sandfort audit verify</code>, <code>audit-verify</code>, <code>GET /v1/audit-events/verify</code>)
+proves the full chain. Details: governance page, section Audit.</p>
+<p>The log is tamper-evident, not a guarantee against edits. The key lives outside the database, so
+someone with only write access to the audit table cannot forge a consistent history. Someone who
+holds the key as well, or any writer while the key is unset (plain SHA-256), can edit rows and
+recompute the hashes, and <code>audit-verify</code> would then pass. Verification starts from the first row&#x27;s
+stored <code>prev_hash</code>, so pruning a prefix by retention is not flagged. To get stronger evidence,
+export regularly and keep the exports somewhere the database operators cannot write.</p>
+<h2 id="6-operational-hardening-checklist">6. Operational hardening checklist<a class="anchor" href="#6-operational-hardening-checklist" aria-label="Link to section: 6. Operational hardening checklist">#</a></h2>
+<p>Walk this list before a pilot.</p>
+<ul>
+<li>[ ] Run sandboxes on dedicated nodes. The Docker socket gives control of the node.</li>
+<li>[ ] Put a private network or an encrypted overlay between nodes if you use cross-node
+routing, and do not expose <code>SANDFORT_NODE_INTERNAL_URL</code> ports to clients.</li>
+<li>[ ] Terminate TLS in front of the API. The server does not.</li>
+<li>[ ] Keep <code>/metrics</code> reachable only from inside the cluster.</li>
+<li>[ ] Use a Docker storage setup that supports disk quotas (<code>overlay2</code> on XFS with
+<code>pquota</code>) and verify a create succeeds in <code>prod</code>.</li>
+<li>[ ] Run <code>deploy/host-setup.sh</code> on every sandbox node after the Docker daemon starts and on
+every boot, then set <code>SANDFORT_EGRESS_ACKNOWLEDGED=true</code>. Set <code>SF_EGRESS_PROXY</code> if you
+use egress allowlists.</li>
+<li>[ ] Decide which isolation tiers to offer and the default: map tiers to runtimes with
+<code>SANDFORT_ISOLATION_RUNTIMES</code> (for example <code>container=runc,gvisor=runsc,microvm=kata</code>)
+and pick <code>SANDFORT_DEFAULT_ISOLATION</code>. Without a map, the only tier runs on
+<code>SANDFORT_CONTAINER_RUNTIME</code> (empty is the daemon default). Also decide on the seccomp
+profile (<code>SANDFORT_SECCOMP_PROFILE_PATH</code>): the Kubernetes kit sets it, the compose file
+does not, and <code>runsc</code> does not enforce it. No runtime map or profile is set by the
+server defaults.</li>
+<li>[ ] Set <code>SANDFORT_API_KEY_PEPPER</code>, <code>SANDFORT_SESSION_SECRET</code> and the other secrets from a
+secret manager. Never use defaults.</li>
+<li>[ ] Back up the database (<code>pg_dump</code>, per the runbook) and store the pepper with it.</li>
+<li>[ ] Keep the pepper stable. Changing it invalidates every API key and every SCIM token.</li>
+<li>[ ] Run <code>audit-verify</code> on a schedule and keep <code>audit-export</code> files off the database host.</li>
+</ul>
+<h2 id="7-reporting-a-vulnerability">7. Reporting a vulnerability<a class="anchor" href="#7-reporting-a-vulnerability" aria-label="Link to section: 7. Reporting a vulnerability">#</a></h2>
+<p>Sandfort is in a design-partner phase. If you suspect a vulnerability, report it privately
+to the maintainer and do not open a public issue. <code>SECURITY.md</code> at the repository root
+states the scope and the supported versions (the latest <code>v0.1.0-beta.N</code> tag). Send the report
+by email to <code>office@sandfort.dev</code>, the public contact address, with &quot;Security&quot; in the subject
+and no details in any public place. If you are a design partner, you can use the security or
+support contact in your agreement instead. Once the repository is public, GitHub private
+vulnerability reporting is an additional channel. There is no published key for
+encrypted reports. Sandfort has no certifications: no SOC 2 report, no ISO 27001
+certificate and no third-party penetration test.</p>
+<p>[isolation-tiers]: https://docs.sandfort.dev/isolation-tiers.html
+[operations]: https://docs.sandfort.dev/operations.html</p>
+</article>
+</div></div>
+</main>
+<div class="sr" id="copy-status" role="status" aria-live="polite" aria-atomic="true"></div>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+
+</body>
+</html>

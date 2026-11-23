@@ -1,0 +1,119 @@
+# Non-secret settings for the single sandbox-node pod (role "all"). Every name below is read
+# by Settings.from_env in src/sandfort/config.py. SANDFORT_ROLE and SANDFORT_NODE_ID are set
+# in api.yaml.
+#
+# Secrets live in the sandfort-secrets Secret, never here:
+#   SANDFORT_API_KEY_PEPPER, SANDFORT_SESSION_SECRET, SANDFORT_DATABASE_URL,
+#   SANDFORT_WEBHOOK_SECRET_KEY (a Fernet key; generate it with
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())").
+# Also put SANDFORT_AUDIT_CHAIN_KEY there (at least 32 bytes, for example openssl rand -hex 32):
+# prod starts without it but logs a warning and keeps an unkeyed audit chain. Keep it stable.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandfort-config
+  namespace: sandfort
+data:
+  # -- environment ---------------------------------------------------------------------
+  # SANDFORT_ENVIRONMENT is the setting that switches on the prod startup guard (isolation
+  # self-check with the egress probe, host capacity, webhook secret key, https-only webhooks;
+  # see "Production start gate" in docs/operations.md). SANDFORT_ENV
+  # is a separate label field that the server does not branch on; it is kept for continuity.
+  SANDFORT_ENV: "prod"
+  SANDFORT_ENVIRONMENT: "prod"
+  SANDFORT_HOST: "0.0.0.0"
+  SANDFORT_PORT: "8000"
+  SANDFORT_LOG_LEVEL: "INFO"
+  SANDFORT_DATABASE_POOL_SIZE: "10"
+  SANDFORT_DATABASE_MAX_OVERFLOW: "20"
+
+  # -- host egress ---------------------------------------------------------------------
+  # Run deploy/host-setup.sh on the sandbox node (and again after each node reboot or iptables
+  # flush). In prod the egress probe is the gate: at startup a canary container on each
+  # managed network tries to reach targets it must not, and any success refuses the start.
+  # The probe is on in prod by default and needs SANDFORT_EGRESS_PROBE_IMAGE (default
+  # alpine:3.20, with sh, nc and timeout) on the node.
+  # SANDFORT_EGRESS_ACKNOWLEDGED is only an override that turns a probe refusal into a logged
+  # warning (and, with the probe off, the old statement that the host script ran). Setting it
+  # while the rules are missing leaves sandboxes able to reach cloud metadata and private
+  # networks. Deliberately not preset: add SANDFORT_EGRESS_ACKNOWLEDGED: "true" yourself only
+  # knowingly.
+
+  # -- isolation tiers -----------------------------------------------------------------
+  # Tier -> Docker runtime. "runsc" is gVisor and must be registered with the node's Docker
+  # daemon. The container tier is mapped to runc explicitly, so a daemon default-runtime of
+  # runsc (needed by the build-runtime gate below) cannot turn it into a second gVisor tier.
+  # Add microvm=kata only on a node where Kata Containers is installed and KVM is available;
+  # it is not part of this kit.
+  #
+  # Two prod gates look at this map and refuse the start with the values below, until you
+  # choose how to satisfy them (nothing unsafe is preset; see "Production start gate" in
+  # docs/operations.md):
+  #  - Root on runc: the container tier runs on runc, where container root is host root unless
+  #    the daemon remaps user namespaces. Either enable remap in the node setup
+  #    (deploy/node-setup.sh --userns-remap, a maintenance window), or knowingly add
+  #    SANDFORT_ALLOW_ROOT_SHARED_KERNEL: "true". This kit does not preset either.
+  #  - Build runtime: tenant image builds run on the daemon default runtime. Set it to runsc
+  #    (deploy/node-setup.sh --default-runtime-runsc), or knowingly add
+  #    SANDFORT_REQUIRE_BUILD_RUNTIME: "false".
+  SANDFORT_ISOLATION_RUNTIMES: "container=runc,gvisor=runsc"
+  SANDFORT_DEFAULT_ISOLATION: "gvisor"
+  # Public resolvers written into gVisor sandboxes (the default). Change them to use an
+  # internal resolver; the sandbox bridge cannot reach Docker's embedded DNS under gVisor.
+  SANDFORT_GVISOR_DNS: "1.1.1.1,8.8.8.8"
+  # Seccomp profile (passed by the daemon, not applied by runsc). Mounted from the
+  # sandfort-seccomp ConfigMap that kustomize generates from deploy/seccomp.json. The server
+  # reads the file at startup, so a bad path fails the start.
+  SANDFORT_SECCOMP_PROFILE_PATH: "/etc/sandfort/seccomp/seccomp.json"
+  # Per-sandbox disk size needs Docker's overlay2 on XFS with project quotas. Prod enforces it
+  # regardless; the explicit value documents the requirement.
+  SANDFORT_ENFORCE_DISK_QUOTA: "true"
+  # Uncomment to give every create that names no network policy block_all.
+  # SANDFORT_DEFAULT_BLOCK_NETWORK: "true"
+
+  # -- node capacity (conservative example for an 8 vCPU / 16 GiB node: tune it) -------------
+  # Sandboxes are not pod resources; these admission limits are what stop the node from being
+  # oversubscribed. Leave headroom for the OS, Docker, gVisor and this pod (see api.yaml).
+  # SANDFORT_HOST_CAPACITY_CPU_MILLICORES and SANDFORT_HOST_CAPACITY_MEMORY_MIB are required
+  # in prod: with either at zero the server refuses to start. The values below are
+  # placeholders for an 8 vCPU / 16 GiB node; replace them with your node's figures.
+  # SANDFORT_ALLOW_UNBOUNDED_HOST: "true" starts without a host-wide limit; it is not preset.
+  SANDFORT_NODE_MAX_SANDBOXES: "20"
+  SANDFORT_HOST_CAPACITY_CPU_MILLICORES: "6000"
+  SANDFORT_HOST_CAPACITY_MEMORY_MIB: "12288"
+  SANDFORT_HOST_OVERCOMMIT_FACTOR: "1.0"
+  SANDFORT_MAX_SANDBOX_CPU_MILLICORES: "2000"
+  SANDFORT_MAX_SANDBOX_MEMORY_MIB: "4096"
+  SANDFORT_MAX_SANDBOX_DISK_GIB: "10"
+
+  # -- jobs mode -----------------------------------------------------------------------
+  # Left at the default (off): lifecycle commands run inline. On one node there is no
+  # placement to decide, and jobs mode does not support some features (reset, egress
+  # allowlists, volume mounts on create; see the notes in src/sandfort/services/). Multi-node
+  # is not a supported topology of this kit. Do not set SANDFORT_SANDBOX_JOBS_ENABLED here
+  # without reading docs/operations.md first.
+
+  # -- preview proxy -------------------------------------------------------------------
+  # The proxy runs inside the same process on SANDFORT_PROXY_PORT (host-networked, so it can
+  # reach sandbox ports). The domain's first label must be "preview"; sandboxes are served at
+  # <port>-<sandbox-id>.<domain>. Point a wildcard DNS record and certificate at the ingress
+  # (see ingress.yaml). Replace the placeholder values.
+  SANDFORT_PROXY_ENABLED: "true"
+  SANDFORT_PROXY_PORT: "8001"
+  SANDFORT_PREVIEW_DOMAIN: "preview.sandfort.example.com"
+  SANDFORT_PUBLIC_PREVIEW_URL: "https://preview.sandfort.example.com"
+  SANDFORT_PUBLIC_API_URL: "https://sandfort.example.com"
+
+  # -- ingress -------------------------------------------------------------------------
+  # uvicorn trusts X-Forwarded-Proto/For only from these addresses. Without it, websocket URLs
+  # come out as ws:// instead of wss://. Use the address(es) the ingress controller connects
+  # from: usually your pod CIDR (below is a placeholder), or the controller node IPs if it is
+  # host-networked. CIDR ranges are accepted. Avoid "*": with hostNetwork the port is exposed
+  # on the node and a NetworkPolicy may not protect it (see networkpolicy.yaml).
+  SANDFORT_FORWARDED_ALLOW_IPS: "10.244.0.0/16"
+
+  # -- webhooks ------------------------------------------------------------------------
+  # Delivery over https only. The server forces this on in prod; the explicit value documents
+  # it. The Fernet key itself (SANDFORT_WEBHOOK_SECRET_KEY) comes from the Secret, not here.
+  SANDFORT_WEBHOOK_REQUIRE_HTTPS: "true"
+  SANDFORT_WEBHOOK_ALLOW_PRIVATE_NETWORKS: "false"

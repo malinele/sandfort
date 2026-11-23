@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hosted beta: terms - Sandfort docs</title>
+<meta name="description" content="These are the terms of the Sandfort hosted beta. They were set by the operator on 2026-11-08, amended on 2026-11-23 (operator identification in section 7, the personal-data rule in section 4 and the...">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<link rel="canonical" href="https://docs.sandfort.dev/beta-terms">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms" aria-current="page">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<main id="main">
+<div class="frame"><div class="doc has-toc">
+<details class="toc"><summary>On this page</summary><ul><li><a href="#1-pricing">1. Pricing</a></li><li><a href="#2-availability">2. Availability</a></li><li><a href="#3-support">3. Support</a></li><li><a href="#4-data">4. Data</a></li><li><a href="#5-releases">5. Releases</a></li><li><a href="#6-isolation">6. Isolation</a></li><li><a href="#7-operator">7. Operator</a></li><li><a href="#8-acceptable-use">8. Acceptable use</a></li><li><a href="#9-operator-access">9. Operator access</a></li><li><a href="#10-personal-data">10. Personal data</a></li><li><a href="#11-no-warranty">11. No warranty</a></li></ul></details>
+<article class="prose">
+<h1 id="hosted-beta-terms">Hosted beta: terms<a class="anchor" href="#hosted-beta-terms" aria-label="Link to section: Hosted beta: terms">#</a></h1>
+<p>These are the terms of the Sandfort hosted beta. They were set by the operator on 2026-11-08,
+amended on 2026-11-23 (operator identification in section 7, the personal-data rule in
+section 4 and the privacy notice in section 10), and
+apply to every organisation that uses the hosted beta: design partners and clients who request
+access on their own. The beta is a shared evaluation instance at
+<code>https://api.sandfort.dev</code>, invite-only, run by the maintainer. The beta is served only at
+<code>sandfort.dev</code> (<code>api.sandfort.dev</code>, <code>docs.sandfort.dev</code>, <code>sandfort.dev</code> and
+<code>*.preview.sandfort.dev</code>). A future change of an endpoint gets at least 30 days&#x27; notice via the
+status notice and the support address (<code>office@sandfort.dev</code>). In production
+Sandfort runs self-hosted on your own infrastructure. How to connect and use the API is in
+the <a href="https://docs.sandfort.dev/guide">connect guide</a>.</p>
+<h2 id="1-pricing">1. Pricing<a class="anchor" href="#1-pricing" aria-label="Link to section: 1. Pricing">#</a></h2>
+<p>The hosted beta is free of charge for the whole beta period. Paid plans come after the beta, once
+the market is understood. No prices are quoted in this document or anywhere else in the beta
+material.</p>
+<h2 id="2-availability">2. Availability<a class="anchor" href="#2-availability" aria-label="Link to section: 2. Availability">#</a></h2>
+<ul>
+<li>There is no uptime guarantee during the beta. The beta runs on one VM in one region and is
+operated on a best-effort basis.</li>
+<li>Planned deploys are announced through the status notice (<code>notice</code> in the answer of
+<code>GET /v1/status</code>, which needs no API key) at least two minutes before the API restarts.</li>
+<li>A restart takes under a minute. Running sandboxes keep running through it.</li>
+<li>The running build is identified by <code>build_sha</code> in the same <code>GET /v1/status</code> answer. A recent
+<code>started_at</code> in that answer shows that the server restarted.</li>
+<li>An unplanned restart or outage has no notice until the maintainer writes one.</li>
+</ul>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 1" data-copy>Copy</button></div><pre class="code"><code>curl -s https://api.sandfort.dev/v1/status</code></pre></div>
+<h2 id="3-support">3. Support<a class="anchor" href="#3-support" aria-label="Link to section: 3. Support">#</a></h2>
+<ul>
+<li>The support contact for every beta organisation is <code>office@sandfort.dev</code>.</li>
+<li>The response target is the next business day (Monday to Friday, CET). It is a target on a
+best-effort basis, not a guarantee.</li>
+<li>Include the <code>request_id</code> of the failing call. Every error answer carries it as
+<code>error.request_id</code>, and every response has it in the <code>x-request-id</code> header. You cannot read the
+server logs; the maintainer finds the call by that id. Also send the time, the sandbox id, what
+you expected and what happened.</li>
+</ul>
+<h2 id="4-data">4. Data<a class="anchor" href="#4-data" aria-label="Link to section: 4. Data">#</a></h2>
+<ul>
+<li>Sandboxes are ephemeral: nothing in a sandbox survives its deletion, and a stopped sandbox is
+not guaranteed to be restartable after a host change. Do not keep state in a sandbox you
+cannot recreate. Until it is deleted, a stopped sandbox keeps its files and its environment
+values.</li>
+<li><code>auto_delete_minutes</code> defaults to never (<code>-1</code>), and <code>auto_stop_minutes</code> defaults to 15. Set
+<code>auto_delete_minutes</code> (and <code>auto_stop_minutes</code>) on every sandbox you do not want to keep, so
+stopped sandboxes do not pile up.</li>
+<li>Snapshots and volumes persist until you delete them.</li>
+<li>An organisation&#x27;s data is deleted on request within five business days. Audit events are
+deleted together with the organisation&#x27;s data, so export them first with
+<code>GET /v1/audit-events/export</code>. Audit events on the beta are not pruned (the retention setting
+is unset, which means off); they stay until the organisation&#x27;s data is deleted on request.</li>
+<li>Image build logs echo the build steps, including <code>ENV</code> values, to every API key of the
+organisation, so image specs must not carry secrets.</li>
+<li>The hash chain of the audit events is verifiable with <code>GET /v1/audit-events/verify</code>. Export and
+verify need the <code>audit:read</code> scope and an organisation-wide key (a key with <code>sandbox_labels</code>
+gets 403).</li>
+<li>Do not process production secrets or sensitive data in the beta.</li>
+<li>Do not put personal data of any person into sandboxes, files, snapshots, volumes, image specs
+or environment values; use synthetic data instead. The beta is an evaluation instance and
+comes with no data-processing agreement, so content you run on it must not contain personal
+data. The personal data the operator itself keeps about you is listed in section 10.</li>
+</ul>
+<h2 id="5-releases">5. Releases<a class="anchor" href="#5-releases" aria-label="Link to section: 5. Releases">#</a></h2>
+<ul>
+<li>Every deployed build is tagged <code>v0.1.0-beta.&lt;round&gt;</code> on the exact commit. No document in the
+repository names the current tag, because a file inside the tagged commit cannot name its own
+tag and would always be one deploy behind. Read the deployed build from <code>GET /v1/status</code> as
+<code>build_sha</code>. It must equal the commit of the newest <code>v0.1.0-beta.&lt;round&gt;</code> tag (peel annotated
+tags to their commit with <code>git rev-parse &lt;tag&gt;^{commit}</code>). The release note of your delivery,
+the plain-text file <code>RELEASE.txt</code>, names the same tag and commit.</li>
+<li>Without a repository checkout, compare <code>build_sha</code> from <code>GET /v1/status</code> with the commit named
+in <code>RELEASE.txt</code>, the release note delivered next to your wheels; the tag-peel instruction
+above is for readers who have a checkout.</li>
+<li>From <code>v0.1.0-beta.40</code> on, the SDK reports its own build:
+<code>import sandfort_sdk; sandfort_sdk.build_info()</code> returns the commit, the tag and the build time
+of the wheel (<code>commit</code>, <code>tag</code>, <code>built_at</code>). All three are <code>None</code> for a source checkout without
+the build file.</li>
+<li>No container image is published yet. The API is built from the tagged commit (compose on the
+host, <code>deploy/compose.prod.yml</code>).</li>
+<li>The SDK and the CLI ship as wheels built from the same tag.</li>
+<li>The wheels come with two more files: <code>SHA256SUMS</code> (the SHA-256 checksums of the files you
+receive) and a plain-text release note, <code>RELEASE.txt</code>. The note names the commit and the build
+time; from <code>v0.1.0-beta.38</code> on it also names the tag. Verify the files before you install
+them, in the directory that holds them: <code>shasum -a 256 -c SHA256SUMS</code>. Every line must print
+<code>OK</code>.</li>
+</ul>
+<h2 id="6-isolation">6. Isolation<a class="anchor" href="#6-isolation" aria-label="Link to section: 6. Isolation">#</a></h2>
+<ul>
+<li>Isolation is chosen per sandbox with the <code>isolation</code> field of <code>POST /v1/sandboxes</code>. The tiers
+are <code>container</code>, <code>gvisor</code> and <code>microvm</code>; <code>GET /v1/isolation</code> returns the default and the tiers
+available on the instance.</li>
+<li><code>gvisor</code> is the default isolation tier of the beta (the deployment sets
+<code>SANDFORT_DEFAULT_ISOLATION=gvisor</code>). A create that names no tier gets <code>gvisor</code>.</li>
+<li>The <code>microvm</code> tier (Kata Containers on the beta VM&#x27;s nested KVM) is the hardware-virtualization
+tier for evaluation. If <code>GET /v1/isolation</code> does not list it for your organisation, ask the
+maintainer.</li>
+<li>The Firecracker driver in the repository is a skeleton tested against a mock agent. It is not a
+tier and is not offered on the beta.</li>
+<li>The limits of each tier (shared host kernel on <code>container</code>, a user-space kernel on <code>gvisor</code>, a
+virtualized host for <code>microvm</code>) are on the
+<a href="https://docs.sandfort.dev/isolation-tiers">isolation tiers page</a>. The beta is a shared
+evaluation instance either way, so do not run your highest-risk code on it.</li>
+</ul>
+<h2 id="7-operator">7. Operator<a class="anchor" href="#7-operator" aria-label="Link to section: 7. Operator">#</a></h2>
+<ul>
+<li>The operator of the hosted beta is Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1,
+Beograd (Savski Venac), Serbia, registered with the Serbian Business Registers Agency (APR),
+company registration number (matični broj) 21466352, tax identification number (PIB)
+111345107.</li>
+<li>The contact for support, security reports and requests under these terms is
+<code>office@sandfort.dev</code>.</li>
+<li>The copyright in the Sandfort code stays with its author, Nenad Mitrovic, as stated in
+<code>LICENSE.md</code>. The operator runs the hosted instance; it does not own the code by running it.</li>
+</ul>
+<h2 id="8-acceptable-use">8. Acceptable use<a class="anchor" href="#8-acceptable-use" aria-label="Link to section: 8. Acceptable use">#</a></h2>
+<ul>
+<li>Run only code and data you are allowed to run.</li>
+<li>Do not use the instance to attack systems you do not own or have no permission to test, to
+scan networks, to mine cryptocurrency, to send spam, or to host or distribute illegal content.</li>
+<li>The beta is a shared instance. The operator may revoke a key, stop sandboxes or suspend an
+organisation at once when its use endangers the instance or other organisations, and tells you
+at the contact address you gave.</li>
+<li>Sandboxes have open outbound network access by default. Use <code>egress_allowlist</code> or
+<code>block_network</code> when your code does not need the network.</li>
+</ul>
+<h2 id="9-operator-access">9. Operator access<a class="anchor" href="#9-operator-access" aria-label="Link to section: 9. Operator access">#</a></h2>
+<ul>
+<li>The operator holds an organisation-wide key for every organisation on the beta. With it the
+operator can read and manage the organisation&#x27;s sandboxes, files, audit events and keys.</li>
+<li>The operator uses that access to run the beta: quota changes, support you ask for, abuse
+handling under section 8 and offboarding. Audit events record calls made with that key like
+any other call.</li>
+<li>Your own keys do not carry this access. A key issued to you cannot change the organisation&#x27;s
+quota.</li>
+</ul>
+<h2 id="10-personal-data">10. Personal data<a class="anchor" href="#10-personal-data" aria-label="Link to section: 10. Personal data">#</a></h2>
+<p>This section is the privacy notice for the hosted beta under the Serbian data protection act
+(Zakon o zaštiti podataka o ličnosti, &quot;ZZPL&quot;).</p>
+<ul>
+<li>Controller: the operator named in section 7, Polygon Consulting d.o.o. Beograd-Savski Venac,
+Kozara 1, Beograd (Savski Venac), Serbia (matični broj 21466352, PIB 111345107). Privacy
+requests go to <code>office@sandfort.dev</code>.</li>
+<li>What is kept: the contact details you send (name, work email, organisation name); the name and
+email of members your admin adds through the members API or SSO; and the IP address and user
+agent of every API call, which are recorded in your organisation&#x27;s audit events and in the
+server logs on the beta VM.</li>
+<li>Purpose and legal basis: the operator uses this data to run the beta, to answer you, and for
+the security and abuse handling in section 8. The legal basis is the operator&#x27;s legitimate
+interest (ZZPL čl. 12 st. 1 t. 6) in operating and securing a shared B2B evaluation service;
+you can object to that processing (see rights below). Giving contact details is a condition
+for getting a beta key.</li>
+<li>Recipients: the hosting provider Hetzner Online GmbH (the beta VM runs in Finland, in the EU)
+and Google (Google Workspace handles mail to and from <code>office@sandfort.dev</code>). The operator
+makes no other disclosure.</li>
+<li>Transfer abroad: the data is stored on the beta VM in Finland. EU member states count as
+adequate destinations under Serbian law (ZZPL čl. 64), so the transfer needs no separate
+approval.</li>
+<li>Retention: contact details and audit events are kept for as long as the organisation is on
+the beta (section 4). Server logs stay on the beta VM, are not archived anywhere else, and
+are gone at the latest when the beta VM is rebuilt or the beta ends.</li>
+<li>Your rights under ZZPL čl. 26-37: access, rectification, erasure, restriction, objection to
+legitimate-interest processing, and portability. Write to <code>office@sandfort.dev</code>; the operator
+answers within 30 days, in practice within five business days. You can also complain to the
+Serbian supervisory authority, the Poverenik za informacije od javnog značaja i zaštitu
+podataka o ličnosti (<code>www.poverenik.rs</code>).</li>
+<li>On request the operator deletes your contact details and your organisation&#x27;s data (section 4).
+Automatic deletion of an organisation&#x27;s data waits for an operator command that does not exist
+yet (<code>delete-org</code>). Until it does, the operator deletes the data on request by hand: it revokes
+the keys, deletes sandboxes, snapshots and volumes, and removes the organisation as far as the
+audit hash chain allows. Export your audit events first (section 4).</li>
+</ul>
+<h2 id="11-no-warranty">11. No warranty<a class="anchor" href="#11-no-warranty" aria-label="Link to section: 11. No warranty">#</a></h2>
+<ul>
+<li>The hosted beta is provided as is, without warranty of any kind, express or implied, and
+without any service level.</li>
+<li>To the extent the law allows, the operator is not liable for loss of data, downtime or any
+other loss that comes from using the beta.</li>
+<li>The SDKs and the CLI are licensed under Apache-2.0 and the server under FSL-1.1-Apache-2.0.
+Those licenses cover the software, not this hosted service, and this section does not rely on
+them.</li>
+</ul>
+</article>
+</div></div>
+</main>
+<div class="sr" id="copy-status" role="status" aria-live="polite" aria-atomic="true"></div>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+
+</body>
+</html>

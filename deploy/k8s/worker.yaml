@@ -1,0 +1,16 @@
+# Intentionally empty, and NOT listed in kustomization.yaml.
+#
+# The supported topology is one sandbox node running one pod with SANDFORT_ROLE=all, which
+# already runs the background workers (reconciler, job runner, autostop, GC, webhook
+# dispatcher, metering) next to the API (see api.yaml).
+#
+# A separate "worker" role (headless, serving only /healthz and /readyz, see
+# docs/operations.md) does not make sense here:
+#   - It needs the same Docker daemon, so it would also have to run host-networked on the
+#     same node, and it serves its health endpoints on SANDFORT_PORT (8000). That is the
+#     port the role "all" pod already binds on the node, so the two pods would collide.
+#   - It adds nothing on one node: a role "all" process runs the same workers.
+#   - Two processes would also run reconcile and GC passes against one Docker daemon.
+#
+# The api/worker split is for the multi-node layout in docs/operations.md ("Multi-node"),
+# which this kit does not cover.

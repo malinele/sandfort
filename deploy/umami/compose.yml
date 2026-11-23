@@ -1,0 +1,58 @@
+# Umami web analytics for sandfort.dev and docs.sandfort.dev (self-hosted, no cookies, no PII).
+# Public address: https://umami.sandfort.dev (same host as the docs and landing).
+#
+# Usage (see README.md in this directory):
+#   cp .env.example .env     # then replace every CHANGE_ME value
+#   docker compose up -d
+#
+# Umami listens on 127.0.0.1:3000 only (UMAMI_BIND changes the address, see README.md section 8).
+# Put a reverse proxy in front of it and terminate TLS there; do not publish port 3000 on a
+# public interface.
+#
+# Image pin: Umami v3.5.0 (GitHub release 2026-11-12). The registry (ghcr.io) publishes no
+# versioned tag after `postgresql-3.0.0` (tags checked 2026-11-22: `postgresql-3`, `-3.0`,
+# `-3.0.0`, `-latest`), so the image is pinned by digest. The digest is the one that
+# `postgresql-latest` pointed to on 2026-11-22; that image was built 2026-11-12 02:59 UTC, two
+# minutes after the v3.5.0 release. The image carries no version label, so the link to v3.5.0
+# was first inferred from those timestamps and then verified on the host 2026-11-22:
+# `package.json` in the running container says "version": "3.5.0". To move to a newer release,
+# resolve the new digest (`docker buildx imagetools inspect ghcr.io/umami-software/umami:postgresql-latest`)
+# and replace it here; do not use the bare `postgresql-latest` tag.
+services:
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest@sha256:b64f40400d77bcadd39cf5c62a1e368c99524ca442024f96e1133355a19a5dbc
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${UMAMI_BIND:-127.0.0.1}:${UMAMI_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_TYPE: postgresql
+      APP_SECRET: ${APP_SECRET}
+      DISABLE_TELEMETRY: "1"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/heartbeat || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - umami-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  umami-db-data:

@@ -1,0 +1,99 @@
+# Example alerts for the Prometheus Operator (CRD monitoring.coreos.com/v1). Remove this file
+# from kustomization.yaml if the CRD is not installed. Your Prometheus `ruleSelector` may
+# require extra labels on this object (for example `release: <your-release>`): add them.
+#
+# Every metric below is in the stable catalog of src/sandfort/observability/metrics.py:
+# sandfort_http_requests_total{method,route,status}, sandfort_http_request_seconds (histogram,
+# {method,route}), sandfort_sandbox_creates_total{outcome} and sandfort_jobs_queue_depth.
+# `route` is the route template, so /readyz appears as route="/readyz". Thresholds are
+# starting points: tune them against your own traffic.
+#
+# Scraping is not part of this kit: point a ServiceMonitor or scrape job at the sandfort-api
+# Service, port `http`, path /metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sandfort
+  namespace: sandfort
+  labels:
+    app: sandfort
+spec:
+  groups:
+    - name: sandfort.availability
+      rules:
+        # /readyz answers 503 when the database or the Docker driver is unreachable.
+        - alert: SandfortReadyzFailing
+          expr: |
+            sum(rate(sandfort_http_requests_total{route="/readyz", status=~"5.."}[5m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Sandfort /readyz is failing
+            description: >-
+              /readyz has returned 5xx for 5 minutes. The failing component (database or
+              driver) is in the response details and in the pod logs.
+        # The series disappear when the pod is down or not scraped.
+        - alert: SandfortMetricsAbsent
+          expr: absent(sandfort_http_requests_total)
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: No Sandfort metrics
+            description: No sandfort_http_requests_total series for 10 minutes (pod down or not scraped).
+    - name: sandfort.requests
+      rules:
+        # Share of 5xx among all requests, ignoring the probe route.
+        - alert: SandfortHigh5xxRate
+          expr: |
+            sum(rate(sandfort_http_requests_total{route!="/readyz", status=~"5.."}[5m]))
+              /
+            sum(rate(sandfort_http_requests_total{route!="/readyz"}[5m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Sandfort 5xx rate above 5%
+            description: More than 5% of API requests returned 5xx over the last 10 minutes.
+        # Streaming and long exec routes can dominate the tail. Exclude them with a route
+        # regex (route!~"...") once you know which templates your clients use.
+        - alert: SandfortRequestLatencyP95High
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(sandfort_http_request_seconds_bucket{route!~"/healthz|/readyz|/metrics"}[5m])
+              )
+            ) > 2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Sandfort request latency p95 above 2 s
+            description: p95 request duration has been above 2 seconds for 10 minutes.
+    - name: sandfort.sandboxes
+      rules:
+        # The gauge counts jobs in the queued state. The default single-node configuration runs
+        # lifecycle commands inline, so it stays 0 there; this alert matters when
+        # SANDFORT_SANDBOX_JOBS_ENABLED=true. "Growing" = never drained for 10 minutes.
+        - alert: SandfortJobsQueueGrowing
+          expr: min_over_time(sandfort_jobs_queue_depth[10m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Sandfort job queue is not draining
+            description: At least 10 jobs have been queued continuously for 10 minutes.
+        # outcome is ok, error or cancelled (driver create calls).
+        - alert: SandfortSandboxCreateFailures
+          expr: |
+            sum(increase(sandfort_sandbox_creates_total{outcome="error"}[10m])) >= 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Sandbox creates are failing
+            description: >-
+              Three or more sandbox provisioning attempts failed in 10 minutes. Check the pod
+              logs, the Docker daemon, the gVisor runtime and the disk quota on the node.

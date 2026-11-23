@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Isolation tiers - Sandfort docs</title>
+<meta name="description" content="Sandfort runs untrusted, often AI-generated code. Plain containers share the host kernel, so a kernel exploit inside one sandbox reaches the host. To let you pick a boundary per workload, Sandfort...">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<link rel="canonical" href="https://docs.sandfort.dev/isolation-tiers">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers" aria-current="page">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<main id="main">
+<div class="frame"><div class="doc has-toc">
+<details class="toc"><summary>On this page</summary><ul><li><a href="#api-and-configuration">API and configuration</a></li><li><a href="#gvisor-verified-behavior">gVisor: verified behavior</a></li><li><a href="#disk-size">Disk size</a></li><li><a href="#overhead-gvisor-compared-with-container">Overhead: gvisor compared with container</a></li><li><a href="#microvm-kata-verified-behavior">microVM (Kata): verified behavior</a></li><li><a href="#network-modes-and-dns-per-tier">Network modes and DNS, per tier</a></li><li><a href="#exec-results-output-cap-and-untrusted-submissions">Exec results, output cap and untrusted submissions</a></li><li><a href="#snapshots-and-isolation-tier">Snapshots and isolation tier</a></li><li><a href="#resize">Resize</a></li><li><a href="#rollout">Rollout</a></li><li><a href="#beta-status-image-builds-and-user-namespace-remapping">Beta status: image builds and user-namespace remapping</a></li></ul></details>
+<article class="prose">
+<h1 id="isolation-tiers">Isolation tiers<a class="anchor" href="#isolation-tiers" aria-label="Link to section: Isolation tiers">#</a></h1>
+<p>Sandfort runs untrusted, often AI-generated code. Plain containers share the host kernel, so
+a kernel exploit inside one sandbox reaches the host. To let you pick a boundary per workload,
+Sandfort offers three tiers, chosen per sandbox, behind the same API.</p>
+<div class="tbl-wrap" role="region" aria-label="Table: Isolation tiers" tabindex="0"><table><thead><tr><th scope="col">Tier</th><th scope="col">Runtime</th><th scope="col">Boundary</th><th scope="col">Trade-off</th></tr></thead><tbody><tr><td>container</td><td>runc</td><td>Linux namespaces, cgroups, seccomp, a reduced capability set (below)</td><td>Fastest, especially for spawn-heavy and small-file-heavy work; shares the host kernel</td></tr><tr><td>gvisor</td><td>runsc (gVisor)</td><td>A user-space kernel handles the sandbox&#x27;s system calls; the host kernel sees a small, filtered surface (a bug in gVisor itself can still expose it)</td><td>About the same for create, exec, CPU-bound work and file transfer; several times slower (about 3x to about 9x measured, more for fork-heavy shell loops) for spawn-heavy and small-file-heavy work (see Overhead); limits behave differently</td></tr><tr><td>microvm</td><td>kata (Kata Containers 4.3.1, Rust runtime, QEMU, on KVM)</td><td>Hardware virtualization: each sandbox has its own guest kernel (on the beta: Kata on nested KVM) in a lightweight VM</td><td>Create to started about 4 s (about 8-9 s with <code>block_network=True</code>), start about 3.7 s (measured on the beta); more memory per sandbox; needs KVM</td></tr></tbody></table></div>
+<p>Capabilities (the same set on all three tiers, because the driver applies one <code>cap_drop</code> and
+<code>cap_add</code> to every container): all capabilities are dropped except <code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>, <code>KILL</code>, <code>SETGID</code>, <code>SETUID</code> and <code>NET_BIND_SERVICE</code>.</p>
+<p>Boundary: gVisor is a user-space kernel, not a hardware boundary. A bug in gVisor itself could
+still expose the host kernel. That is why the <code>microvm</code> tier (hardware virtualization) exists
+for code that <code>container</code> or <code>gvisor</code> isolation does not suit; on the beta it is nested KVM and
+the beta is still not the place for your highest-risk code.</p>
+<h2 id="api-and-configuration">API and configuration<a class="anchor" href="#api-and-configuration" aria-label="Link to section: API and configuration">#</a></h2>
+<ul>
+<li>Create takes an optional <code>isolation</code> (<code>container</code>, <code>gvisor</code>, <code>microvm</code>); omitted means the
+deployment default; an unavailable tier is a 422 that lists the available tiers.</li>
+<li>Every sandbox response carries <code>isolation</code>; <code>GET /v1/isolation</code> returns
+<code>{&quot;default&quot;: ..., &quot;available&quot;: [...]}</code>.</li>
+<li>A deployment maps tiers to Docker runtimes with
+<code>SANDFORT_ISOLATION_RUNTIMES=container=,gvisor=runsc,microvm=kata</code> (an empty runtime is the
+daemon default) and picks the default with <code>SANDFORT_DEFAULT_ISOLATION</code>. With no map, the
+only tier is the default tier on <code>SANDFORT_CONTAINER_RUNTIME</code>, as before.</li>
+<li>An empty runtime means whatever the daemon default is. If the daemon default runtime is
+gVisor (<code>default-runtime</code> set to <code>runsc</code>, which keeps image builds off plain runc), an
+empty <code>container=</code> would run the container tier on gVisor. Map the container tier
+explicitly to runc in that case: <code>container=runc,gvisor=runsc,microvm=kata</code>.</li>
+<li>If the node enables user-namespace remapping (<code>userns-remap</code>, a daemon-wide setting), the
+<code>microvm</code> tier runs with the host user namespace, because Kata cannot run in a remapped
+one; the other tiers run remapped. The Docker driver sets that per-container opt-out
+(<code>userns_mode=&quot;host&quot;</code>) for the tiers listed in <code>SANDFORT_USERNS_HOST_TIERS</code>, which
+defaults to <code>microvm</code>; a blank value removes the opt-out. With a single runtime and no tier
+map, a Kata runtime sits on the <code>container</code> tier, which is not in the default list: set
+<code>SANDFORT_USERNS_HOST_TIERS=container</code> there. <code>SANDFORT_REQUIRE_USERNS_REMAP</code> (default
+<code>false</code>) makes <code>prod</code> refuse to start without remapping; the default-runtime finding is
+advisory only ([operations], &quot;Daemon settings beyond node-setup.sh&quot;).</li>
+<li>The tier is stored as a reserved internal label; sandboxes created before tiers existed
+report the deployment default.</li>
+</ul>
+<h2 id="gvisor-verified-behavior">gVisor: verified behavior<a class="anchor" href="#gvisor-verified-behavior" aria-label="Link to section: gVisor: verified behavior">#</a></h2>
+<p>Verified on a Docker daemon with the same gVisor build (release-20261102.0) and runtime
+arguments (<code>--overlay2=none --file-access=shared</code>) as the beta node: the sandbox sees kernel
+<code>4.19.0-gvisor</code>; exec, timeouts and the process-tree kill work; file copy in and out and
+snapshots work; <code>--network none</code> blocks all traffic; the docker test suite passes. The
+gVisor-specific differences, each handled or documented:</p>
+<ol>
+<li>If <code>/tmp</code> is empty when a gVisor sandbox starts, gVisor mounts a private in-memory tmpfs
+there that Docker&#x27;s archive API cannot see, so file transfer under <code>/tmp</code> would not work.
+Sandfort therefore puts an empty marker file, <code>/tmp/.sandfort-keep</code>, before every gVisor
+start; gVisor then keeps <code>/tmp</code> in the root filesystem. <code>/tmp</code> is covered by the disk quota
+(where it is enforced, see Disk size below) and included in snapshots on every tier, and file
+upload and download under <code>/tmp</code> work. Do not delete <code>/tmp/.sandfort-keep</code>: if <code>/tmp</code> is empty
+at the next start, the private in-memory <code>/tmp</code> comes back. gVisor sandboxes created before
+2026-11-04 keep their old separate <code>/tmp</code> volume until they are deleted.</li>
+<li>The Docker seccomp profile is not applied to the sandboxed processes&#x27; system calls the way
+<code>runc</code> applies it (gVisor&#x27;s documentation). gVisor&#x27;s Sentry filters those calls itself, and the
+host-side <code>runsc</code> processes run under gVisor&#x27;s own seccomp filters. gVisor is the system-call
+boundary.</li>
+<li>Exceeding the memory or process limit usually stops the whole sandbox (the limits count
+gVisor&#x27;s own host processes). After such an unexpected stop the command reports &quot;the sandbox
+stopped while running this command: it exceeded its memory or process limit; start it again&quot;
+with exit code 137, the sandbox moves to state <code>stopped</code> with an <code>error_reason</code> that explains
+it, its files are kept, and starting it again works. Sometimes only the offending process is
+killed (exit code 137 with empty stderr, sandbox still <code>started</code>), and hitting the process
+limit can also just make new process creation fail (fork errors such as ENOMEM) without
+stopping anything. Advice: after any exit code 137, check <code>sandbox_stopped</code> in the exec
+result before continuing. When it is true, the sandbox state is already <code>stopped</code> when the
+response arrives (the server settles it first), so <code>start()</code> can follow at once and the next
+exec works; no polling is needed. Verified on the beta at commit 6a4bcd8 (gvisor,
+<code>bytearray(3&lt;&lt;30)</code>: exit 137, <code>sandbox_stopped</code> true, state <code>stopped</code>, start, <code>echo alive</code>
+exit 0).</li>
+<li>Large writes count toward the memory limit. gVisor keeps file data in sandbox memory, so
+writing large amounts of data also counts toward the memory limit. Verified on a 512 MiB
+gvisor sandbox: writes of 1-2 GiB were fine on both <code>/root</code> and <code>/tmp</code>, while 3.5 GiB writes
+stopped the sandbox in some runs on either path (3 of 7 under <code>/tmp</code>, 4 of 6 under <code>/root</code>).
+Advice for the gvisor tier: keep single large writes well under a few GiB per sandbox, or
+raise the memory limit.</li>
+<li>DNS: gvisor sandboxes resolve names through public resolvers (<code>1.1.1.1</code> and <code>8.8.8.8</code> by
+default on the hosted beta; a self-hosted operator can change them), because gVisor cannot
+reach Docker&#x27;s internal resolver. On the allowlist network, direct lookups fail immediately
+(see Network modes and DNS).</li>
+<li>User namespaces (<code>unshare -U</code>) work inside gvisor and are refused on container.</li>
+<li>Kernel introspection such as the kernel symbol table (<code>kallsyms</code>) is absent. <code>nproc</code> and
+<code>MemTotal</code> reflect the sandbox limits.</li>
+</ol>
+<p>Supervisors: treat a 409 &quot;the sandbox container is not running&quot; from exec as the sandbox being
+down, and re-read the sandbox state. It moves to <code>stopped</code> within a few seconds after an exec
+sees the sandbox die.</p>
+<h2 id="disk-size">Disk size<a class="anchor" href="#disk-size" aria-label="Link to section: Disk size">#</a></h2>
+<p>The requested disk size (<code>disk_gib</code>) is enforced only on hosts with XFS project quotas. The
+hosted beta enforces it: its Docker uses overlay2 on XFS with project quotas, and the deployment
+sets <code>SANDFORT_ENFORCE_DISK_QUOTA=true</code>, so <code>disk_gib</code> applies on all three tiers. Verified on
+the beta on 2026-11-04 with <code>disk_gib=1</code>: writing 1.5 GiB stopped at 1 GiB (1073676288 bytes;
+<code>dd</code> exit 1, &quot;no space left&quot;) in both <code>/tmp</code> and <code>/root</code> on container, gvisor and microvm, and
+the sandbox kept running. Free space by deleting files, or create a sandbox with a larger
+<code>disk_gib</code>. The quota covers <code>/tmp</code> on every tier (item 1 above). Self-hosted deployments
+without XFS project quotas do not enforce it.</p>
+<p>A full disk, verified on the beta on 2026-11-04 (commit 6a4bcd8, and 203370a for the restart
+at 0 bytes free):</p>
+<ul>
+<li>Writes fail with &quot;No space left on device&quot; (ENOSPC), and exec keeps working with no stray
+stderr.</li>
+<li>A file upload into a full sandbox answers HTTP 409 CONFLICT (<code>Conflict</code> in the SDK) with &quot;the
+sandbox disk is full (no space left on device): delete files in the sandbox or create it with a
+larger disk_gib&quot; and no host paths.</li>
+<li>A sandbox written until ENOSPC with 0 bytes free restarts with its data on all three tiers
+(verified on gvisor, microvm and container). Stop, start and snapshot of a full sandbox work;
+a snapshot of a full microvm sandbox restored all files into a new <code>disk_gib=3</code> sandbox.</li>
+<li>Mechanism: the quota is <code>disk_gib</code> plus 32 MiB, and Sandfort keeps a 16 MiB file,
+<code>/.sandfort-reserve</code>, in the sandbox. It empties the file in place before every stop and
+refills it after every start, so <code>df</code> shows about 32 MiB more than <code>disk_gib</code> (1.1G for
+<code>disk_gib=1</code>). Do not delete <code>/.sandfort-reserve</code>: a user who deletes or truncates it loses
+the protection until the next start recreates it.</li>
+</ul>
+<h2 id="overhead-gvisor-compared-with-container">Overhead: gvisor compared with container<a class="anchor" href="#overhead-gvisor-compared-with-container" aria-label="Link to section: Overhead: gvisor compared with container">#</a></h2>
+<p>Overhead varies by host and workload. Two measurements follow; treat both as indicative, not as
+a benchmark of the hosted beta.</p>
+<p>First measurement: a laptop-class machine inside a nested Docker daemon; each value is the
+median of 6 runs.</p>
+<div class="tbl-wrap" role="region" aria-label="Table: Overhead: gvisor compared with container" tabindex="0"><table><thead><tr><th scope="col">Operation</th><th scope="col">container</th><th scope="col">gvisor</th><th scope="col">Ratio</th></tr></thead><tbody><tr><td>Create to started</td><td>158 ms</td><td>160 ms</td><td>about the same</td></tr><tr><td>Trivial exec</td><td>about 20 ms</td><td>about 20 ms</td><td>about the same</td></tr><tr><td>CPU-bound Python loop</td><td>baseline</td><td>within about 2-5%</td><td>about the same</td></tr><tr><td>5 MB upload / download</td><td>baseline</td><td>within about 5%</td><td>about the same</td></tr><tr><td>Stop, start, delete</td><td>baseline</td><td>within about 10%</td><td>about the same</td></tr><tr><td>200 sequential process spawns</td><td>103 ms</td><td>384 ms</td><td>about 3.7x</td></tr><tr><td>Create, stat and delete 10,000 small files</td><td>172 ms</td><td>776 ms</td><td>about 4.5x</td></tr></tbody></table></div>
+<p>Second measurement: a second evaluator, a different run.</p>
+<div class="tbl-wrap" role="region" aria-label="Table: Overhead: gvisor compared with container (2)" tabindex="0"><table><thead><tr><th scope="col">Operation</th><th scope="col">container</th><th scope="col">gvisor</th><th scope="col">Ratio</th></tr></thead><tbody><tr><td>200 Python subprocess spawns</td><td>26 ms</td><td>216 ms</td><td>about 8x</td></tr><tr><td>200 <code>/bin/true</code> runs from a bash loop</td><td>0.044 s</td><td>1.80 s</td><td>about 40x</td></tr><tr><td>10,000 small files</td><td>0.30 s</td><td>2.63 s</td><td>about 9x</td></tr></tbody></table></div>
+<p>Create, exec, CPU-bound work and file transfer cost about the same on both tiers. Spawn-heavy
+and small-file-heavy work (package installs, git, compilers, large test suites) is several
+times slower on gvisor, from about 3x to about 9x in our measurements, and more for very
+fork-heavy shell loops. Buyers should time their own build or test command on both tiers
+before choosing.</p>
+<h2 id="microvm-kata-verified-behavior">microVM (Kata): verified behavior<a class="anchor" href="#microvm-kata-verified-behavior" aria-label="Link to section: microVM (Kata): verified behavior">#</a></h2>
+<p>The <code>microvm</code> tier is offered on the hosted beta (verified there on 2026-11-04).
+<code>GET /v1/isolation</code> returns the available tiers <code>container</code>, <code>gvisor</code> and <code>microvm</code>; the
+default stays <code>gvisor</code>. The beta VM exposes KVM (nested virtualization). The Kata install
+script in the operations repository installs Kata 4.3.1 pinned by SHA-256, registers the Docker
+runtime <code>kata</code> next to <code>runsc</code>, and reloads Docker&#x27;s runtime list without restarting containers;
+it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor.</p>
+<ul>
+<li>Each sandbox has its own guest kernel. It reported 6.18.56, not the host&#x27;s 6.8.</li>
+<li>Measured on the beta: create to started about 4 s (six runs 3.70-3.96 s, median 3.84 s) and
+start 3.7 s. With <code>block_network=True</code> create takes about 8-9 s (8.1-9.1 s observed over 22
+creates). The other tiers are well under a second. Treat these as measurements on one shared
+instance, not a benchmark.</li>
+<li>The extra 5 s with <code>block_network=True</code> is Kata behaviour (measured 2026-11-05: about 3.9 s with
+the network, 8.6-9.0 s without; gvisor 0.35-0.47 s either way). In Docker&#x27;s network mode <code>none</code>
+the Kata runtime-rs shim finds no interface after start, waits for its rescan timeout of about
+5 s and logs &quot;no network interfaces after rescan timeout; networking may rely on hooks only&quot;.
+Sandfort&#x27;s start path adds nothing measurable. No workaround: an internal bridge network would
+give the sandbox an interface and weaken the no-network guarantee.</li>
+<li>Exec, the clean 127 messages, timeouts (124), file upload and download including <code>/tmp</code>,
+<code>code_run</code>, stop and start with files kept, and delete (0.7 s) all work.</li>
+<li>A program that touches more memory than the limit is OOM-killed inside the VM: exit code 137
+with empty stderr (the guest kernel logs &quot;Out of memory: Killed process&quot;). The sandbox keeps
+running and <code>sandbox_stopped</code> is false. A single huge allocation can instead fail with
+<code>MemoryError</code> (exit code 1).</li>
+<li>A fork bomb can stop the whole microvm, as on gvisor. The exec then reports exit code 137 with
+<code>sandbox_stopped</code> true and the message &quot;the sandbox stopped while running this command ...&quot;;
+the sandbox is already <code>stopped</code> when the response arrives, with an <code>error_reason</code>, and
+starting it again works at once (start takes about 4 s on microvm). Evaluator data on the
+beta: of 29 python fork bombs on microvm, 26 returned exit 137 with <code>sandbox_stopped</code> true
+within 6.1-12.7 s; 3 returned 124 <code>timed_out</code> with the sandbox already dead. Since commit
+5243f36 a death wins over the deadline: when the sandbox dies before or at the deadline the
+result is exit 137 with <code>sandbox_stopped</code> true, not a timeout. Earlier check at commit
+6a4bcd8 (python and bash bombs, <code>timeout_s=60</code>, 4 of 4 runs): exit 137, <code>sandbox_stopped</code>
+true, <code>timed_out</code> false after 6-10 s, state <code>stopped</code>, clean message. Before those fixes the
+exec often returned exit 124 only at the full timeout, or 255, with <code>sandbox_stopped</code> false.
+The state is polled for up to 3 s after a suspect exit or timeout, and an exec on a dead
+runsc/kata container returns within about 2 s instead of at its deadline. <code>timeout_s</code> is a
+budget, not an exact cutoff: a command at <code>timeout_s=10</code> returned after about 13 s (kill and
+cleanup). Remaining caveat: the classic bash fork bomb <code>:(){ :|:&amp; };:</code> usually returns exit 0
+within about 1 s on gvisor and microvm; the NEXT exec then reports <code>sandbox_stopped</code> (after
+up to about 5 s on microvm).</li>
+<li>The CPU limit is enforced: CPU-seconds per wall second matched the requested 500, 1000 and 2000
+millicores. <code>nproc</code> reports 1, 2 and 3 for those sizes rather than the requested count, and
+<code>MemTotal</code> is somewhat below the requested memory (454328 kB for 512 MiB). Size thread pools
+from the requested resources.</li>
+<li>DNS: microvm sandboxes resolve through the same public resolvers as gvisor (<code>1.1.1.1</code> and
+<code>8.8.8.8</code>); with <code>block_network=True</code> they have no DNS configuration (see Network modes and
+DNS).</li>
+<li>Boundary: the beta VM is itself virtualized, so the microvm tier is Kata on nested KVM. We make
+no claim beyond other microVM offerings. The container and gvisor tiers are not
+microVM-grade isolation. Per-sandbox disk size is enforced on the beta (see Disk size).</li>
+</ul>
+<h2 id="network-modes-and-dns-per-tier">Network modes and DNS, per tier<a class="anchor" href="#network-modes-and-dns-per-tier" aria-label="Link to section: Network modes and DNS, per tier">#</a></h2>
+<ul>
+<li>open: names resolve on all tiers (gvisor and microvm through <code>1.1.1.1</code> and <code>8.8.8.8</code>).</li>
+<li>blocked (<code>block_network=True</code>): no network and no DNS on any tier. The sandbox shows no DNS
+configuration from the host, and lookups fail at once on every tier.</li>
+<li>allowlist: allowlisted hosts are reachable only through the egress proxy that the sandbox&#x27;s
+<code>HTTP_PROXY</code> and <code>HTTPS_PROXY</code> variables point to (pip, curl and Python requests use them);
+every other destination is refused. On gvisor and microvm, direct DNS lookups fail
+immediately. On the container tier names still resolve through Docker&#x27;s resolver, which is a
+DNS side channel: a resolved name can carry data even though the connection is refused. For
+regulated data use gvisor or microvm with the allowlist. The proxy variables, including the
+per-sandbox proxy credentials, are visible to code inside the sandbox.</li>
+</ul>
+<h2 id="exec-results-output-cap-and-untrusted-submissions">Exec results, output cap and untrusted submissions<a class="anchor" href="#exec-results-output-cap-and-untrusted-submissions" aria-label="Link to section: Exec results, output cap and untrusted submissions">#</a></h2>
+<ul>
+<li>Out-of-memory kills read <code>stop_reason</code> <code>oom_killed</code> (and <code>stop_cause</code> <code>oom_killed</code> on the
+sandbox when the container died of it) on the <code>container</code> tier only: the Docker daemon records
+<code>OOMKilled</code> for it, and the server reads the cgroup <code>oom_kill</code> counter for a single killed
+process. gVisor and microVM keep their own kernel, so the host sees neither signal; their
+out-of-memory kills still read <code>killed</code>, or <code>sandbox_stopped</code> with <code>container_exited</code>.</li>
+<li>Exec results include <code>sandbox_stopped</code> (REST field; SDK <code>ExecResult.sandbox_stopped</code>): true
+when the command&#x27;s sandbox stopped (a gvisor limit overrun, or a fork bomb on gvisor or
+microvm). The CLI then prints a hint to
+start the sandbox again. Use it instead of re-reading the state right after an exit code 137.
+The sandbox state is already <code>stopped</code> when such a response arrives, so calling <code>start()</code>
+right away is safe and the exec after it works; no polling is needed. A sandbox that dies
+before or at the deadline is reported as exit 137 with <code>sandbox_stopped</code> true, not as a
+timeout (124); <code>timeout_s</code> is a budget, not an exact cutoff (about 13 s observed at 10).</li>
+<li>When a command&#x27;s output reaches the 1 MiB cap, the command is stopped, the result has
+<code>truncated=true</code>, and stderr says &quot;the command was stopped because its output exceeded the
+limit of 1048576 bytes&quot;.</li>
+<li>Untrusted submissions (graders, course platforms): use one sandbox per untrusted submission.
+On the gvisor tier a limit overrun stops the whole sandbox, and a backgrounded fork bomb can
+exit 0 before the sandbox stops, so in a reused sandbox the next submission would fail
+instead. A fork bomb can stop a whole microvm too, so the same advice applies there. Separate
+sandboxes are not affected by each other. Treat <code>sandbox_stopped</code>, exit code 137 and a failing
+follow-up exec as failure of the submission. After every submission run one trivial probe exec
+(for example <code>true</code>) in the same sandbox and treat an exception, a non-zero exit or
+<code>sandbox_stopped</code> as a runtime error; on <code>timed_out</code>, probe before reporting a timeout (a dead
+sandbox is a runtime error). The server retries a delete after a crash, so no client retry is
+needed.</li>
+<li>On the container tier <code>nproc</code> and <code>MemTotal</code> show the host&#x27;s values, not the sandbox limits;
+size thread pools from the requested resources.</li>
+<li>On gvisor, streamed log events can split a line across events; join the data rather than
+parsing each event.</li>
+</ul>
+<h2 id="snapshots-and-isolation-tier">Snapshots and isolation tier<a class="anchor" href="#snapshots-and-isolation-tier" aria-label="Link to section: Snapshots and isolation tier">#</a></h2>
+<ul>
+<li>A snapshot taken from a sandbox records that sandbox&#x27;s isolation tier (shown as <code>isolation</code> on
+the snapshot).</li>
+<li>A sandbox created from it without an explicit <code>isolation</code> gets the same tier; an explicit
+<code>isolation</code> overrides it.</li>
+<li>If the recorded tier is not offered, the create is refused with the 422 that names the
+available tiers.</li>
+<li>Snapshots made from a public image or an image spec have no recorded tier.</li>
+<li>A sandbox created from a snapshot does not inherit the source sandbox&#x27;s resources: it gets
+the defaults (<code>cpu_millicores</code> 1000, <code>memory_mib</code> 512, <code>disk_gib</code> 3) unless <code>resources=</code> is
+passed. It does inherit the isolation tier. Its disk quota counts only what it writes
+itself; the snapshot content it starts from does not count against <code>disk_gib</code>.</li>
+</ul>
+<h2 id="resize">Resize<a class="anchor" href="#resize" aria-label="Link to section: Resize">#</a></h2>
+<p><code>POST /v1/sandboxes/{id}/resize</code> changes CPU and memory of a stopped sandbox (409 INVALID_STATE
+when it is started). There is no SDK or CLI helper for it yet. The root filesystem is kept: the
+start that follows commits the stopped container to a local image (<code>sf-resize-&lt;id&gt;</code>) and creates
+the new container from it, on all three tiers. The image stays while the sandbox lives (the next
+resize commits to the same tag) and goes with the sandbox. A reset still wipes.</p>
+<h2 id="rollout">Rollout<a class="anchor" href="#rollout" aria-label="Link to section: Rollout">#</a></h2>
+<ol>
+<li>Deploy the gVisor driver fixes and per-sandbox tiers. Done.</li>
+<li>On the beta: offer <code>container</code> and <code>gvisor</code>, default <code>gvisor</code>. New sandboxes get gVisor. Done
+(2026-11-04).</li>
+<li>Install Kata, verify, then add <code>microvm</code>. Done (2026-11-04): the beta offers all three tiers.</li>
+<li>Re-run the evaluation personas per tier. Start time and overhead for container and gvisor
+are measured (see Overhead, laptop-class nested Docker); repeat them on the beta node&#x27;s
+hardware. The microvm times were measured on the beta (create to started about 4 s, about 8-9 s
+with <code>block_network=True</code>).</li>
+</ol>
+<h2 id="beta-status-image-builds-and-user-namespace-remapping">Beta status: image builds and user-namespace remapping<a class="anchor" href="#beta-status-image-builds-and-user-namespace-remapping" aria-label="Link to section: Beta status: image builds and user-namespace remapping">#</a></h2>
+<p>The hosted beta is moving image builds onto gVisor (the daemon <code>default-runtime</code> set to
+<code>runsc</code>) and enabling user-namespace remapping on its sandbox node. There is no date for
+either, and neither changes the tier descriptions above. Until remapping is on, container root
+maps to host root on the <code>container</code> and <code>gvisor</code> tiers. Once it is on, the <code>container</code> and <code>gvisor</code> tiers run
+remapped and the <code>microvm</code> tier keeps the host user namespace through
+<code>SANDFORT_USERNS_HOST_TIERS</code> (see &quot;API and configuration&quot; and [security] section 2).</p>
+<p>[operations]: https://docs.sandfort.dev/operations.html
+[security]: https://docs.sandfort.dev/security.html</p>
+</article>
+</div></div>
+</main>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+
+</body>
+</html>

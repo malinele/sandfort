@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Governance reference - Sandfort docs</title>
+<meta name="description" content="For platform and compliance reviewers. Every statement here was checked against the server package (src/sandfort/); the source file is named where a reviewer may want to confirm it. Defaults are the...">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<link rel="canonical" href="https://docs.sandfort.dev/governance">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance" aria-current="page">Governance page</a></nav></div>
+<main id="main">
+<div class="frame"><div class="doc has-toc">
+<details class="toc"><summary>On this page</summary><ul><li><a href="#api-key-scopes">API key scopes</a><ul><li><a href="#label-scoped-keys">Label-scoped keys</a></li><li><a href="#volumes-and-labels">Volumes and labels</a></li></ul></li><li><a href="#image-reference-policy">Image reference policy</a></li><li><a href="#rate-limits">Rate limits</a></li><li><a href="#audit">Audit</a></li><li><a href="#usage-metering">Usage metering</a></li><li><a href="#webhooks">Webhooks</a></li><li><a href="#data-retention-and-deletion">Data retention and deletion</a></li><li><a href="#telemetry">Telemetry</a></li><li><a href="#isolation">Isolation</a></li></ul></details>
+<article class="prose">
+<h1 id="governance-reference">Governance reference<a class="anchor" href="#governance-reference" aria-label="Link to section: Governance reference">#</a></h1>
+<p>For platform and compliance reviewers. Every statement here was checked against the server
+package (<code>src/sandfort/</code>); the source file is named where a reviewer may want to confirm it.
+Defaults are the values in <code>src/sandfort/config.py</code>. Environment variables carry the
+<code>SANDFORT_</code> prefix.</p>
+<h2 id="api-key-scopes">API key scopes<a class="anchor" href="#api-key-scopes" aria-label="Link to section: API key scopes">#</a></h2>
+<p>An API key holds one or more of 12 scopes and belongs to one organization. Every authenticated
+route requires exactly one scope (<code>src/sandfort/auth/scopes.py</code>); a missing scope is a 403
+that lists it.</p>
+<div class="tbl-wrap" role="region" aria-label="Table: API key scopes" tabindex="0"><table><thead><tr><th scope="col">Scope</th><th scope="col">Endpoints</th></tr></thead><tbody><tr><td><code>org:read</code></td><td><code>GET /v1/org/quota</code>, <code>GET /v1/org/quota/recount</code>, <code>GET /v1/org/members</code>, <code>GET /v1/nodes</code></td></tr><tr><td><code>sandboxes:read</code></td><td><code>GET /v1/sandboxes</code>, <code>GET /v1/sandboxes/{id}</code>, <code>GET /v1/sandboxes/{id}/logs</code>, <code>GET /v1/isolation</code>, <code>GET /v1/jobs</code>, <code>GET /v1/jobs/{id}</code></td></tr><tr><td><code>sandboxes:write</code></td><td><code>POST /v1/sandboxes</code>, <code>PATCH</code>/<code>DELETE /v1/sandboxes/{id}</code>, <code>POST /v1/sandboxes/{id}/start</code>, <code>/stop</code>, <code>/resize</code>, <code>/preview-tokens</code></td></tr><tr><td><code>toolbox:use</code></td><td>everything under <code>/v1/sandboxes/{id}/toolbox/</code>: <code>process/execute</code>, <code>process/code-run</code>, <code>process/sessions</code>, <code>fs</code>, <code>git</code>, <code>pty</code> (REST)</td></tr><tr><td><code>snapshots:read</code></td><td><code>GET /v1/snapshots</code>, <code>GET /v1/snapshots/{id}</code>, <code>GET /v1/images/builds/{id}/logs</code></td></tr><tr><td><code>snapshots:write</code></td><td><code>POST /v1/snapshots</code>, <code>POST /v1/snapshots/from-sandbox</code>, <code>DELETE /v1/snapshots/{id}</code>, <code>POST /v1/images/builds</code></td></tr><tr><td><code>volumes:read</code></td><td><code>GET /v1/volumes</code>, <code>GET /v1/volumes/{id}</code></td></tr><tr><td><code>volumes:write</code></td><td><code>POST /v1/volumes</code>, <code>DELETE /v1/volumes/{id}</code></td></tr><tr><td><code>api_keys:admin</code></td><td><code>/v1/api-keys</code> (create, list, revoke); <code>POST /v1/org/members</code>, <code>PATCH</code>/<code>DELETE /v1/org/members/{id}</code>; <code>PUT /v1/org/quota</code> (also needs a platform-admin key); <code>/v1/org/scim-tokens</code> when <code>SANDFORT_SCIM_ENABLED=true</code></td></tr><tr><td><code>webhooks:write</code></td><td>all of <code>/v1/webhooks</code>, including list, get, deliveries and redeliver</td></tr><tr><td><code>usage:read</code></td><td><code>GET /v1/org/usage</code></td></tr><tr><td><code>audit:read</code></td><td><code>GET /v1/audit-events</code>, <code>GET /v1/audit-events/export</code>, <code>GET /v1/audit-events/verify</code></td></tr></tbody></table></div>
+<p>Not behind a scope:</p>
+<ul>
+<li><code>GET /healthz</code>, <code>GET /readyz</code>, <code>GET /metrics</code>, <code>GET /console</code> (a page that carries no data;
+the operator types a key into it) and <code>POST /v1/auth/sso/exchange</code> (it takes an identity
+token and returns a session).</li>
+<li>The PTY websocket <code>/v1/sandboxes/{id}/toolbox/pty/{pty}/connect</code> authenticates with the
+one-time token that <code>POST .../toolbox/pty</code> returns, not with a key.</li>
+<li><code>/scim/v2</code> (only mounted when <code>SANDFORT_SCIM_ENABLED=true</code>) takes a SCIM bearer token.</li>
+<li>The preview proxy and the web terminal page use their own preview and connect tokens.</li>
+</ul>
+<p>Keys cannot mint scopes their creator lacks: asking for a scope outside the creating key&#x27;s
+set is a 403 <code>ScopeEscalation</code> (<code>src/sandfort/services/api_key_admin.py</code>). Human users get
+scopes from a role (<code>admin</code>, <code>developer</code>, <code>viewer</code>; <code>src/sandfort/domain/user.py</code>); <code>developer</code>
+lacks <code>api_keys:admin</code> and <code>audit:read</code>, and <code>viewer</code> holds only the read scopes.</p>
+<h3 id="label-scoped-keys">Label-scoped keys<a class="anchor" href="#label-scoped-keys" aria-label="Link to section: Label-scoped keys">#</a></h3>
+<p>Scopes are per action. A key with <code>toolbox:use</code> and no label scope can exec in any sandbox of
+its organization. To bind a key to a set of sandboxes, give it a label scope: <code>POST /v1/api-keys</code> accepts an optional <code>sandbox_labels</code> object (<code>{key: value}</code>, at most 8 pairs;
+label names starting with <code>sandfort.</code> are reserved). Absent or empty means the key is not
+label scoped. The scope is stored with the key and shown by the key list. Source:
+<code>src/sandfort/services/label_scope.py</code>, <code>src/sandfort/services/api_key_admin.py</code>.</p>
+<p>A scoped key only sees and acts on sandboxes whose labels contain all of its pairs:</p>
+<ul>
+<li>A sandbox outside the scope answers 404, so its existence is not revealed.</li>
+<li>The sandbox list is filtered to the scope. A list filter that contradicts the scope (same
+label name, other value) returns an empty page.</li>
+<li>A create through the key gets the scope pairs added to its labels; other labels in the
+request are kept (<code>merge_scope</code> in <code>src/sandfort/services/label_scope.py</code>). A create with no
+labels, or with extra labels, is therefore an in-scope create; it meets the per-key
+<code>max_sandboxes</code> cap with 429 like any other. Only a label that names a scope key with another
+value is refused, with a 403, &quot;this API key is limited to sandboxes labelled k=v&quot;. That
+refusal happens in <code>SandboxService.create</code> before the cap and the quota are checked, so a
+contradicting label is never masked by a 429.</li>
+<li>The internal ids of the sandbox and snapshot objects are withheld from a scoped key: <code>node_id</code>
+and <code>job_id</code> of a sandbox and <code>source_sandbox_id</code> of a snapshot are <code>null</code> for it (commit
+da31b5a, <code>src/sandfort/api/schemas/sandboxes.py</code>, <code>snapshots.py</code>). <code>GET /v1/nodes</code> is a 403
+for a scoped key.</li>
+<li>Changing the labels of a sandbox so that it leaves the scope is also a 403.</li>
+<li>A scoped key can only create keys whose scope contains all of its own pairs. Anything
+else is a 403 that lists the missing pairs under <code>details.excess_labels</code>.</li>
+<li>Every toolbox route under <code>/v1/sandboxes/{id}/toolbox/</code> runs a router-level guard first,
+so handlers that look up a session, command or PTY by id are covered too: a sandbox
+outside the scope answers 404 (<code>src/sandfort/api/routes/toolbox/scope_guard.py</code>).</li>
+<li>A scoped key with <code>api_keys:admin</code> lists and revokes only keys whose own labels contain all
+of its pairs (itself included); any other key id answers 404
+(<code>src/sandfort/services/api_key_admin.py</code>).</li>
+<li>A snapshot committed from a sandbox is visible and usable (get, list, delete, create a
+sandbox from it) only when its source sandbox is in the scope. A destroyed source keeps
+its labels and still decides; a source row that is gone hides the snapshot. Snapshots with
+no source sandbox (registered images, image builds) stay visible
+(<code>snapshot_in_label_scope</code> in <code>src/sandfort/services/snapshots.py</code>).</li>
+<li>Build logs follow the snapshot rule. Jobs (<code>GET /v1/jobs</code>, <code>GET /v1/jobs/{id}</code>) are
+visible to a scoped key only when the sandbox and snapshot their payload names are in the
+scope; jobs that name neither stay visible. Image build and snapshot create jobs also need
+<code>snapshots:read</code> from every caller, and the build spec is removed from the job payload for
+a scoped caller (<code>src/sandfort/api/routes/jobs.py</code>).</li>
+<li>The check that refuses to delete a snapshot still in use scans every sandbox of the
+organization, not only those in the scope, so a scoped key cannot delete an image from
+under another team&#x27;s sandbox. The 409 names the sandbox only when the scope can see it.</li>
+<li>Idempotency keys are stored per <code>(org, API key, Idempotency-Key)</code>: another key sending the
+same <code>Idempotency-Key</code> neither replays the first key&#x27;s response, nor gets a mismatch
+error, nor waits on its in-flight request (<code>src/sandfort/services/idempotency.py</code>).</li>
+<li>Sandbox names stay unique per organization. A create with a name that a sandbox outside
+the scope already uses answers 409 &quot;sandbox name already exists in this org&quot;, which
+reveals that the name exists. Open; use per-scope name prefixes where that matters.</li>
+<li><code>created_by</code> on an API key object (the id of the key that minted it) is visible to org-wide
+keys only. A label-scoped caller gets <code>created_by: null</code> on create, list and revoke, because the
+id would identify the admin key that minted its own key
+(<code>src/sandfort/api/routes/api_keys.py</code>, <code>src/sandfort/api/schemas/api_keys.py</code>, commit 7cdfb86).
+The stored value does not change; the key list of an org-wide caller still shows it.</li>
+</ul>
+<p>Usage is label-scoped too: a scoped key that holds <code>usage:read</code> sees only its own sandboxes in
+<code>GET /v1/org/usage</code>, in the totals, the per-sandbox groups and the per-label groups alike
+(<code>src/sandfort/api/routes/usage.py</code>). Volumes follow the label rules in the next section. Audit
+access requires an org-wide key: the three audit routes (<code>GET /v1/audit-events</code>, <code>/export</code> and
+<code>/verify</code>) answer 403 (&quot;audit events are org-wide; use an API key without sandbox labels&quot;) to a
+key with <code>sandbox_labels</code>, even when it holds <code>audit:read</code>, because audit events belong to the
+whole organization and a label scope only limits sandboxes (<code>src/sandfort/api/routes/audit.py</code>,
+commit 41f9d3e).
+Workers (reconciler, auto-stop, garbage collector) are not scoped. In a multi-node
+deployment a forwarded request carries the caller&#x27;s own credential and is checked again on
+the node that owns the sandbox.</p>
+<p>The SDK (<code>create_api_key</code>, <code>list_api_keys</code>, <code>revoke_api_key</code>) and the CLI (<code>sandfort key create</code>, <code>sandfort key list</code>, <code>sandfort key revoke</code>) manage API keys too; the CLI <code>create</code> takes
+<code>--scope</code> and <code>--label</code>, both repeatable. The same call through the REST API:</p>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 1" data-copy>Copy</button></div><pre class="code"><code>curl -s &quot;$SANDFORT_BASE_URL/v1/api-keys&quot; \
+  -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;name&quot;:&quot;assistant-a&quot;,&quot;scopes&quot;:[&quot;sandboxes:read&quot;,&quot;sandboxes:write&quot;,&quot;toolbox:use&quot;],
+       &quot;sandbox_labels&quot;:{&quot;team&quot;:&quot;a&quot;}}&#x27;</code></pre></div>
+<p>The response shows the new key once. The <code>api_key.created</code> audit event records the
+<code>sandbox_labels</code> of the new key.</p>
+<h3 id="volumes-and-labels">Volumes and labels<a class="anchor" href="#volumes-and-labels" aria-label="Link to section: Volumes and labels">#</a></h3>
+<p>Volumes carry user labels, like sandboxes. Label names starting with <code>sandfort.</code> are reserved
+and are not returned. Source: <code>src/sandfort/services/volumes.py</code>.</p>
+<ul>
+<li>A label-scoped key that creates a volume gets its scope pairs merged into the volume&#x27;s labels.</li>
+<li>A label-scoped key sees only volumes whose labels carry all of its scope pairs; its volume
+list is filtered to them.</li>
+<li>A label-scoped key may mount only a volume carrying its scope labels. Any other volume, and
+a volume id that does not exist, is refused alike with a 403 naming the volume, so the
+answer does not reveal whether the id exists.</li>
+<li>Mount mode decides the key scope the create needs. A read-only mount (<code>read_only: true</code>)
+needs <code>volumes:read</code>. A read-write mount needs <code>volumes:write</code>. A create that mixes both
+modes needs both scopes.</li>
+</ul>
+<h2 id="image-reference-policy">Image reference policy<a class="anchor" href="#image-reference-policy" aria-label="Link to section: Image reference policy">#</a></h2>
+<p>Docker resolves a raw image reference against the host&#x27;s local image store before any pull,
+and it also resolves image IDs. Every user-supplied image reference is therefore checked
+first (<code>check_user_image_reference</code> in <code>src/sandfort/images/dockerfile.py</code>, re-exported by
+<code>src/sandfort/services/image_policy.py</code>). It applies to the image of a sandbox create, the
+<code>base_image</code> of an image build and the image of a snapshot register (<code>POST /v1/snapshots</code>).
+Refused with 422 <code>UNPROCESSABLE</code>:</p>
+<ul>
+<li>an image ID: <code>sha256:&lt;hex&gt;</code>, a bare 64-hex id or a short hex prefix (&quot;image IDs are not
+accepted; pass an image name such as python:3.12-slim&quot;);</li>
+<li>a reference that names a reserved repository, compared case-insensitively on the part
+before the tag or digest, also with a registry prefix: <code>sandfort-snapshot</code> (where
+committed snapshot images live) and <code>moby-dangling</code> (the name Docker&#x27;s containerd image
+store gives untagged images).</li>
+</ul>
+<p><code>name@sha256:...</code> with a repository name stays valid. A committed snapshot is reached only
+by its snapshot id, which is scoped to the organization (and to the key&#x27;s label scope, see
+above). Before this check (c4ad194, c6ee3dd, 9a46b00; deployed on the hosted beta on
+2026-11-05), a caller who knew another organization&#x27;s snapshot digest, or probed short ids,
+could start a sandbox from that organization&#x27;s committed snapshot.</p>
+<h2 id="rate-limits">Rate limits<a class="anchor" href="#rate-limits" aria-label="Link to section: Rate limits">#</a></h2>
+<ul>
+<li>A token bucket per API key, or per user for session tokens (all sessions of a user share
+one bucket). It runs after authentication and before the scope check, so a bad key never
+touches a bucket.</li>
+<li><code>SANDFORT_RATE_LIMIT_ENABLED</code> (<code>true</code>), <code>SANDFORT_RATE_LIMIT_REFILL_PER_S</code> (<code>100</code>),
+<code>SANDFORT_RATE_LIMIT_BURST</code> (<code>1000</code>).</li>
+<li>Buckets live in process memory: they are per server process and reset on restart.</li>
+<li>An empty bucket answers 429 <code>RATE_LIMITED</code> with <code>Retry-After</code> in whole seconds. There are
+no <code>X-RateLimit-*</code> headers.</li>
+<li>The SSO exchange is limited per peer address (never a forwarded header): 1 per second,
+burst 10. It is installed when rate limiting is enabled.</li>
+<li>Exempt: <code>/healthz</code>, <code>/readyz</code> and the PTY websocket.</li>
+</ul>
+<p>Other caps: 8 live PTYs and 16 running async commands per organization
+(<code>SANDFORT_MAX_PTYS_PER_ORG</code>, <code>SANDFORT_MAX_ASYNC_COMMANDS_PER_ORG</code>; per process, <code>0</code> =
+unlimited), 2 running volume exports or restores per organization and 8 per process
+(<code>SANDFORT_MAX_VOLUME_TRANSFERS_PER_ORG</code>, <code>SANDFORT_MAX_VOLUME_TRANSFERS</code>; 409 <code>org_transfer_limit</code>
+or <code>transfer_limit</code>), 16 MiB JSON request bodies (<code>SANDFORT_MAX_REQUEST_BODY_BYTES</code>, 413
+<code>PAYLOAD_TOO_LARGE</code>), 256 MiB file uploads (fixed in code; the upload route is exempt from the
+body cap).</p>
+<p>Client disconnects (<code>src/sandfort/api/routes/toolbox/process.py</code>): a synchronous exec
+(<code>process/execute</code> and <code>process/code-run</code>) is cancelled and its process tree killed when the
+client disconnects; the server checks every 0.5 s. Async session commands are different: they
+keep running when a log follower disconnects, and <code>kill_command</code> stops them.</p>
+<h2 id="audit">Audit<a class="anchor" href="#audit" aria-label="Link to section: Audit">#</a></h2>
+<p>Each event stores: actor (type and id), action, target (type and id), outcome (<code>success</code>,
+<code>denied</code> or <code>error</code>), request id, client IP, user agent and redacted details.</p>
+<ul>
+<li><p>Every non-GET call writes one event for what it did (a meta-test enforces it), with named
+exceptions rather than a promise of exactly one row. A call refused after a valid key writes
+one refusal row instead (<code>request.denied</code>, or <code>sandbox.create_refused</code> and
+<code>sandbox.start_refused</code> for host capacity, below). A call that is accepted and then fails
+adds a failure row: <code>sandbox.failed</code> for a create or start whose driver call fails, and
+<code>sandbox.reset_failed</code> next to <code>sandbox.reset</code>. Most successful GETs are not
+audited, and failed authentication is not audited, except the refusal of a revoked or
+expired key (see below). The GETs that are audited because they
+read sandbox content: <code>sandbox.logs.read</code> (<code>GET /v1/sandboxes/{id}/logs</code>),
+<code>toolbox.fs.list</code>, <code>toolbox.fs.stat</code>, <code>toolbox.fs.download</code> and <code>toolbox.git.status</code>.
+Listing and reading sandboxes, snapshots, volumes, jobs, usage and audit events, and reading
+session command logs, is not audited.</p></li>
+<li><p>A sandbox reset (<code>POST /v1/sandboxes/{id}/reset</code>) is audited as <code>sandbox.reset</code> with the
+state it started from; a reset whose driver call fails also writes <code>sandbox.reset_failed</code>
+with the (truncated) driver message.</p></li>
+<li><p>A refusal after a valid key (401, 403, 404, 409 or 422) is recorded as <code>request.denied</code>
+with outcome <code>denied</code> and the method, path, status and error code. One exception: a 422 for a
+request body that is not valid JSON is rejected before the key is resolved, so no
+<code>request.denied</code> row is written. Every other 422 after a valid key is recorded. A 429 with
+the code <code>QUOTA_EXCEEDED</code> is recorded too; a 429 with the code <code>RATE_LIMITED</code> is not, because a
+client in a retry loop would flood the chain. The write is best effort and never changes the
+response.</p></li>
+<li><p>Two refusals of a create look alike but are recorded differently. A create refused for host
+capacity answers 503 and is audited as <code>sandbox.create_refused</code> (a start is
+<code>sandbox.start_refused</code>). A create refused by the per-key <code>max_sandboxes</code> cap answers 429
+<code>QUOTA_EXCEEDED</code> and is audited as <code>request.denied</code>, not <code>sandbox.create_refused</code>. To find
+every refused create, query both actions.</p></li>
+<li><p>Capacity refusals are coalesced. A client in a retry loop (the SDK retries a 503) would
+write a permanent row per retry, so for the same action, API key and reason at most one
+<code>sandbox.create_refused</code> (and one <code>sandbox.start_refused</code>) row is written per 60 seconds
+per server process. The refusals suppressed in between are counted in the next row&#x27;s
+details as <code>refusals_coalesced</code> (absent when nothing was suppressed). Like the revoked key
+throttle, the repeats leave no row, so the chain shows that a key was refused and how many
+came in between, not each one; a restart empties the in-memory map and each <code>api</code> process
+keeps its own (<code>src/sandfort/services/admission.py</code>).</p></li>
+<li><p>The actions written today (the <code>action</code> filter of <code>GET /v1/audit-events</code> takes any of them;
+details are redacted as below):</p>
+<div class="tbl-wrap" role="region" aria-label="Table: Audit" tabindex="0"><table><thead><tr><th scope="col">Action</th><th scope="col">Written when</th></tr></thead><tbody><tr><td><code>sandbox.create</code>, <code>sandbox.start</code>, <code>sandbox.stop</code>, <code>sandbox.update</code></td><td>the call</td></tr><tr><td><code>sandbox.delete</code>, <code>sandbox.reset</code>, <code>sandbox.claim</code></td><td>the call (<code>claim</code>: a warm standby)</td></tr><tr><td><code>sandbox.create_refused</code></td><td>a create refused for host capacity (503), outcome <code>denied</code></td></tr><tr><td><code>sandbox.start_refused</code></td><td>a start refused for host capacity (503), outcome <code>denied</code></td></tr><tr><td><code>sandbox.failed</code>, <code>sandbox.reset_failed</code></td><td>a driver failure after the call was accepted</td></tr><tr><td><code>sandbox.auto_stopped</code>, <code>sandbox.auto_deleted</code></td><td>the idle timers</td></tr><tr><td><code>sandbox.logs.read</code>, <code>sandbox.exec.replay</code></td><td>a read of logs; a replayed idempotent exec</td></tr><tr><td><code>toolbox.process.execute</code>, <code>toolbox.process.code_run</code></td><td>a synchronous exec or code-run</td></tr><tr><td><code>toolbox.code_contexts.create</code>, <code>.delete</code>, <code>.interrupt</code>, <code>.run</code></td><td>a code context call</td></tr><tr><td><code>toolbox.code_contexts.run_stream</code></td><td>a streamed run, rows as for <code>run</code></td></tr><tr><td><code>toolbox.session.*</code>, <code>toolbox.pty.*</code></td><td>session create, exec, kill; PTY create, resize, close</td></tr><tr><td><code>toolbox.fs.*</code>, <code>toolbox.git.*</code></td><td>file and git calls (the audited GETs included)</td></tr><tr><td><code>snapshot.create</code>, <code>snapshot.register</code>, <code>snapshot.delete</code>, <code>snapshot.exported</code></td><td>snapshots</td></tr><tr><td><code>volume.create</code>, <code>volume.delete</code></td><td>volumes</td></tr><tr><td><code>api_key.created</code>, <code>api_key.revoked</code>, <code>quota.updated</code></td><td>key and quota admin</td></tr><tr><td><code>request.denied</code>, <code>request.failed</code></td><td>a refusal after a valid key</td></tr></tbody></table></div></li>
+<li><p>A revoked or expired key is refused with 401 and that refusal is recorded as
+<code>request.denied</code> on the key&#x27;s organization: the actor is the key, the details carry the
+method, path, status, <code>error_code</code> and a <code>reason</code> of <code>revoked</code> or <code>expired</code>
+(<code>src/sandfort/auth/authenticate.py</code>, <code>src/sandfort/api/errors.py</code>). Only a key whose stored
+secret verified is recorded, because only then is the organization known. The row is
+throttled: at most one per key per 60 seconds per server process, kept in a bounded
+in-memory map (1024 keys, the oldest dropped first). What the throttle does not cover: the
+repeats inside the window leave no row, so the chain shows that a key was refused, not how
+often; a restart empties the map, and each process (each <code>api</code> pod) throttles on its own, so
+several processes can each write one row per window. Missing, malformed, unknown and
+wrong-secret keys name no organization and are not recorded. The write is best effort like
+the others.</p></li>
+<li><p>Redaction (<code>src/sandfort/services/audit.py</code>): <code>env</code> keeps only the sorted names and a
+count; <code>stdin</code>, <code>code</code>, <code>command</code>, <code>args</code>, <code>cmd</code> and <code>token</code> keep only
+<code>redacted-sha256:&lt;hex&gt;</code> and the byte length. The digests are unsalted, so a short or
+guessable value can be confirmed by hashing a guess. Other scalars pass through.</p></li>
+<li><p>The IP is the client address the ASGI server reports (the socket peer). The app never reads
+<code>X-Forwarded-For</code> itself: uvicorn applies it only when the peer is listed in
+<code>SANDFORT_FORWARDED_ALLOW_IPS</code>, so the IP is only as trustworthy as that setting. An address
+longer than 45 characters is stored as <code>null</code>.</p></li>
+<li><p>API key events (<code>api_key.created</code>, <code>api_key.revoked</code>) carry the request id, client IP and
+user agent like the other events: the key routes hand the app&#x27;s correlated recorder to
+<code>ApiKeyAdminService</code> for the call (<code>src/sandfort/api/routes/api_keys.py</code>, commit 9571d1a).
+<code>quota.updated</code> carries them too: <code>QuotaService</code> is wired with the correlated recorder
+(<code>src/sandfort/api/wiring.py</code>). A quota release recorded outside a request (auto-stop,
+reconciler) still stores <code>null</code> for the three fields, as there is no request to name.</p></li>
+<li><p>Per-org hash chain: <code>hash = HMAC-SHA256(key, prev_hash + canonical(row))</code> when
+<code>SANDFORT_AUDIT_CHAIN_KEY</code> is set (at least 32 bytes), else <code>sha256(prev_hash + canonical(row))</code>, where the canonical form is compact, key-sorted JSON of id, org, actor,
+action, target, outcome, request id, details and time. IP and user agent are not hashed.
+Rows link by <code>prev_hash</code>. The chain is tamper-evident: it shows a changed, removed or
+reordered row, not who changed it. With the key set, a writer who only has database access
+cannot recompute the hashes of a rewritten history; without the key a writer can (and in
+<code>prod</code> the server logs a warning at startup while the key is unset).</p></li>
+<li><p>Keyed chain settings (<code>src/sandfort/services/audit_chain.py</code>):</p>
+<ul>
+<li><code>SANDFORT_AUDIT_CHAIN_KEY</code>: the HMAC key. Keep it out of the database and out of backups
+of the database. Changing or losing it makes keyed rows fail <code>audit-verify</code>.</li>
+<li><code>SANDFORT_AUDIT_CHAIN_ACCEPT_UNKEYED</code> (default <code>true</code>): whether verify accepts unkeyed
+rows (written before the key was set) at the start of an org&#x27;s chain, and counts them.
+An unkeyed row after a keyed row is always a finding. With the key set, a chain whose
+newest row is unkeyed is also a finding whatever the flag says, because a writer without
+the key could otherwise replace the history with a self-consistent unkeyed chain. An org
+with no audited write since the key was set shows this finding until its next write.</li>
+<li>Migration to a keyed chain: (1) set <code>SANDFORT_AUDIT_CHAIN_KEY</code> on every <code>api</code> and
+<code>worker</code> process and restart them; (2) make one audited write per org (any mutating
+call), so each org&#x27;s newest row is keyed; (3) run <code>audit-verify</code> and confirm it exits 0
+and reports the number of unkeyed rows it accepted; (4) set
+<code>SANDFORT_AUDIT_CHAIN_ACCEPT_UNKEYED=false</code> and restart; the old unkeyed prefix then
+fails verify, so acknowledge it with <code>audit-reanchor</code> (below) or keep the flag on until
+retention has pruned those rows.</li>
+<li>Signed head: with the chain key set, <code>audit-export</code> appends one trailer line per org after
+that org&#x27;s rows. It names the newest row at export time (<code>type</code> <code>audit_head</code>, <code>org_id</code>,
+<code>row_id</code>, <code>hash</code>), binds the content of the export (below) and carries an HMAC over those
+fields with the chain key (<code>hmac</code>). The REST export (<code>GET /v1/audit-events/export</code>) ends
+with the same kind of line whenever the export holds at least one row: it names the last row
+of that export (the newest chain row unless <code>to</code> cut the export earlier). With a
+<code>request_id</code> or <code>outcome</code> filter the head is marked <code>filtered: true</code> and carries <code>filters</code>
+(the filter values, as text). Only an empty export, or a server without the chain key, ends
+in an unsigned <code>export_summary</code> line (<code>rows</code>, <code>filters</code>).
+Consumers of an export must skip lines whose <code>type</code> is <code>audit_head</code> or <code>export_summary</code>
+(row lines have no <code>type</code> field).</li>
+<li>Content binding (round 63 and later): the head also carries <code>row_count</code> (the number of event
+lines above it), <code>first_row_id</code> (the id of the first one; <code>null</code> when there are none) and
+<code>export_sha256</code> (hex SHA-256 over the exact UTF-8 bytes of every event line, each with its
+trailing newline, in order; the trailer is not included). The server computes the digest
+while it streams the lines, in constant memory. In an operator <code>audit-export</code> of several
+orgs each head covers its own org&#x27;s lines only. The three fields are covered by the HMAC
+and by the Ed25519 signature below. A head without them (older servers) still parses and
+verifies; <code>verify-head</code> then reports <code>content_bound</code> false and a stderr note, &quot;legacy head:
+content not bound&quot;.</li>
+<li><code>audit-verify --head &lt;export file&gt;</code> checks every head&#x27;s HMAC and that the live chain
+still reaches each head row with the same hash, which detects truncation of the newest
+rows; a bad HMAC is <code>head_invalid</code>, a missing or changed head row is <code>head_missing</code>. It
+needs the chain key, and retention that prunes past the head row also reports
+<code>head_missing</code>. It accepts heads with and without the content binding; it does not
+recompute the file&#x27;s digest (<code>verify-head</code> does).</li>
+<li>Ed25519 signature of the head (<code>src/sandfort/audit_signing.py</code>,
+<code>src/sandfort/services/audit_chain_head.py</code>): with <code>SANDFORT_AUDIT_SIGNING_KEY</code> set as
+well, the head carries four more fields: <code>alg</code> (<code>ed25519</code>), <code>public_key</code> (the raw public
+key, urlsafe base64), <code>signed_at</code> (UTC, ISO 8601, to the second) and <code>signature</code> (urlsafe
+base64). The signature covers the compact, key-sorted JSON of the head without <code>signature</code>
+and <code>hmac</code>, so <code>signed_at</code> and the content binding are covered. The HMAC needs the secret chain key and so only the
+server can check it; the signature needs only the public key, which lets an auditor who
+holds no secret check the head. Details:
+<ul>
+<li><code>SANDFORT_AUDIT_SIGNING_KEY</code> is an Ed25519 private key, raw 32 bytes in urlsafe base64 or
+a PEM block (PKCS#8, no passphrase). Empty means unsigned heads. A malformed value fails
+the settings load, so the process does not start. Keep it in the secret store, out of
+the database and out of backups of it; see <code>docs/operations.md</code>, &quot;Signing the audit
+export&quot;.</li>
+<li>It depends on <code>SANDFORT_AUDIT_CHAIN_KEY</code>: a signing key without the chain key signs
+nothing. In <code>prod</code> the start is refused; elsewhere the server starts with a warning.</li>
+<li><code>GET /v1/status</code> publishes <code>audit_public_key</code>, the public key that verifies the heads,
+and <code>audit_key_fingerprint</code> next to it: the first 16 hex characters of sha256 over the
+raw public key, the value the CLI and <code>doctor</code> print. Both are <code>null</code> together. Pin
+the fingerprint out of band (release notes or the operator&#x27;s own channel), not from
+the server whose export you are checking.
+It is published only while heads are actually signed, that is when both keys are set;
+otherwise it is <code>null</code>. The route needs no key, so an auditor can fetch it
+independently of an export. A trailer&#x27;s own <code>public_key</code> is not a trust anchor: check
+against the key from the status route or one you pinned earlier.</li>
+<li>Heads written before <code>signed_at</code> existed (beta.60 to beta.64) have <code>alg</code>, <code>public_key</code>
+and <code>signature</code> only. They verify but are undated: <code>verify-head</code> fails them as <code>undated</code>
+(exit 3), and <code>audit-verify --head --public-key</code> accepts them.</li>
+</ul></li>
+</ul></li>
+<li><p>The canonical row, exactly (<code>src/sandfort/services/audit_chain.py</code>): the JSON object of the
+fields <code>id</code>, <code>org_id</code>, <code>actor_type</code>, <code>actor_id</code>, <code>action</code>, <code>target_type</code>, <code>target_id</code>,
+<code>outcome</code>, <code>request_id</code>, <code>details</code> and <code>occurred_at</code>, serialised with sorted keys,
+separators <code>,</code> and <code>:</code> (no spaces) and <code>ensure_ascii</code>. <code>occurred_at</code> is Python&#x27;s
+<code>datetime.isoformat()</code> with a <code>+00:00</code> offset, and the first row hashes with
+<code>prev_hash = &quot;&quot;</code>. The export shows the time with <code>Z</code>, so parse and re-format it before
+hashing. This reference verifier checks an export file of one org (Python 3.11 or later).
+It covers the unkeyed chain; for a keyed chain replace the <code>sha256</code> line with
+<code>hmac.new(key, text_with_prev.encode(), hashlib.sha256).hexdigest()</code> (<code>import hmac</code>), and it
+skips the trailer line (<code>audit_head</code> or <code>export_summary</code>):</p>
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 2" data-copy>Copy</button></div><pre class="code"><code>import hashlib, json, sys
+from datetime import datetime
+
+KEYS = &quot;id org_id actor_type actor_id action target_type target_id outcome request_id details&quot;
+prev = None  # hash of the previous row
+for row in map(json.loads, open(sys.argv[1])):
+    if row.get(&quot;type&quot;) in (&quot;audit_head&quot;, &quot;export_summary&quot;):
+        continue  # trailer line, not a row
+    if row[&quot;hash&quot;] is None and prev is None:
+        continue  # written before the chain existed
+    body = {key: row[key] for key in KEYS.split()}
+    body[&quot;occurred_at&quot;] = datetime.fromisoformat(row[&quot;occurred_at&quot;]).isoformat()
+    text = json.dumps(body, sort_keys=True, separators=(&quot;,&quot;, &quot;:&quot;), ensure_ascii=True)
+    digest = hashlib.sha256(((row[&quot;prev_hash&quot;] or &quot;&quot;) + text).encode()).hexdigest()
+    linked = prev is None or (row[&quot;prev_hash&quot;] or &quot;&quot;) == prev
+    print(row[&quot;id&quot;], &quot;ok&quot; if digest == row[&quot;hash&quot;] and linked else &quot;BROKEN&quot;)
+    prev = row[&quot;hash&quot;]</code></pre></div>
+<p>The first hashed row seeds the chain with its own stored <code>prev_hash</code>, as the server does,
+so an export that starts after a retention prune still verifies.</p></li>
+<li><p>Verify: admin command <code>audit-verify</code> (every org; exit 3 on a broken chain), or
+<code>GET /v1/audit-events/verify</code> (the caller&#x27;s org). Export: admin command <code>audit-export</code>
+(NDJSON), or <code>GET /v1/audit-events/export?from=&amp;to=</code> (<code>from</code> inclusive, <code>to</code> exclusive).
+The two API routes need <code>audit:read</code> and an org-wide key (a key with <code>sandbox_labels</code> gets 403)
+and are in the pinned OpenAPI spec. The export route also takes <code>request_id</code> and <code>outcome</code>
+(see the list route below) and keeps only the rows that match. The list route,
+<code>GET /v1/audit-events</code>, takes the same <code>from</code> (inclusive) and <code>to</code> (exclusive) bounds on
+<code>occurred_at</code>, plus <code>actor_id</code>, <code>action</code>, <code>target_id</code>, <code>request_id</code> (the <code>X-Request-ID</code> of the
+request that wrote the row) and <code>outcome</code> (<code>success</code>, <code>denied</code> or <code>error</code>). The filters are
+exact matches and combine with AND. A query parameter outside the accepted set of a route
+(list: those above plus <code>order</code>, <code>cursor</code> and <code>limit</code>; export: <code>from</code>, <code>to</code>, <code>request_id</code>,
+<code>outcome</code>; verify: <code>from_id</code>) answers 422 naming it, so a typo such as <code>?requestid=</code> cannot
+return an unfiltered 200 (commit 965782c, <code>src/sandfort/api/routes/audit.py</code>). The check runs
+after authentication, so a caller without access still gets 401 or 403. The list route
+returns the oldest event first by
+default; <code>order=desc</code> returns the newest first (<code>order=asc</code> is the default; any other value is
+a 422). The order is by event id, which follows creation time, and <code>next_cursor</code> continues in
+the chosen order, so send the same <code>order</code> on every page (<code>src/sandfort/api/routes/audit.py</code>,
+commit 7cdfb86). The export route is not affected.</p></li>
+<li><p>Verify an export file: <code>sandfort audit verify-head &lt;file&gt;</code> (<code>cli/src/sandfort_cli/audit.py</code>,
+<code>cli/src/sandfort_cli/audit_verify_cmd.py</code>, <code>sdk/python/src/sandfort_sdk/audit_export.py</code>,
+SDK: <code>verify_export</code>) needs no credentials: the public key comes from <code>--public-key</code> (32
+bytes, urlsafe or standard base64) or, by default, from <code>audit_public_key</code> of <code>GET /v1/status</code>, which the command fetches without an API key (the base url is the profile&#x27;s or
+<code>SANDFORT_BASE_URL</code>). Without <code>--public-key</code> it exits 2 when the server publishes no key. The
+file must end with an <code>audit_head</code> line. It checks, in this order, and reports the first
+reason that fails:</p>
+<ol>
+<li>The head signature with that key. Failures: <code>unsigned</code> (no Ed25519 signature),
+<code>signature</code> (does not verify), <code>key_mismatch</code> (the head names another public key than the
+one you trust), <code>undated</code> (the signature verifies but <code>signed_at</code> is absent, has no UTC
+offset or is before 1970-01-02) and <code>future_signed_at</code> (<code>signed_at</code> is more than 5
+minutes ahead of the local clock).</li>
+<li>When the head binds the content (round 63 and later), right after the signature:
+<code>count_mismatch</code> (the number of event lines differs from <code>row_count</code>: rows were removed or
+added), <code>content_mismatch</code> (the count is right, but the SHA-256 over the exact bytes of the
+file&#x27;s event lines differs from <code>export_sha256</code>: a line was edited or reordered, including
+an edit that keeps <code>hash</code> and <code>prev_hash</code>) and <code>first_row_mismatch</code> (the first event line&#x27;s <code>id</code> is not <code>first_row_id</code>).
+Event lines are the non-blank lines above the trailer; the digest includes each line&#x27;s
+<code>\n</code>.</li>
+<li><code>malformed_row</code>: a line is not a JSON object with a text <code>id</code>, <code>occurred_at</code>, <code>org_id</code> and
+<code>action</code> and the <code>hash</code> and <code>prev_hash</code> keys (text or null), is not valid UTF-8, is nested
+too deeply or is longer than 1 MiB. The output names the line.</li>
+<li><code>misplaced_trailer</code>: an <code>audit_head</code> or <code>export_summary</code> line that is not the final line.</li>
+<li><code>org_mismatch</code>: a row&#x27;s <code>org_id</code> is not the head&#x27;s. The output names the first such line.</li>
+<li><code>truncated</code>: the last row of the file is not the row the head names (rows were cut, or
+the trailer belongs to a different, earlier or later, export), or the file has no rows.</li>
+<li><code>head_mismatch</code>: the last row is the head&#x27;s row, but its <code>hash</code> differs from the head&#x27;s.</li>
+<li><code>chain_break</code>: a row&#x27;s <code>prev_hash</code> is not the <code>hash</code> of the row before it in the file
+(the first row&#x27;s <code>prev_hash</code> is not checked, since an export may start mid-chain). The
+first such row is reported as <code>first_break</code>. Not checked for a head marked <code>filtered</code>
+(an export cut by <code>request_id</code> or <code>outcome</code> is not a contiguous run of the chain); the
+output says so, and <code>first_break</code> stays null.</li>
+<li><code>unchained_rows</code>: a row carries no <code>hash</code>. Server exports always carry hashes, so this
+means rows were stripped of them. <code>--allow-unchained</code> accepts rows without a hash that
+come before the first hashed row (a prefix nobody has chained); they are counted, and a
+note on stderr says the server-side check covers them.</li>
+<li>With <code>--previous &lt;file&gt;</code> (SDK: <code>previous=</code>), <code>not_a_continuation</code>: the event lines of the
+earlier export are not an exact byte prefix of this export&#x27;s event lines (this includes an
+export that starts at another row). On success the output reports <code>previous_rows</code> and
+<code>new_rows</code>, the number of rows added since. The earlier file is not itself verified;
+verify it on its own.</li>
+</ol>
+<p>One more reason replaces all of the above: <code>no_trailer</code>, when the file has event rows but
+its last line is not a usable <code>audit_head</code> (missing, junk, an extra row after the trailer);
+<code>first_break</code> is null there. <code>--head-only</code> checks the signature and <code>signed_at</code> alone and
+skips the rows (not combinable with <code>--previous</code>).</p>
+<p>Exit codes. Exit 0 when every check passes. Exit 3 when a check fails; the reason is printed
+(<code>error: export not verified (&lt;reason&gt;)</code>), and <code>--json</code> carries it in <code>reason</code>. A file with a
+trailer and no rows under it is exit 3 (<code>truncated</code>), not 2. Exit 2 only when the check
+cannot run: the file or the <code>--previous</code> file is missing or unreadable, the file is empty,
+the file has no valid row and its last line is not a usable <code>audit_head</code>, the last line is an
+<code>export_summary</code> (an unsigned export: the wrong kind of file, even with rows above it),
+<code>--head-only</code> finds no trailer, <code>--public-key</code> is not 32 bytes in base64, or no key was given
+and the server publishes none (or cannot be asked: no base url configured). A bad row, a
+misplaced trailer and a missing trailer after valid rows are exit 3, not 2.</p>
+<p>On success the command prints one stderr line: what was proven (the signature with the age of
+<code>signed_at</code>, the content digest, count and first row, each row&#x27;s org and the last row, the
+linkage between neighbouring rows) and what was not (the keyed row hashes, and that this is
+the newest export). A legacy head adds &quot;legacy head: content not bound&quot;; a filtered head
+adds a note that linkage was not checked.</p>
+<p>What it proves and what it does not. With a head from round 63 or later, a verified file is
+exactly the sequence of event lines the server signed at <code>signed_at</code>: the signed digest,
+count and first row catch any added, removed, reordered or edited line, and every row has
+the head&#x27;s org. Still not proven:</p>
+<ul>
+<li>The keyed row hashes. They are HMACs with the chain key, so a client cannot recompute them.
+A server (or anyone holding the chain key and the signing key) can sign a fabricated
+export, and <code>verify-head</code> accepts it. Only the server-side verification (<code>sandfort audit verify</code>, <code>audit-verify</code> of the admin CLI, or <code>GET /v1/audit-events/verify</code>) proves the
+keyed hashes and the full chain.</li>
+<li>Freshness. An older, genuinely signed export still verifies: check <code>signed_at</code>, and of two
+signed heads the later <code>signed_at</code> is the newer one. <code>--previous</code> shows that a later
+export extends an earlier one, not that it is the newest.</li>
+<li>For a legacy head (before round 63) the client check binds only the last row to the signed
+head, plus the linkage between neighbouring rows: rows before the last can be replaced or
+removed by someone who rewrites <code>prev_hash</code> and <code>hash</code> consistently, and an edit of a row&#x27;s
+content that keeps its <code>hash</code> and <code>prev_hash</code> passes.</li>
+<li>A filtered export (<code>filtered: true</code>) binds its content but not that the rows are all of
+the matching rows in the chain.</li>
+</ul>
+<p><code>audit-verify --head &lt;file&gt; --public-key &lt;key&gt;</code> also checks each head&#x27;s signature against
+the live chain; an unsigned head or a bad signature is <code>head_invalid</code>. It accepts heads with
+and without the content binding, and legacy heads without <code>signed_at</code>, which <code>verify-head</code>
+fails as <code>undated</code>. <code>sandfort audit export</code> prints one stderr
+note with the signing key&#x27;s fingerprint (first 16 hex characters of sha256 over the raw
+public key) when the trailer is a signed head; compare it with the fingerprint that
+<code>verify-head</code> prints and with the one the operator reads from the <code>audit keys</code> row of
+<code>python -m sandfort.admin_cli doctor</code>.</p></li>
+<li><p>An export ends in a signed head when the server has the chain key and the export holds at
+least one row (<code>src/sandfort/api/routes/audit.py</code>, <code>_export_lines</code>). The head names the last
+row of the export and its digest; with a <code>request_id</code> or <code>outcome</code> filter it is marked
+<code>filtered</code>. An empty export, or a server without the chain key, ends in an unsigned
+<code>export_summary</code> that names no row, and <code>verify-head</code> exits 2 on it.</p></li>
+<li><p><code>audit-verify</code> and an unkeyed newest row (<code>src/sandfort/services/audit_chain.py</code>): with the
+chain key set, a chain whose newest row is unkeyed is reported as a <code>hash_mismatch</code> finding
+and <code>audit-verify</code> exits 3. It is an alarm, not a calm verdict: either the key was enabled
+after the last event, or keyed rows were deleted, and the rows alone cannot say which.
+Do not write an event to clear it. Compare the live chain against an earlier export with
+<code>audit-verify --head &lt;earlier export&gt;</code>.</p></li>
+<li><p>Verify from an anchor: <code>GET /v1/audit-events/verify?from_id=&lt;audit event id&gt;</code> starts the walk
+at that row instead of the first one (<code>src/sandfort/api/routes/audit.py</code>, commit 175ec2a).
+The response then carries <code>anchor_id</code> with the id you passed; a full walk leaves the field out.
+What it proves: the anchor row&#x27;s own hash is recomputed and must match, and every row after it
+is checked as in a full walk (its hash, and its <code>prev_hash</code> against the row before it), so the
+chain from the anchor to the newest row is intact. What it does not prove: nothing before the
+anchor is checked, and the anchor&#x27;s link to the row before it is not compared (the walker
+seeds from the first row it sees; the anchor&#x27;s stored <code>prev_hash</code> is covered by its own hash,
+but nothing checks that it equals its predecessor&#x27;s hash). Altered or removed history before
+the anchor therefore stays undetected by this call. Like a full walk, it cannot tell a
+consistent rewrite of the later rows from the original: to catch that, keep the anchor&#x27;s
+<code>hash</code> and the reply&#x27;s <code>last_hash</code> from an earlier <code>audit-export</code> or verify and compare them.
+Use a full walk, or <code>audit-verify</code>, to cover the whole history. An id that does not exist or
+belongs to another organization answers 404.</p></li>
+<li><p>Historical <code>link_broken</code> findings: before 6fe71aa, concurrent audit appends for the same org
+on Postgres could read the same chain head and both link to it, which forked the chain.
+Verify reports such rows as <code>link_broken</code>. None of these is a <code>hash_mismatch</code>: no event was
+altered. Appends are now serialised per org with a Postgres advisory transaction lock, and
+SQLite deployments were never affected. Breaks that already exist stay in the chain (an audit
+trail is not rewritten), so verify keeps reporting them; all of them predate the fix. On the
+hosted beta only 3 of the 5 evaluation orgs have such breaks; the other orgs verify clean.</p></li>
+<li><p>Re-anchor rule (<code>src/sandfort/services/audit_chain.py</code>, <code>src/sandfort/admin_cli.py</code>, commit
+d96b196): an operator can acknowledge an org&#x27;s historical findings with the admin command
+<code>audit-reanchor --org &lt;id&gt; --note &lt;text&gt;</code>, which appends one <code>audit.chain_reanchored</code> event
+(actor <code>platform_admin</code>, details <code>acknowledged_through</code>, <code>findings</code>, <code>note</code>; see
+<code>docs/operations.md</code>). Since commit 100d088 the record can also name who acted and why: the
+options <code>--operator &lt;name&gt;</code> (1 to 255 characters) and <code>--reason-code</code>
+(<code>incident_acknowledged</code>, <code>migration</code> or <code>other</code>) are given together and are stored as
+<code>operator</code> and <code>reason_code</code> in the same details. Without them the event has neither, as the
+events written before that commit; the event&#x27;s actor stays <code>sandfort-admin</code>, so <code>operator</code> is
+the name the person running the command chose to give, not an authenticated identity. The
+rule:</p>
+<ul>
+<li>It acknowledges, it never hides. No row is changed or removed and the walker still finds
+every break. Verify only reports the findings on rows up to <code>acknowledged_through</code> apart, in
+<code>acknowledged_findings</code> (API) or in the <code>(M acknowledged finding(s))</code> suffix of
+<code>audit-verify</code>, and <code>reanchored_by</code> names the event. The <code>reanchor</code> object of the verify
+reply carries that event&#x27;s <code>operator</code>, <code>reason_code</code>, <code>note</code>, <code>findings</code>,
+<code>acknowledged_through</code>, <code>event_id</code> and <code>occurred_at</code>, so the verify alone says who
+acknowledged what and why (<code>operator</code> and <code>reason_code</code> are <code>null</code> for an event written
+without them; the object is left out while there is no re-anchor). The listed <code>findings</code>
+hold only unacknowledged ones.</li>
+<li>The full history stays in the export: <code>audit-export</code> and <code>GET /v1/audit-events/export</code>
+return the broken rows and the re-anchor event like any other row, and the note records why
+the operator accepted them.</li>
+<li>Any later break still fails verify (<code>ok</code> false, exit 3): a finding on a row after
+<code>acknowledged_through</code>, including the re-anchor event itself, is not acknowledged. An event
+that names itself or a later row, lacks a row id or did not succeed acknowledges nothing.</li>
+<li>Only the latest re-anchor event counts. The command writes nothing when the org has no
+unacknowledged findings.</li>
+<li>The event is an ordinary chained, audited row: it shows that an operator accepted the
+findings and when. It does not show that they were harmless; that is the operator&#x27;s note.</li>
+</ul></li>
+<li><p>Retention: <code>SANDFORT_AUDIT_RETENTION_DAYS</code> (<code>0</code> = keep forever) with a pass every
+<code>SANDFORT_AUDIT_RETENTION_INTERVAL_S</code> (<code>3600</code>). It prunes only the oldest prefix of an org&#x27;s
+trail and never the newest row, and verification seeds from the first remaining row, so the
+rest of the chain still verifies. Export before you prune if you need the old rows.</p></li>
+</ul>
+<h2 id="usage-metering">Usage metering<a class="anchor" href="#usage-metering" aria-label="Link to section: Usage metering">#</a></h2>
+<ul>
+<li><code>vcpu</code> and <code>memory_mib</code> are allocated time: an interval opens when a sandbox enters
+<code>started</code> and closes on <code>stopped</code>, <code>destroyed</code> or <code>error</code>. Two vCPUs for one hour are 7200
+vCPU-seconds.</li>
+<li><code>disk_gib</code> is sampled, not allocated: the size of the container&#x27;s writable layer, sampled
+every <code>SANDFORT_METERING_SAMPLE_INTERVAL_S</code> (<code>300</code>) for started sandboxes. It is not the
+requested <code>disk_gib</code>, and it excludes named volumes and the image. A driver that cannot
+report a size skips the sample.</li>
+<li>Hourly rollups (<code>SANDFORT_METERING_ROLLUP_INTERVAL_S</code> <code>3600</code>, recomputing the last
+<code>SANDFORT_METERING_ROLLUP_LOOKBACK_HOURS</code> <code>3</code> completed hours). <code>SANDFORT_METERING_ENABLED</code>
+(<code>true</code>) switches the worker.</li>
+<li><code>GET /v1/org/usage?from=&amp;to=</code> returns one total per dimension (a timestamp without an offset
+is UTC). Add <code>group_by=sandbox</code> or <code>group_by=label:&lt;key&gt;</code> for chargeback; sandboxes without
+the label form the <code>null</code> group. Grouped totals come from the raw intervals, because
+rollups are per org and cannot be split. Any other <code>group_by</code> is a 422. <code>group_by</code> is in
+the pinned OpenAPI spec.</li>
+<li>Metering records allocation; it does not imply billing.</li>
+</ul>
+<h2 id="webhooks">Webhooks<a class="anchor" href="#webhooks" aria-label="Link to section: Webhooks">#</a></h2>
+<ul>
+<li>13 event types: <code>sandbox.created</code>, <code>.started</code>, <code>.stopped</code>, <code>.deleted</code>, <code>.error</code>,
+<code>.auto_stopped</code>; <code>snapshot.created</code>, <code>.active</code>, <code>.error</code>, <code>.deleted</code>; <code>volume.created</code>,
+<code>.deleted</code>; <code>quota.exceeded</code>. Delivery is at least once.</li>
+<li>Filters per endpoint: <code>*</code>, an exact type, or <code>prefix.*</code>; an empty list means all events;
+at most 32 filters.</li>
+<li>Signing follows Standard Webhooks. Headers <code>webhook-id</code> (stable per event, use it to
+deduplicate), <code>webhook-timestamp</code> (unix seconds) and <code>webhook-signature</code>, whose value is
+<code>v1,&lt;base64 HMAC-SHA256&gt;</code> over <code>id.timestamp.payload</code>. The secret starts with <code>whsec_</code> and
+is shown once, in the create response. Receivers should reject timestamps more than 300 s
+off.</li>
+<li>Delivery: a 2xx is success. Anything else, including a redirect (never followed) or a
+transport error, is retried; there are 6 attempts. The schedule holds delays of 1, 5, 25, 60 and 300 s, but the
+dispatcher looks for due deliveries every <code>SANDFORT_WEBHOOK_DISPATCH_INTERVAL_S</code> (default
+5 s), so the first retry comes about 5 s after the failure.
+The timeout is 10 s per attempt (<code>SANDFORT_WEBHOOK_TIMEOUT_S</code>). After 50 consecutive failed
+attempts the endpoint is disabled and <code>webhook.endpoint_disabled</code> is audited. A redelivery
+requeues a delivery.</li>
+<li>Receiver URLs (<code>src/sandfort/webhooks/ssrf.py</code>): no userinfo, ports 80, 443 or 8000-9000
+only, and every resolved address must be public. Loopback, private, link-local and cloud
+metadata addresses are rejected; <code>SANDFORT_WEBHOOK_ALLOW_PRIVATE_NETWORKS</code> (<code>false</code>) admits
+the first three, never the metadata addresses. The delivery connects to the vetted IP, so a
+second DNS answer cannot redirect it. A name the resolver reports as not existing is a 422
+(<code>details.reason</code> <code>not_resolved</code>); a resolver that times out or fails is retried once and then
+answers 503 <code>DNS_UNAVAILABLE</code> (<code>details.reason</code> <code>dns_unavailable</code>, <code>Retry-After</code>), never a
+claim that the host does not resolve. Each lookup is capped at 2.5 s.</li>
+<li>Secrets are encrypted at rest with <code>SANDFORT_WEBHOOK_SECRET_KEY</code> (a Fernet key). A server
+that has the key stores every new secret encrypted (a <code>SecretBox</code> marker prefix plus the
+Fernet token). The key is required when <code>SANDFORT_ENV=prod</code>: the server refuses to start in
+prod without it. Outside prod an empty key is allowed and stores new secrets in plaintext;
+a secret stored in plaintext before the key was set is still read as is. Set the key before
+you create endpoints you care about.</li>
+<li><code>SANDFORT_WEBHOOK_REQUIRE_HTTPS</code> (<code>false</code>) rejects <code>http</code> URLs at registration and at
+delivery; it is forced on in <code>prod</code>.</li>
+<li>The hosted beta sets both <code>SANDFORT_WEBHOOK_REQUIRE_HTTPS</code> and <code>SANDFORT_WEBHOOK_SECRET_KEY</code>:
+webhook URLs on the beta must use <code>https</code>, and webhook secrets are encrypted at rest.</li>
+</ul>
+<h2 id="data-retention-and-deletion">Data retention and deletion<a class="anchor" href="#data-retention-and-deletion" aria-label="Link to section: Data retention and deletion">#</a></h2>
+<div class="tbl-wrap" role="region" aria-label="Table: Data retention and deletion" tabindex="0"><table><thead><tr><th scope="col">Data</th><th scope="col">What happens</th></tr></thead><tbody><tr><td>Sandbox delete</td><td>The container is force-removed with its writable layer and anonymous volumes. The sandbox row stays as a <code>destroyed</code> tombstone; nothing purges it.</td></tr><tr><td>Named volumes</td><td>Separate from sandboxes. Delete is refused (409) while a sandbox mounts the volume.</td></tr><tr><td>Snapshot delete</td><td>Refused (409) while a sandbox uses it. Otherwise the image is removed (best effort, a failure is logged) and then the row.</td></tr><tr><td>Orphans</td><td>A garbage collector removes untracked <code>sandfort-snapshot:</code> images and <code>sf-vol-</code> volumes after a grace period (<code>SANDFORT_GC_ENABLED</code> <code>true</code>, <code>SANDFORT_GC_INTERVAL_S</code> <code>300</code>, <code>SANDFORT_ORPHAN_GRACE_S</code> <code>300</code>).</td></tr><tr><td>Command and session output</td><td>Held in server memory only, lost on restart. Each command keeps at most 10 MiB; past that the log is marked truncated. The budget is per organisation: 256 retained commands and 64 MiB. Past either, eviction stays inside the organisation that produced the output: its oldest finished logs go first, then the oldest chunks of its running logs. A global ceiling of 256 MiB across all organisations squeezes only the organisation that just wrote, so one organisation&#x27;s output does not evict another&#x27;s logs (<code>src/sandfort/toolbox/command_logs.py</code>).</td></tr><tr><td>Sandbox logs</td><td>Read from the container; they go when it does.</td></tr><tr><td>Usage intervals, rollups, outbox events, jobs</td><td>Kept; no purge job.</td></tr><tr><td>Webhook deliveries</td><td>Kept; no purge job. Deleting an endpoint deletes its deliveries.</td></tr><tr><td>Idempotency records</td><td>Expire after 1 day.</td></tr><tr><td>Audit</td><td>The only data with a retention setting (see Audit).</td></tr></tbody></table></div>
+<p>Deleted data is unlinked by Docker, not securely wiped.</p>
+<h2 id="telemetry">Telemetry<a class="anchor" href="#telemetry" aria-label="Link to section: Telemetry">#</a></h2>
+<ul>
+<li>Nothing is sent to the Sandfort maintainer. The server process makes outbound HTTP only for:
+webhooks you configure; the OIDC key set fetch from <code>SANDFORT_OIDC_JWKS_URL</code> when SSO is
+configured; and forwarding to peer nodes when cross-node routing is configured. The Docker
+daemon pulls images from registries when you register a snapshot or build an image.</li>
+<li>Tracing: <code>SANDFORT_TRACING_EXPORTER</code> is <code>none</code> (spans stay in process; the default) or
+<code>console</code>. There is no network exporter. <code>SANDFORT_TRACING_ENABLED</code> defaults to <code>true</code>.</li>
+<li><code>/metrics</code> is unauthenticated. Keep it inside the cluster.</li>
+<li>The browser web terminal (<code>GET /terminal</code>, served by the preview proxy) loads xterm.js 5.5.0
+from <code>cdn.jsdelivr.net</code>, without a subresource-integrity hash. The <code>/console</code> page
+references no external URL.</li>
+</ul>
+<h2 id="isolation">Isolation<a class="anchor" href="#isolation" aria-label="Link to section: Isolation">#</a></h2>
+<p>Isolation is chosen per sandbox; see
+<a href="https://docs.sandfort.dev/isolation-tiers">the isolation tiers page</a> for measurements
+and caveats. <code>container</code> is runc with namespaces, cgroups, seccomp and a reduced capability
+set; it shares the host kernel, so a kernel exploit inside the sandbox reaches the host.
+<code>gvisor</code> puts a user-space kernel between the code and the host kernel; it is not a hardware
+boundary, and a bug in gVisor could still expose the host. <code>microvm</code> runs Kata Containers with
+a guest kernel per sandbox; it is offered only where the host has KVM, and on the hosted beta
+it runs on nested KVM, so it is not a claim of stronger isolation than other microVM products.
+The Firecracker driver is a skeleton and is not offered.</p>
+<p>Network default: <code>SANDFORT_DEFAULT_BLOCK_NETWORK</code> (<code>false</code>) makes a create that names no
+network policy start with all outbound traffic blocked (<code>network.block_all</code>). An explicit
+<code>block_all</code> of <code>true</code> or <code>false</code> in the request wins, and a create with an <code>egress_allowlist</code>
+(even an empty one) keeps its own rules. Use it on a deployment that runs untrusted or student
+code, so a client that forgets <code>block_network=True</code> is still offline.</p>
+</article>
+</div></div>
+</main>
+<div class="sr" id="copy-status" role="status" aria-live="polite" aria-atomic="true"></div>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+
+</body>
+</html>

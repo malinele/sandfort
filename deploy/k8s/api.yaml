@@ -1,0 +1,188 @@
+# Supported topology: ONE dedicated sandbox node running ONE pod, role "all"
+# (API + background workers + optional preview proxy in a single process).
+#
+# Why host-networked: the sandbox bridge is created with icc=false by design, so only
+# host -> sandbox traffic passes. A pod on the cluster network cannot reach sandbox ports
+# and the preview proxy would answer BAD_GATEWAY. The server therefore shares the node's
+# network namespace (observed 2026-11-03).
+#
+# Why one replica with Recreate: the pod binds fixed node ports (8000, 8001) and owns the
+# Docker daemon of its node. A second pod, or a RollingUpdate surge pod, would fail to bind
+# or would fight the first one over the same containers. Recreate stops the old pod first.
+#
+# The image default CMD runs "alembic upgrade head" on start; we override it so that
+# migrations are a deliberate step before rollout (see docs/operations.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandfort-api
+  namespace: sandfort
+  labels:
+    app: sandfort
+    role: all
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sandfort
+      role: all
+  template:
+    metadata:
+      labels:
+        app: sandfort
+        role: all
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      # The node must carry this label and taint (deploy/node-setup.sh prints the commands).
+      nodeSelector:
+        sandfort.dev/sandbox-node: "true"
+      tolerations:
+        - key: sandfort.dev/sandbox-node
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      # The runbook needs a grace period longer than the 10 s driver drain on shutdown
+      # (docs/operations.md, "Docker driver threads and shutdown").
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001 # the "sandfort" user of deploy/Dockerfile
+        seccompProfile:
+          type: RuntimeDefault
+        # Must match the group id of /var/run/docker.sock on the node
+        # (deploy/node-setup.sh prints it; default 999).
+        supplementalGroups: [999]
+      containers:
+        - name: sandfort
+          image: registry.example.com/sandfort:TAG
+          command: ["python", "-c", "from sandfort.main import main; main()"]
+          ports:
+            # With hostNetwork these are ports of the node itself.
+            - name: http
+              containerPort: 8000
+            - name: preview
+              containerPort: 8001 # preview proxy (SANDFORT_PROXY_ENABLED, SANDFORT_PROXY_PORT)
+          env:
+            - name: SANDFORT_ROLE
+              value: all
+            # Identity in the node registry: the Kubernetes node name, unique per node.
+            - name: SANDFORT_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: SANDFORT_API_KEY_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: sandfort-secrets
+                  key: SANDFORT_API_KEY_PEPPER
+            - name: SANDFORT_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: sandfort-secrets
+                  key: SANDFORT_SESSION_SECRET
+            - name: SANDFORT_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sandfort-secrets
+                  key: SANDFORT_DATABASE_URL
+            # Fernet key sealing webhook secrets at rest; prod refuses to start without it.
+            - name: SANDFORT_WEBHOOK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sandfort-secrets
+                  key: SANDFORT_WEBHOOK_SECRET_KEY
+            # HMAC key of the audit chain (at least 32 bytes). Optional so a cluster without
+            # it still starts; set it for a keyed, tamper-evident chain.
+            - name: SANDFORT_AUDIT_CHAIN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sandfort-secrets
+                  key: SANDFORT_AUDIT_CHAIN_KEY
+                  optional: true
+            # Ed25519 key signing the audit export head; needs SANDFORT_AUDIT_CHAIN_KEY too.
+            - name: SANDFORT_AUDIT_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sandfort-secrets
+                  key: SANDFORT_AUDIT_SIGNING_KEY
+                  optional: true
+          envFrom:
+            - configMapRef:
+                name: sandfort-config
+          # Resources of the SERVER PROCESS only. The sandboxes are Docker containers
+          # created through the node's Docker daemon, outside this pod's cgroup: they are
+          # NOT counted here. Bound them with SANDFORT_NODE_MAX_SANDBOXES and
+          # SANDFORT_HOST_CAPACITY_* in configmap.yaml, and size the node for them.
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # Startup runs the isolation self-check, so allow up to 150 s before liveness applies.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          # /readyz checks the database and the Docker driver.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            # WARNING: the docker socket grants host-level control of the node.
+            # The nodeSelector and taint above keep it on a dedicated sandbox node.
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            # deploy/seccomp.json, generated by kustomize (see kustomization.yaml).
+            - name: seccomp
+              mountPath: /etc/sandfort/seccomp
+              readOnly: true
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+        - name: seccomp
+          configMap:
+            name: sandfort-seccomp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandfort-api
+  namespace: sandfort
+  labels:
+    app: sandfort
+    role: all
+spec:
+  type: ClusterIP
+  selector:
+    app: sandfort
+    role: all
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+    - name: preview
+      port: 8001
+      targetPort: preview

@@ -1,0 +1,12 @@
+# The server pod uses hostNetwork and a hostPath docker socket, which the "baseline" and
+# "restricted" Pod Security Standards reject. The namespace must therefore allow
+# "privileged" pods. Keep it dedicated to Sandfort and keep the pod on a dedicated node
+# (see api.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sandfort
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
