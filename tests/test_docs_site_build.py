@@ -85,7 +85,8 @@ DEPLOY_KEY = re.compile(r'"([^"=$\s]+)=\$d/([^"\s]+)"')
 NOT_FOUND = "404.html"
 ROBOTS = "robots.txt"
 SITEMAP = "sitemap.xml"
-SEO_FILES = (NOT_FOUND, ROBOTS, SITEMAP)
+LLMS = "llms.txt"
+SEO_FILES = (NOT_FOUND, ROBOTS, SITEMAP, LLMS)
 STYLESHEET = "docs.css"
 BUILT_EXTRAS = ("openapi.json", "redoc-init.js", "docs.js", STYLESHEET, *SEO_FILES)
 SPEC_SOURCE = ROOT / "openapi" / "sandfort.v1.json"
@@ -290,6 +291,29 @@ def test_robots_allows_all_and_names_the_sitemap(built: Path) -> None:
     assert [ln for ln in lines if ln.startswith("Sitemap:")] == [
         f"Sitemap: {CANONICAL_BASE}{SITEMAP}"
     ]
+
+
+def test_llms_txt_lists_every_published_page_and_the_spec(built: Path) -> None:
+    text = (built / LLMS).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    assert text.startswith("# Sandfort")
+    assert lines[0] == "# Sandfort documentation"
+    assert any(ln.startswith("> ") for ln in lines)
+    assert "## Pages" in lines
+    assert "## Reference" in lines
+    for name in PAGES:
+        assert f"]({_clean_url(name)}):" in text, name
+    assert f"({CANONICAL_BASE}openapi.json)" in text
+    assert "(https://sandfort.dev/llms.txt)" in text
+    assert "(https://github.com/malinele/sandfort)" in text
+    assert NOT_FOUND not in text
+
+
+def test_llms_txt_prose_has_no_semicolons_or_dashes(built: Path) -> None:
+    text = (built / LLMS).read_text(encoding="utf-8")
+    assert ";" not in text
+    assert "—" not in text and "–" not in text
+    assert "open source" not in text.lower()
 
 
 class _HtmlTag(HTMLParser):

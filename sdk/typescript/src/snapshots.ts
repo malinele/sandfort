@@ -8,12 +8,22 @@ import {
   pageFromPayload,
   requiredNumber,
   requiredString,
+  requiredStringOrNull,
   requiredTimestamp,
   resourcesFromPayload,
   stringOrNull,
   type Page,
   type Resources,
 } from "./models.js";
+import {
+  followBuildLogs,
+  IMAGE_BUILDS_PATH,
+  imageBuildBody,
+  type BuildLogEvent,
+  type BuildSnapshotOptions,
+  type ImageSpecInput,
+} from "./image-builds.js";
+import type { Image } from "./image.js";
 import { concatChunks, exportTar, type SnapshotExportRequest } from "./snapshot-export.js";
 import type { Transport } from "./transport.js";
 import { checkLabels, optionalLabels } from "./volumes.js";
@@ -30,7 +40,11 @@ export interface SnapshotInfo {
   name: string;
   /** `"pending"`, `"ready"`, `"error"` or `"deleting"`. */
   state: string;
-  imageRef: string;
+  /**
+   * Registry reference of the image behind the snapshot. `null` when the key is label-scoped:
+   * the server withholds the operator's registry host and path from such keys.
+   */
+  imageRef: string | null;
   layerCount: number;
   createdAt: Date;
   digest: string | null;
@@ -98,7 +112,7 @@ export function snapshotFromPayload(data: unknown): SnapshotInfo {
     id: requiredString(raw, "id", what),
     name: requiredString(raw, "name", what),
     state: requiredString(raw, "state", what),
-    imageRef: requiredString(raw, "image_ref", what),
+    imageRef: requiredStringOrNull(raw, "image_ref", what),
     layerCount: requiredNumber(raw, "layer_count", what),
     createdAt: requiredTimestamp(raw["created_at"], what),
     digest: stringOrNull(raw["digest"]),
@@ -236,6 +250,35 @@ export class Snapshots {
     const chunks: Uint8Array[] = [];
     for await (const chunk of this.exportStream(snapshotId, call)) chunks.push(chunk);
     return concatChunks(chunks);
+  }
+
+  /**
+   * Start a declarative image build from an `Image` (or a raw wire-form spec). The server
+   * answers `pending` while it builds, or `ready` with `reused` true when an identical spec
+   * was built before (`specHash` identifies the spec). Follow the build with `followBuildLogs`.
+   */
+  async build(
+    spec: Image | ImageSpecInput,
+    call: BuildSnapshotOptions = {},
+  ): Promise<SnapshotInfo> {
+    const reply = await this.#transport.request("POST", IMAGE_BUILDS_PATH, {
+      json: imageBuildBody(spec, call.name),
+      ...callArgs(call),
+    });
+    return snapshotFromPayload(reply);
+  }
+
+  /**
+   * The build log of a snapshot as it arrives: `log` events, then one final `state` event
+   * after which the stream ends. The request is sent on the first read; a blank `snapshotId`
+   * is a `ValidationError` raised then. A stream that ends before the `state` event raises
+   * `TransportError`.
+   */
+  followBuildLogs(
+    snapshotId: string,
+    call: CallOptions = {},
+  ): AsyncGenerator<BuildLogEvent, void, undefined> {
+    return followBuildLogs(this.#transport, snapshotId, call);
   }
 
   /** Delete a snapshot; the server answers 409 (`Conflict`) while a sandbox uses it. */

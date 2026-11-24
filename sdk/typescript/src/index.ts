@@ -18,6 +18,14 @@ export {
 } from "./errors.js";
 export type { ApiErrorInit } from "./errors.js";
 export { SnapshotFailedError, SnapshotTimeoutError } from "./snapshots.js";
+export { PtySession, ptyConnectUrl } from "./pty.js";
+export type {
+  CreatePtyOptions,
+  PtyConnectToken,
+  PtyInfo,
+  PtySocket,
+  PtySocketFactory,
+} from "./pty.js";
 export { PACKAGE_NAME, USER_AGENT, VERSION, buildInfo } from "./version.js";
 export type { BuildInfo } from "./version.js";
 export type { StatusInfo, StatusNotice } from "./status.js";
@@ -44,7 +52,8 @@ export type {
 } from "./models.js";
 export { ISOLATION_TIERS } from "./create-body.js";
 export type { IsolationTier, ResourceRequest, VolumeMount } from "./create-body.js";
-export { DEFAULT_POLL_INTERVAL_S, DEFAULT_WAIT_TIMEOUT_S, SandfortClient } from "./client.js";
+export { SandfortClient } from "./client.js";
+export { DEFAULT_POLL_INTERVAL_S, DEFAULT_WAIT_TIMEOUT_S } from "./client-options.js";
 export { Sandbox } from "./sandbox.js";
 export type { Cursor } from "./pagination.js";
 export type {
@@ -54,7 +63,7 @@ export type {
   ListSandboxesOptions,
   StopCause,
   SandfortClientOptions,
-} from "./client.js";
+} from "./client-options.js";
 // Type-only: the runtime export list is pinned by tests/scaffold.test.ts.
 export type { CodeLanguage, CodeRunOptions, ExecOptions, ExecResult } from "./process.js";
 export type {
@@ -112,6 +121,9 @@ export type {
   RegisterSnapshotOptions,
   SnapshotInfo,
 } from "./snapshots.js";
+export { Image } from "./image.js";
+export type { ImageFile, ImageSpec, PackageArg } from "./image.js";
+export type { BuildLogEvent, BuildSnapshotOptions, ImageSpecInput } from "./image-builds.js";
 export { SNAPSHOT_EXPORT_MIN_TIMEOUT_MS } from "./snapshot-export.js";
 export type { SnapshotExportRequest } from "./snapshot-export.js";
 export type {
@@ -141,8 +153,23 @@ export type {
   AuditOrder,
   ListAuditFilters,
   ListAuditOptions,
+  TrustedKey,
   VerifyAuditOptions,
 } from "./audit.js";
+export { verifyHead } from "./audit-head.js";
+export type {
+  HeadBinding,
+  HeadReason,
+  HeadRecord,
+  HeadVerification,
+} from "./audit-head.js";
+export { verifyExport } from "./audit-export-verify.js";
+export type {
+  ExportReason,
+  ExportVerification,
+  VerifyExportOptions,
+} from "./audit-export-verify.js";
+export type { LineSource } from "./audit-continuation.js";
 export type {
   AuditEvent,
   AuditFinding,

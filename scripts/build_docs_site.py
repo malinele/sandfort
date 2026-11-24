@@ -56,12 +56,50 @@ NOT_FOUND_DESCRIPTION = "The page you requested is not part of the Sandfort docu
 ROBOTS_FILE = "robots.txt"
 SITEMAP_FILE = "sitemap.xml"
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
+LLMS_FILE = "llms.txt"
+LLMS_TITLE = "Sandfort documentation"
+LLMS_SUMMARY = (
+    "Sandfort is a self-hosted sandbox server for running AI-generated code. It offers a REST "
+    "API, a Python SDK and a CLI over isolated Docker sandboxes. The server is source-available "
+    "under FSL-1.1-Apache-2.0, and the SDKs and the CLI are Apache-2.0."
+)
+LLMS_REFERENCES = (
+    (
+        "OpenAPI specification (JSON)",
+        CANONICAL_BASE + "openapi.json",
+        "the exported spec for the REST API.",
+    ),
+    (
+        "Sandfort landing page",
+        "https://sandfort.dev/",
+        "what Sandfort does, the ways to run it, isolation tiers and limits.",
+    ),
+    (
+        "Landing page llms.txt",
+        "https://sandfort.dev/llms.txt",
+        "the llms.txt of the landing site.",
+    ),
+    (
+        "Source code",
+        "https://github.com/malinele/sandfort",
+        "the server, Python SDK, CLI and MCP server in one repository.",
+    ),
+)
 
 
 @dataclass(frozen=True)
 class MarkdownPage:
     source: str
     output: str
+
+
+@dataclass(frozen=True)
+class PageEntry:
+    """A published page as written into its HTML head: file name, title and description."""
+
+    filename: str
+    title: str
+    description: str
 
 
 MARKDOWN_PAGES = (
@@ -296,6 +334,29 @@ def build_sitemap(filenames: list[str]) -> str:
     )
 
 
+def _llms_prose(text: str) -> str:
+    """One line of prose without semicolons or dashes, as the llms.txt rules require."""
+    flat = " ".join(text.split())
+    for dash in ("—", "–"):
+        flat = flat.replace(f" {dash} ", ", ").replace(dash, "-")
+    return flat.replace("; ", ", ").replace(";", ",")
+
+
+def build_llms(entries: list[PageEntry]) -> str:
+    """The llms.txt for the docs host: a summary, one line per published page, references."""
+    pages = "\n".join(
+        f"- [{_llms_prose(e.title)}]({canonical_url(e.filename)}): {_llms_prose(e.description)}"
+        for e in entries
+    )
+    references = "\n".join(
+        f"- [{label}]({url}): {description}" for label, url, description in LLMS_REFERENCES
+    )
+    return (
+        f"# {LLMS_TITLE}\n\n> {LLMS_SUMMARY}\n\n"
+        f"## Pages\n\n{pages}\n\n## Reference\n\n{references}\n"
+    )
+
+
 def _short(text: str) -> str:
     if len(text) <= MAX_DESCRIPTION:
         return text
@@ -426,6 +487,14 @@ def clean_docs_links(content: str) -> str:
 
 def build_markdown_page(page: MarkdownPage, root: Path) -> tuple[str, list[str]]:
     """Return (page html, list of warnings)."""
+    rendered, warnings, _entry = _render_markdown_page(page, root)
+    return rendered, warnings
+
+
+def _render_markdown_page(
+    page: MarkdownPage, root: Path
+) -> tuple[str, list[str], PageEntry]:
+    """Return (page html, warnings, the title and description written into the page head)."""
     source = root / page.source
     renderer = AccessibleRenderer()
     text = source.read_text(encoding="utf-8")
@@ -444,13 +513,18 @@ def build_markdown_page(page: MarkdownPage, root: Path) -> tuple[str, list[str]]
         for t in dict.fromkeys(renderer.anchor_targets)
         if t not in known
     ]
-    result = render_page(
+    entry = PageEntry(
+        filename=page.output,
         title=html.unescape(h1.text),
         description=_short(renderer.first_paragraph),
-        filename=page.output,
+    )
+    result = render_page(
+        title=entry.title,
+        description=entry.description,
+        filename=entry.filename,
         body=doc_body(content, toc),
     )
-    return result, warnings
+    return result, warnings, entry
 
 
 def compact_json(value: object) -> str:
@@ -480,14 +554,17 @@ def build(out_dir: Path, root: Path = ROOT) -> list[str]:
     (out_dir / "docs.js").write_text(docs_theme.SCRIPT, encoding="utf-8")
     (out_dir / docs_theme.STYLESHEET_FILE).write_text(docs_theme.CSS, encoding="utf-8")
     warnings: list[str] = []
+    entries = [PageEntry("index.html", "API reference", API_DESCRIPTION)]
     for page in MARKDOWN_PAGES:
-        rendered, page_warnings = build_markdown_page(page, root)
+        rendered, page_warnings, entry = _render_markdown_page(page, root)
         (out_dir / page.output).write_text(rendered, encoding="utf-8")
         warnings.extend(page_warnings)
-    published = ["index.html", *(page.output for page in MARKDOWN_PAGES)]
+        entries.append(entry)
+    published = [entry.filename for entry in entries]
     (out_dir / NOT_FOUND_FILE).write_text(build_not_found_page(), encoding="utf-8")
     (out_dir / ROBOTS_FILE).write_text(build_robots(), encoding="utf-8")
     (out_dir / SITEMAP_FILE).write_text(build_sitemap(published), encoding="utf-8")
+    (out_dir / LLMS_FILE).write_text(build_llms(entries), encoding="utf-8")
     return warnings
 
 

@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run the code your agent writes on your own hosts</title>
+<meta name="description" content="Sandfort is a self-hosted sandbox server for AI-generated code. This is the shortest path from a checkout to a command running in an isolated container.">
+<meta property="og:title" content="Run the code your agent writes on your own hosts">
+<meta property="og:description" content="Sandfort is a self-hosted sandbox server for AI-generated code. This is the shortest path from a checkout to a command running in an isolated container.">
+<meta name="theme-color" content="#0b0d11">
+<link rel="canonical" href="https://sandfort.dev/run-ai-code-on-your-own-hosts.html">
+<meta property="og:url" content="https://sandfort.dev/run-ai-code-on-your-own-hosts.html">
+<meta property="og:type" content="article">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","@id":"https://sandfort.dev/run-ai-code-on-your-own-hosts.html","url":"https://sandfort.dev/run-ai-code-on-your-own-hosts.html","mainEntityOfPage":"https://sandfort.dev/run-ai-code-on-your-own-hosts.html","headline":"Run the code your agent writes on your own hosts","description":"Sandfort is a self-hosted sandbox server for AI-generated code. This is the shortest path from a checkout to a command running in an isolated container.","inLanguage":"en","datePublished":"2026-11-24","dateModified":"2026-11-24","author":{"@type":"Organization","name":"Sandfort","url":"https://sandfort.dev/"},"publisher":{"@type":"Organization","name":"Sandfort","url":"https://sandfort.dev/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Sandfort","item":"https://sandfort.dev/"},{"@type":"ListItem","position":2,"name":"Article","item":"https://sandfort.dev/run-ai-code-on-your-own-hosts.html"}]}]}</script>
+<style>
+:root{
+  --bg:#0b0d11; --bg-1:#101319; --bg-2:#151922; --bg-3:#1c212c;
+  --line:#222834; --line-2:#2f3746;
+  --text:#e9ebef; --text-2:#b4bac6; --muted:#8c94a3; --faint:#7a8296;
+  --accent:#e0a458; --accent-ink:#1a1206; --accent-2:#f0bd7a; --accent-wash:rgba(224,164,88,.08); --accent-line:rgba(224,164,88,.38);
+  --ok:#8fc18a; --bad:#e58a76;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+  --wrap:1200px; --gut:clamp(16px,4vw,40px);
+  --r:10px; --r-s:6px;
+  --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:76px;scrollbar-color:var(--line-2) var(--bg)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
+::selection{background:var(--accent);color:var(--accent-ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:10px;border:3px solid var(--bg)}
+a{color:inherit;text-decoration-color:var(--line-2);text-underline-offset:.22em;text-decoration-thickness:1px;transition:text-decoration-color .2s}
+a:hover{text-decoration-color:var(--accent)}
+code,kbd,samp,pre{font-family:var(--mono)}
+:where(p,li,td,dd,summary,.fine,h3,.fd) code{color:var(--text);background:var(--bg-2);border:1px solid var(--line);padding:.05em .35em;border-radius:4px;font-size:.84em;white-space:nowrap}
+svg{display:block}
+.skip{position:absolute;left:-9999px;top:8px;z-index:100;background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:6px;font-weight:600;text-decoration:none}
+.skip:focus{left:8px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* frame + rails */
+.frame{max-width:var(--wrap);margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.sec{border-top:1px solid var(--line);position:relative;padding:clamp(64px,9vw,120px) var(--gut)}
+.sec::before,.sec::after{content:"";position:absolute;top:-5px;width:9px;height:9px;background:linear-gradient(var(--faint),var(--faint)) center/1px 9px no-repeat,linear-gradient(var(--faint),var(--faint)) center/9px 1px no-repeat}
+.sec::before{left:-5px}.sec::after{right:-5px}
+.sec.first{border-top:0;padding-top:clamp(48px,6vw,80px);padding-bottom:clamp(40px,5vw,64px)}
+.sec.first::before,.sec.first::after{display:none}
+
+/* type */
+h1,h2,h3,h4{font-family:var(--sans);margin:0;color:var(--text);text-wrap:balance}
+h1{font-weight:600;font-size:clamp(2.2rem,1.3rem + 3.2vw,3.8rem);line-height:1.04;letter-spacing:-.04em;max-width:22ch}
+h2{font-weight:600;font-size:clamp(1.8rem,1.3rem + 1.6vw,2.7rem);line-height:1.08;letter-spacing:-.035em}
+h3{font-weight:600;font-size:1.1rem;line-height:1.35;letter-spacing:-.012em}
+.lede{font-size:clamp(1.06rem,1rem + .3vw,1.22rem);line-height:1.55;color:var(--text-2);max-width:68ch;margin:22px 0 0}
+.head{max-width:780px}
+.head + *{margin-top:clamp(32px,4vw,48px)}
+.crumb{margin:0 0 22px;font:400 12px/1.2 var(--mono);color:var(--faint)}
+.crumb a{text-decoration:none;color:var(--muted)}
+.crumb a:hover{color:var(--text)}
+.stamp{display:inline-flex;flex-wrap:wrap;gap:6px 14px;margin:28px 0 0;padding:12px 16px;border:1px solid var(--accent-line);border-radius:var(--r-s);background:var(--accent-wash);font:400 13px/1.5 var(--mono);color:var(--text-2)}
+.stamp b{font-weight:600;color:var(--text)}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:50;background:rgba(11,13,17,.86);backdrop-filter:saturate(140%) blur(12px);-webkit-backdrop-filter:saturate(140%) blur(12px);border-bottom:1px solid var(--line)}
+.nav .in{max-width:var(--wrap);margin:0 auto;height:62px;display:flex;align-items:center;gap:30px;padding:0 var(--gut);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:600 17px/1 var(--sans);letter-spacing:-.02em;color:var(--text)}
+.mark{width:26px;height:26px;border-radius:6px;background:var(--bg-2);border:1px solid var(--line-2);display:grid;place-items:center;color:var(--accent);font:700 15px/1 var(--mono)}
+.nav ul{display:flex;gap:24px;list-style:none;margin:0;padding:0}
+.nav ul a,.nav .docs{font-size:14px;color:var(--text-2);text-decoration:none;transition:color .2s}
+.nav ul a:hover,.nav .docs:hover{color:var(--text)}
+.nav ul a[aria-current="page"]{color:var(--text)}
+.nav .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:10px;height:46px;padding:0 20px;border-radius:8px;font:500 15px/1 var(--sans);text-decoration:none;border:1px solid transparent;transition:background .2s var(--ease),border-color .2s var(--ease),transform .15s var(--ease);white-space:nowrap}
+.btn-p{background:var(--accent);color:var(--accent-ink)}
+.btn-p:hover{background:var(--accent-2)}
+.btn:active{transform:translateY(1px)}
+.nav .btn{height:36px;padding:0 14px;font-size:14px}
+
+/* article body */
+.art{max-width:72ch}
+.art p{margin:16px 0 0;color:var(--text-2);font-size:1rem;line-height:1.65}
+.art p:first-child{margin-top:0}
+.art p b,.art li b{color:var(--text);font-weight:600}
+.art .slab,.art .tbl-wrap,.art .scroll-hint{margin-top:22px}
+.art .slab + p,.art .tbl-wrap + p{margin-top:22px}
+.art .prose{margin-top:22px}
+.art h2 + .prose,.art h2 + p{margin-top:0}
+
+/* code blocks, same slab as the landing page */
+.slab{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;max-width:100%}
+.rail{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--line);background:var(--bg);padding:0 8px;min-height:44px;overflow-x:auto;scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.tab{color:var(--muted);font:500 13px/1 var(--mono);padding:0 12px;height:44px;white-space:nowrap;display:inline-flex;align-items:center;gap:8px}
+.tab.static{color:var(--text)}
+.code{margin:0;padding:22px 24px;font:400 13px/1.8 var(--mono);color:var(--text-2);overflow-x:auto;white-space:pre}
+.code .c{color:var(--faint)}
+.code:focus-visible{outline-offset:-2px}
+
+/* tables */
+.scroll-hint{display:none;margin:0 0 10px;font:400 12px/1.4 var(--mono);color:var(--faint)}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.tbl-wrap:focus-visible{outline-offset:2px}
+.cmp{width:100%;min-width:1080px;border-collapse:separate;border-spacing:0;font-size:.88rem}
+.cmp.narrow{min-width:640px}
+.cmp th,.cmp td{text-align:left;vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--line);line-height:1.55}
+.cmp tr:last-child th,.cmp tr:last-child td{border-bottom:0}
+.cmp td + td,.cmp th + th,.cmp tbody th + td{border-left:1px solid var(--line)}
+.cmp thead th{font:600 .95rem/1.3 var(--sans);color:var(--text);background:var(--bg-1);white-space:nowrap}
+.cmp tbody th{font:500 12px/1.6 var(--mono);color:var(--text);width:150px;min-width:150px;background:var(--bg-1);position:sticky;left:0;z-index:1}
+.cmp thead th:first-child{position:sticky;left:0;z-index:2}
+.cmp td{color:var(--text-2);min-width:230px}
+.cmp.narrow td{min-width:0}
+.cmp code{white-space:normal;overflow-wrap:anywhere}
+
+/* lists */
+.prose{display:grid;gap:0;margin:0;padding:0;list-style:none;border-top:1px solid var(--line);max-width:90ch}
+.prose li{padding:18px 0;border-bottom:1px solid var(--line);color:var(--text-2);font-size:.96rem;line-height:1.6}
+.prose li b{color:var(--text);font-weight:600}
+
+/* footer */
+footer{border-top:1px solid var(--line)}
+footer .in{max-width:var(--wrap);margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line);padding:44px var(--gut) 32px;display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr));gap:32px;font-size:.9rem;color:var(--muted)}
+footer .fh{margin:0 0 14px;font:500 12px/1 var(--mono);color:var(--faint)}
+footer ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+footer a{text-decoration:none;color:var(--text-2);transition:color .2s}
+footer a:hover{color:var(--text)}
+footer .about p{margin:14px 0 0;max-width:36ch;line-height:1.55}
+footer .legal{grid-column:1/-1;border-top:1px solid var(--line);padding-top:20px;display:flex;flex-wrap:wrap;gap:8px 24px;font-size:.8rem;color:var(--faint)}
+
+@media (max-width:1060px){
+  .nav ul{display:none}
+  .scroll-hint{display:block}
+  footer .in{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .nav .docs{display:none}
+  .nav .in{gap:16px}
+  .frame,.nav .in,footer .in{border-left:0;border-right:0}
+  .sec::before,.sec::after{display:none}
+  footer .in{grid-template-columns:1fr}
+  .cmp tbody th{width:120px;min-width:120px}
+  .code{font-size:12px;padding:18px 16px}
+}
+@media (max-width:400px){.nav .btn{padding:0 10px;font-size:13px}}
+</style>
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="31bd681a-5195-4cec-a448-0a635c2c6736" data-domains="sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+        <li><a href="/compare.html">Comparison</a></li>
+        <li><a href="/run-ai-code-on-your-own-hosts.html" aria-current="page">Article</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="https://docs.sandfort.dev/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="frame" id="top">
+
+<article>
+<section class="sec first" aria-labelledby="h-title">
+  <p class="crumb"><a href="/">Sandfort</a> / Article</p>
+  <h1 id="h-title">Run the code your agent writes on your own hosts</h1>
+  <p class="lede">Sandfort is a self-hosted sandbox server for AI-generated code. This is the shortest path from a checkout to a command running in an isolated container. It needs Python 3.12 and a local Docker daemon. Development uses SQLite, so no separate database server is involved.</p>
+  <p class="stamp"><b>Published: 2026-11-24</b><span>Sandfort 0.1.0</span></p>
+  <div class="art" style="margin-top:clamp(32px,4vw,48px)">
+    <p>Start the server from the repository root.</p>
+    <div class="slab"><div class="rail"><span class="tab static">bash</span></div><pre class="code" tabindex="0">.venv/bin/python -m sandfort.admin_cli migrate
+.venv/bin/python -m sandfort.admin_cli bootstrap --org-name Acme --org-slug acme
+.venv/bin/uvicorn --factory sandfort.main:create_app</pre></div>
+    <p><code>bootstrap</code> creates an organization and prints an API key that starts with <code>sf_</code>. The key is printed once, and stderr says "Store this key now. It cannot be shown again." Copy it before you close the terminal.</p>
+    <p>Now create a sandbox with the Python SDK (<code>sandfort-sdk</code>) and run a command in it.</p>
+    <div class="slab"><div class="rail"><span class="tab static">python</span></div><pre class="code" tabindex="0">from sandfort_sdk import Client
+
+client = Client(base_url="http://127.0.0.1:8000", api_key="sf_...")
+sbx = client.create_sandbox(name="hello", snapshot="python:3.12-slim", wait=True)
+r = sbx.process_exec(argv=["python3", "-c", "print(21 * 2)"])
+print(r.exit_code, r.stdout.strip())   <span class="c"># 0 42</span>
+client.stop(sbx.id)
+client.delete(sbx.id)</pre></div>
+    <p>The command ran inside a Docker container, and the exit code and stdout came back through the API. For an agent, the exit code is the cheapest feedback signal there is. It decides whether to continue, and stdout says what happened. The rest of this article covers what sits behind those calls and where the edges are.</p>
+  </div>
+</section>
+
+<section class="sec" id="the-problem" aria-labelledby="h-problem">
+  <div class="head"><h2 id="h-problem">The problem</h2></div>
+  <div class="art">
+    <p>An agent that writes code has to run it somewhere. A single <code>python3 -c</code> is the easy case. A coding agent also needs a working directory it can write files into, a git checkout it can commit from, and commands that run longer than one request, such as test suites and dev servers. The code comes from a model, so it cannot run in the agent's own process or on the host without a boundary.</p>
+    <p>Hosted sandbox APIs solve this, but the code, the repositories and the outputs then leave your infrastructure. Some teams cannot accept that. Others want the same kind of API on hosts they control.</p>
+  </div>
+</section>
+
+<section class="sec" id="why-not-docker" aria-labelledby="h-docker">
+  <div class="head"><h2 id="h-docker">Why raw Docker is not enough on its own</h2></div>
+  <div class="art">
+    <p><code>docker run</code> gives you a container. It does not give you the rest of the work that a shared agent backend needs.</p>
+    <ul class="prose">
+      <li><b>Lifecycle.</b> Create, start, stop, resize (stopped sandboxes only) and delete run as async jobs. Auto-stop and auto-delete timers clean up sandboxes an agent forgot. After a server crash, a reconciler adopts or removes the containers it finds, so a restart does not leave orphans.</li>
+      <li><b>Access.</b> The API key is shown once at creation. People get roles <code>admin</code>, <code>developer</code> or <code>viewer</code>, and OIDC SSO is available for sign-in.</li>
+      <li><b>Accountability.</b> Every organization gets a hash-chained, tamper-evident audit log. Tamper-evident is a narrower claim than tamper-proof. <code>audit-verify</code> exits with code 3 when a chain is broken, so it can run in CI or cron.</li>
+      <li><b>Limits per tenant.</b> Per-org quotas are reserved transactionally, so one agent in a loop does not consume the host. Metering produces a usage report. Webhooks are signed.</li>
+    </ul>
+    <p>None of this is hard to describe. It is a lot to build and maintain next to the agent you set out to write.</p>
+  </div>
+</section>
+
+<section class="sec" id="server" aria-labelledby="h-server">
+  <div class="head"><h2 id="h-server">What the server exposes</h2></div>
+  <div class="art">
+    <p>The REST API has 91 HTTP operations. Around it sit the Python SDK, a CLI, a TypeScript SDK that covers a subset of the Python one, and an MCP server. The only driver is Docker.</p>
+    <p>Timing from <code>examples/benchmark.py</code> on one host, macOS arm64 with Docker 29.8.2 and <code>alpine:3.20</code> pre-pulled, on 2026-11-01. Creating a sandbox and waiting for it to be started took p50 107 ms and p95 145 ms over 20 creates. A short command took p50 18 ms and p95 25 ms over 50 commands. This is one local measurement on one host. It is not an SLO and not a comparison with any other product. Run the script on your own host before you plan around it.</p>
+  </div>
+</section>
+
+<section class="sec" id="agent-tool-loop" aria-labelledby="h-loop">
+  <div class="head"><h2 id="h-loop">The agent tool loop</h2></div>
+  <div class="art">
+    <p><code>docs/recipes/agent-tool-loop.md</code> wires a Claude tool-use loop, built on the Anthropic Python SDK, to a sandbox. The model gets three tools.</p>
+    <ul class="prose">
+      <li><code>run_command</code> runs a command in the sandbox.</li>
+      <li><code>write_file</code> writes a file into the sandbox.</li>
+      <li><code>read_file</code> reads a file back.</li>
+    </ul>
+    <p>The loop is the usual one. Send the task and the tool definitions to the model. When the response contains tool calls, run each one against the sandbox and send the results back as tool results. Repeat until the model answers without a tool call. Every command runs in the sandbox, not in the process that hosts the agent.</p>
+    <p>You can run the loop without an API key. <code>examples/agent_tool_loop.py</code> drives the same three tools with a scripted stand-in model and exits non-zero on any failure, so it also works as a smoke test of your install.</p>
+  </div>
+</section>
+
+<section class="sec" id="isolation-tiers" aria-labelledby="h-isolation">
+  <div class="head"><h2 id="h-isolation">Isolation tiers and what they do not give you</h2></div>
+  <div class="art">
+    <p>Every sandbox starts with <code>cap_drop</code> set to ALL plus a minimal add-back list, <code>no-new-privileges</code>, a seccomp profile, <code>pids_limit</code>, and CPU, memory and disk limits. The metadata IP is blocked. <code>network.block_all</code> is optional per sandbox.</p>
+    <p>A per-sandbox <code>egress_allowlist</code> lets named hostnames through a CONNECT proxy. Read that control carefully. It matches hostnames, it is set at create time, and it is not a firewall. On the <code>container</code> tier, DNS is a side channel.</p>
+    <p>You choose an isolation tier per sandbox.</p>
+    <p class="scroll-hint" aria-hidden="true">Scroll sideways to see all three columns.</p>
+    <div class="tbl-wrap" role="region" aria-label="Isolation tiers, scrolls horizontally" tabindex="0">
+      <table class="cmp narrow" aria-label="Isolation tiers and their limits">
+        <thead>
+          <tr>
+            <th scope="col">Tier</th>
+            <th scope="col">What it is</th>
+            <th scope="col">Limit</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row"><code>container</code></th>
+            <td>A hardened container</td>
+            <td>Shares the host kernel</td>
+          </tr>
+          <tr>
+            <th scope="row"><code>gvisor</code></th>
+            <td>A user-space kernel</td>
+            <td>Not a hardware boundary. Measured 3x to 9x overhead on spawn-heavy and small-file work</td>
+          </tr>
+          <tr>
+            <th scope="row"><code>microvm</code></th>
+            <td>Kata Containers</td>
+            <td>Needs KVM</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The <code>container</code> and <code>gvisor</code> tiers need no KVM, so they run on an ordinary Docker host. A Firecracker driver exists in the tree as a skeleton. It is not offered, and you should not plan around it.</p>
+  </div>
+</section>
+
+<section class="sec" id="limits" aria-labelledby="h-limits">
+  <div class="head"><h2 id="h-limits">Limits</h2></div>
+  <div class="art">
+    <p>Read these before you adopt it.</p>
+    <ul class="prose">
+      <li>The version is <code>0.1.0</code>. There are no production references.</li>
+      <li>Each sandbox is placed on one node.</li>
+      <li>The nodes that run sandboxes expose the Docker socket to the server, which gives control over the whole node. Dedicated nodes are recommended.</li>
+      <li>There is no built-in TLS. Terminate TLS in a proxy in front of the API.</li>
+      <li>The fs API has no chmod, search or replace. The git API has no branch or checkout. Use <code>process_exec</code> for those.</li>
+      <li>The TypeScript SDK is a subset of the Python SDK.</li>
+      <li>Resize works only on stopped sandboxes.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec" id="next" aria-labelledby="h-next">
+  <div class="head"><h2 id="h-next">Where to go next</h2></div>
+  <div class="art">
+    <p>The server is source-available under FSL-1.1-Apache-2.0. The SDKs and CLI are Apache-2.0.</p>
+    <ul class="prose">
+      <li><a href="https://github.com/malinele/sandfort">Repository</a></li>
+      <li><a href="https://sandfort.dev">Site</a></li>
+      <li><a href="https://docs.sandfort.dev">Docs</a></li>
+    </ul>
+    <p>Start with the three server commands and the <code># 0 42</code> snippet above. Then run <code>examples/agent_tool_loop.py</code>, and read <code>docs/recipes/agent-tool-loop.md</code> before you connect a real model.</p>
+  </div>
+</section>
+</article>
+
+</div>
+</main>
+
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="https://docs.sandfort.dev/">API reference</a></li><li><a href="https://docs.sandfort.dev/governance">Governance page</a></li><li><a href="https://docs.sandfort.dev/release">Releases</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li><li><a href="/compare.html">Comparison</a></li><li><a href="/run-ai-code-on-your-own-hosts.html" aria-current="page">Article</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal"><span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span><span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span><span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span><span>This page sets no cookies.</span></div>
+  </div>
+</footer>
+</body>
+</html>

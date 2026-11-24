@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.malinele/sandfort",
+  "title": "Sandfort",
+  "description": "Self-hosted sandboxes for AI-generated code: run commands, files, snapshots.",
+  "repository": {
+    "url": "https://github.com/malinele/sandfort",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "websiteUrl": "https://sandfort.dev",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "sandfort-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SANDFORT_BASE_URL",
+          "description": "Base URL of the Sandfort server, for example http://127.0.0.1:8000",
+          "isRequired": true
+        },
+        {
+          "name": "SANDFORT_API_KEY",
+          "description": "Sandfort API key (starts with sf_)",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

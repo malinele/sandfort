@@ -50,6 +50,55 @@ round replaces that description with the real hash from `git log`.
 ### Fixes outside phases
 
 #### Round 79 (after tag v0.1.0-beta.81; the Kubernetes kit names the published image)
+- **feat(mcp): package the MCP server as sandfort-mcp (PyPI) with server.json for the MCP
+  registry.** `mcp_server/pyproject.toml` builds the single module `sandfort_mcp` with the
+  console script `sandfort-mcp`, and `mcp_server/README.md` is the long description. `server.json`
+  in the repo root describes the stdio package for the registry. No tool or behaviour changed.
+  (`mcp_server/pyproject.toml`, `server.json`, `tests/test_mcp_package_r78.py`; this commit;
+  the hash is recorded in the next round)
+- **feat(ts-sdk): signed audit trailer verification and nullable `imageRef` (0.2.0, BREAKING).**
+  TypeScript SDK 0.2.0 changes `SnapshotInfo.imageRef` from `string` to `string | null`: the
+  server answers `image_ref: null` to label-scoped API keys (`openapi/sandfort.v1.json`,
+  `SnapshotResponse.image_ref`), and 0.1.x rejected that answer with `InvalidResponseError`, so
+  every snapshot call failed for such a key. Code that reads `imageRef` as a string must handle
+  `null`. It also adds verification of the signed `audit_head` trailer of an audit export, at
+  parity with the Python SDK and with no new runtime dependency (`node:crypto`):
+  `verifyHead(headLine, publicKey)` (Ed25519 over the head without `signature` and `hmac`,
+  compact sorted-key ASCII JSON; the key in the line is only compared with the trust anchor;
+  reasons `unsigned`, `signature`, `key_mismatch`, `undated`, `future_signed_at`) and
+  `verifyExport(lines, publicKey, { allowUnchained?, previous? })` (content binding with row
+  count, first row id and SHA-256, last row against the head, `prev_hash` linkage, rows without
+  a hash, byte-prefix continuation). `client.audit.verifyHead`, `client.audit.verifyExport` and
+  `client.audit.publicKey()` accept `"status"` as the key to read `audit_public_key` from
+  `GET /v1/status`, and `client.status()` now returns `auditPublicKey` and
+  `auditKeyFingerprint`. As in the Python SDK, the keyed row hashes and the head `hmac` are not
+  recomputed, so only `client.audit.verifyChain()` proves the whole chain. Internally
+  `src/client.ts` was split into `client-base.ts`, `client-options.ts`, `client-create.ts` and
+  `client-waits.ts` (every source file is under 400 lines); no export changed. The stale
+  `package-lock.json` version (0.1.7) was regenerated. The TypeScript SDK still has no members,
+  SSO or SCIM client. (`sdk/typescript/src/audit-head.ts`, `sdk/typescript/src/audit-export-verify.ts`,
+  `sdk/typescript/src/audit-scan.ts`, `sdk/typescript/src/snapshots.ts`,
+  `sdk/typescript/tests/audit-head.test.ts`, `sdk/typescript/tests/audit-export-verify.test.ts`,
+  `sdk/typescript/tests/snapshot-image-ref.test.ts`; this commit; the hash is recorded in the
+  next round)
+- **feat(ts-sdk): image builder (0.1.10).** TypeScript SDK 0.1.10 adds the declarative image
+  builder of the Python SDK: an immutable `Image` DSL (`Image.debianSlim()`, `Image.fromImage`,
+  `pipInstall`, `aptInstall`, `env`, `workdir`, `addFile`, `serialize()`; the spec JSON is
+  checked against output of the Python DSL for the same inputs), `client.buildSnapshot(image,
+  { name? })` (`POST /v1/images/builds`; a raw wire-form spec is also accepted) and
+  `client.followBuildLogs(snapshotId)` (`GET /v1/images/builds/{snapshot_id}/logs`, yielding
+  `log` events and the final `state` event). The TypeScript SDK still has no members, SSO or
+  SCIM client and does not verify the signed audit trailer. (`sdk/typescript/src/image.ts`,
+  `sdk/typescript/src/image-builds.ts`, `sdk/typescript/tests/image-spec.test.ts`,
+  `sdk/typescript/tests/image-builds.test.ts`; this commit; the hash is recorded in the next
+  round)
+- **feat(ts-sdk): interactive PTY.** TypeScript SDK 0.1.9 adds the PTY client: `createPty`,
+  `connectPty`, `listPtys`, `getPty`, `resizePty`, `deletePty` and a `PtySession`
+  (async-iterate output bytes, `send`, REST `resize`, `exitCode` from the 4000+n close
+  code; 4401 close raises `Unauthorized`). `connectPty` dials with the global `WebSocket`
+  (Node 22+ or a browser) or a `webSocket` factory passed as a client option; the package
+  keeps zero runtime dependencies. (`sdk/typescript/src/pty.ts`; this commit; the hash is
+  recorded in the next round)
 - **feat(sdk,cli,ts): `inherit_resources` reaches all three clients; snapshots expose their
   recorded resources.** The Python SDK gains keyword-only `inherit_resources: bool = False` on
   `create_sandbox` (sync and async; the key is sent only when True) and `SnapshotInfo.resources`

@@ -67,6 +67,18 @@ export function requiredString(raw: Record<string, unknown>, key: string, what: 
   return value;
 }
 
+/** A key that must be present and be a string or `null` (a field the server may withhold). */
+export function requiredStringOrNull(
+  raw: Record<string, unknown>,
+  key: string,
+  what: string,
+): string | null {
+  const value = raw[key];
+  if (value === null) return null;
+  if (typeof value !== "string") throw missing(what, key);
+  return value;
+}
+
 export function requiredNumber(raw: Record<string, unknown>, key: string, what: string): number {
   const value = raw[key];
   if (typeof value !== "number") throw missing(what, key);

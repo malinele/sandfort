@@ -5,6 +5,13 @@ invite-only hosted beta). It covers the core agent workflow of the Python SDK an
 runtime dependencies. It is a subset of the API: see
 [What is not covered](#what-is-not-covered).
 
+> **Breaking change in 0.2.0.** `SnapshotInfo.imageRef` is now `string | null` (it was
+> `string`). The server withholds the operator's registry host and path from label-scoped API
+> keys and answers `image_ref: null`; 0.1.x rejected that answer with `InvalidResponseError`, so
+> every snapshot call failed for such a key. Code that reads `snapshot.imageRef` as a string
+> must now handle `null`. Also new in 0.2.0: verification of the signed audit export trailer
+> (see [Audit](#audit)).
+
 ## Install
 
 During the beta the SDK is delivered as a packed tarball, not from a public registry. To build
@@ -13,8 +20,8 @@ one from the repository:
 ```bash
 cd sdk/typescript
 npm ci
-npm pack            # runs the build, writes sandfort-sdk-0.1.7.tgz
-npm install ./sandfort-sdk-0.1.7.tgz   # in your project
+npm pack            # runs the build, writes sandfort-sdk-0.2.0.tgz
+npm install ./sandfort-sdk-0.2.0.tgz   # in your project
 ```
 
 It ships compiled JavaScript and type declarations in `dist/`, so it loads in plain Node
@@ -54,11 +61,14 @@ On the client: `createSandbox`, `getSandbox`, `listSandboxes` / `listSandboxesAl
 `startSandbox`, `stopSandbox`, `deleteSandbox`; `createSnapshot` (with optional `labels`,
 volume-label bounds), `getSnapshot`,
 `listSnapshots` / `listSnapshotsAll`, `deleteSnapshot`, `exportSnapshotStream` /
-`exportSnapshotBytes` (the `docker save` tar of a `ready` snapshot); `createVolume`, `getVolume`,
+`exportSnapshotBytes` (the `docker save` tar of a `ready` snapshot); the image builder
+(`Image`, `buildSnapshot`, `followBuildLogs`; see "Image builder"); `createVolume`, `getVolume`,
 `listVolumes` / `listVolumesAll`, `deleteVolume`; `status()`; `updateSandbox`, `resetSandbox`,
 `resizeSandbox`, `listIsolation`, `mintPreviewToken`, `statPath`, `followCommandLogs` (see
-"Sandbox operations"); and the facades `client.webhooks`, `client.apiKeys`, `client.audit` and
-`client.usage` (see below).
+"Sandbox operations"); the interactive PTY (`connectPty`, `createPty`, `listPtys`, `getPty`,
+`resizePty`, `deletePty`; `connectPty` needs a WebSocket — the global one of Node 22+ or the
+`webSocket` client option); and the facades `client.webhooks`, `client.apiKeys`,
+`client.audit` (including `verifyHead` and `verifyExport`) and `client.usage` (see below).
 
 On a sandbox: `processExec`, `codeRun`; stateful code contexts (see below); sessions and
 async commands (`createSession`, `runInSession`, `startCommand`, `getCommand`,
@@ -220,8 +230,9 @@ Besides the scopes named in the sections above, `client.audit` needs the `audit:
 
 `VERSION` and `buildInfo()` (`{ name, version }`) report the SDK version, which also goes out as
 the `User-Agent` of every request. `await client.status()` reads the public `GET /v1/status`:
-server `version`, `buildSha`, `imageSha`, `buildMatchesImage`, `startedAt` and the operator
-notice.
+server `version`, `buildSha`, `imageSha`, `buildMatchesImage`, `startedAt`, the operator
+notice, and `auditPublicKey` / `auditKeyFingerprint` (the Ed25519 key that signs audit export
+trailers and its fingerprint; both `null` while the server signs no heads).
 
 ## Git credentials
 
@@ -354,7 +365,66 @@ it needs no client-side hashing. `exportLines` yields each line with its `\n` (t
 lack it) as the body arrives, does not parse it, and sends its request on the first read; pass
 `timeoutMs` to give a large export more time than the client's `timeoutMs`. A stream that
 breaks raises `TransportError` (`RequestAbortedError` after your `signal`); lines read before
-that stay valid. The signed `audit_head` trailer is not verified by this SDK.
+that stay valid.
+
+### Verifying an export
+
+A server that has an audit signing key ends every non-empty export with a signed `audit_head`
+line. The SDK checks it with `node:crypto` (no new dependency), as the Python SDK does:
+
+```ts
+import { verifyExport, verifyHead } from "@sandfort/sdk";
+
+// Pin the key out of band when you can (the fingerprint is printed by the Python CLI and
+// published as `auditKeyFingerprint` on /v1/status).
+const publicKey = "...urlsafe base64 of the 32 raw key bytes...";
+
+const result = await client.audit.verifyExport(
+  client.audit.exportLines({ from: new Date("2026-11-01T00:00:00Z") }),
+  publicKey, // or "status": read it from GET /v1/status after the file has been read
+);
+if (!result.ok) throw new Error(`export not verified (${result.reason})`);
+
+verifyHead(trailerLine, publicKey); // the signature alone, no file, no network
+```
+
+`verifyHead(headLine, publicKey)` (pure, synchronous) checks the Ed25519 signature over the
+head without `signature` and `hmac`, as compact JSON with sorted keys and ASCII only. The key
+you pass is the trust anchor: the `public_key` named in the line is only compared with it (a
+different one is `key_mismatch`), so a head forged under the forger's own key is refused.
+It returns `{ ok, rowId, entryHash, publicKey, reason, signedAt }`; `reason` is `null` or one of
+`unsigned`, `signature`, `key_mismatch`, `undated` (no valid `signed_at`) and
+`future_signed_at` (more than 5 minutes ahead of the local clock). It throws `ValidationError`
+for a malformed line or key and never throws for a bad signature.
+
+`verifyExport(lines, publicKey, { allowUnchained?, previous? })` takes the whole text, an
+iterable of lines or an async iterable such as `exportLines()`. After the head it checks that
+the file matches it: with a head that carries `signed_at` and `export_sha256` (and `row_count`, `first_row_id`) the row count, the SHA-256 over
+the exact bytes of every event line and the first row id (`count_mismatch`, `content_mismatch`,
+`first_row_mismatch`), then the last row against the head (`truncated`, `head_mismatch`), the
+`prev_hash` linkage (`chain_break`, skipped for a filtered head), rows without a hash
+(`unchained_rows`) and, with `previous` (an earlier export), that its event lines are an exact
+byte prefix (`not_a_continuation`). It also reports `malformed_row`, `misplaced_trailer`,
+`org_mismatch` and `no_trailer`, with `badLine` naming the line. It throws `ValidationError`
+for an empty file, a last `export_summary` line (an unsigned export) or a bad key.
+
+What a client cannot prove: the row hashes are keyed with the server's chain key, and the
+`hmac` of the head needs it too, so neither is recomputed here. A server that signs a
+fabricated export verifies. Only `client.audit.verifyChain()` (the server-side walk) proves the
+whole chain. Against a head without a content binding (no `export_sha256`, `row_count` or `first_row_id`), rows before
+the last can be replaced by someone who rewrites `prev_hash` and `hash` consistently; check
+`signedAt` so that an old, genuinely signed export is not taken for a fresh one.
+
+Deviations from the Python SDK, both kept on purpose:
+
+- Numbers are canonicalized as `JSON.parse` reads them. A number token rewritten in the head
+  line as `3.0` or `3e0` still parses to the integer 3 and verifies, where the Python SDK would
+  fail with `signature`. Only semantically equal values pass, so this does not let a forger
+  change what the head says.
+- With `publicKey: "status"` on the `client.audit` facade, the key is read from the `/v1/status`
+  of the server being audited, so the trust anchor comes from the thing under audit. For a real
+  audit, pin the key out of band (from the operator's records, not from that server) and pass it
+  explicitly.
 
 ## Usage
 
@@ -455,10 +525,43 @@ await client.getSandbox("sbx_1", { timeoutMs: 2_000, retries: 0 });
 await sbx.reset({ deadlineMs: 10_000 });
 ```
 
+## Image builder
+
+`Image` is an immutable builder, like the Python `sandfort_sdk.image.Image`: every method returns
+a new `Image`, and `serialize()` returns the image spec wire form (`schema_version` `"1"`) that
+`POST /v1/images/builds` takes. Blank names and non-string values are a `ValidationError`; the
+server enforces the structural limits and refuses unsafe values (a 422 `ValidationFailed`).
+
+```ts
+import { Image, SandfortClient } from "@sandfort/sdk";
+
+const image = Image.debianSlim()          // python:3.12-slim
+  .pipInstall("requests", "numpy")        // also accepts arrays; repeated names are skipped
+  .aptInstall("git")
+  .env({ APP_ENV: "dev" })
+  .workdir("/app")
+  .addFile("/app/hello.py", "print('hi')\n"); // a later file at the same path replaces it
+
+const snap = await client.buildSnapshot(image, { name: "my-image" }); // `name` is optional
+for await (const event of client.followBuildLogs(snap.id)) {
+  if (event.type === "log") console.log(event.line);
+  else console.log(event.state, event.succeeded);                    // final event
+}
+```
+
+`Image.fromImage(reference)` starts from any registry image. `buildSnapshot` also takes a raw
+wire-form spec object in place of an `Image`. It answers `pending` while the build runs, or
+`ready` with `reused: true` when an identical spec was built before (`specHash` identifies the
+spec). `followBuildLogs(snapshotId)` yields one `{ type: "log", line, index }` event per log
+line, then a final `{ type: "state", state, snapshotId, digest, reason, succeeded }` event,
+after which it ends; a stream that ends without the `state` event throws `TransportError`. The
+request is sent on the first read, and the per-request timeout of the stream is at least 1 h
+(an explicit `timeoutMs` replaces the floor).
+
 ## What is not covered
 
-The TypeScript SDK is a subset of the REST API. It has no client for: PTY, jobs, org quota and
-members, image builds, or SSO. For these, call the REST API directly; every
+The TypeScript SDK is a subset of the REST API. It has no client for: jobs, org quota and
+members, or SSO (and no SCIM client). For these, call the REST API directly; every
 operation is in the OpenAPI spec (`openapi/sandfort.v1.json`). Snapshot registration IS
 covered: `client.registerSnapshot(image, { name?, labels? })` posts `POST /v1/snapshots` and
 returns the registered snapshot (the server pulls the image and answers `ready`). Snapshot export IS covered too: `client.exportSnapshotStream(id)` yields the tar

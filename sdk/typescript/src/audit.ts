@@ -3,7 +3,22 @@
  * server to verify the hash chain, and export the events as newline-delimited JSON lines.
  */
 
+import type { LineSource } from "./audit-continuation.js";
 import { exportLines, type ExportRequest } from "./audit-export.js";
+import {
+  exportResult,
+  type ExportVerification,
+  type VerifyExportOptions,
+} from "./audit-export-verify.js";
+import {
+  NO_STATUS_KEY,
+  STATUS_KEY,
+  parseHead,
+  verifyHead,
+  type HeadRecord,
+  type HeadVerification,
+} from "./audit-head.js";
+import { scanExport } from "./audit-scan.js";
 import {
   auditEventFromPayload,
   verifyResultFromPayload,
@@ -14,6 +29,7 @@ import { ValidationError } from "./errors.js";
 import { pageFromPayload, type Page } from "./models.js";
 import { paginate, type Cursor } from "./pagination.js";
 import { callArgs, type CallOptions } from "./resilience.js";
+import { STATUS_PATH, statusFromPayload } from "./status.js";
 import type { Query, Transport } from "./transport.js";
 import { momentIso, requireListLimit, requireOptionalNonBlank } from "./validation.js";
 
@@ -53,6 +69,9 @@ export interface VerifyAuditOptions extends CallOptions {
   /** Start the walk at this event instead of the first. */
   fromId?: string;
 }
+
+/** A trusted public key (text or the 32 raw bytes), or `"status"` to read it from `GET /v1/status`. */
+export type TrustedKey = string | Uint8Array;
 
 function moment(value: Date | undefined, label: string): string | undefined {
   return value === undefined ? undefined : momentIso(value, label);
@@ -138,5 +157,52 @@ export class Audit {
   exportLines(filters: AuditExportFilters = {}): AsyncGenerator<string, void, undefined> {
     const query = auditExportQuery(filters);
     return exportLines(this.#transport, query, filters);
+  }
+
+  /**
+   * The audit public key the server publishes on `GET /v1/status` (no key needed), or `null`
+   * while it signs no heads. Pin it out of band when you can: a key read from the server you are
+   * auditing is only as trustworthy as that connection.
+   */
+  async publicKey(call: CallOptions = {}): Promise<string | null> {
+    const reply = await this.#transport.request("GET", STATUS_PATH, { ...callArgs(call) });
+    return statusFromPayload(reply).auditPublicKey || null;
+  }
+
+  /**
+   * Check the Ed25519 signature of an export's `audit_head` trailer line (see `verifyHead`).
+   * `publicKey` is the trust anchor, or `"status"` to read it from `GET /v1/status` (one request,
+   * made only for that value, and only after the line parsed). Throws `ValidationError` when the
+   * server publishes no key.
+   */
+  async verifyHead(
+    headLine: string | HeadRecord,
+    publicKey: TrustedKey,
+    call: CallOptions = {},
+  ): Promise<HeadVerification> {
+    if (publicKey !== STATUS_KEY) return verifyHead(headLine, publicKey);
+    parseHead(headLine); // a bad line fails before any request
+    return verifyHead(headLine, await this.#statusKey(call));
+  }
+
+  /**
+   * Check an export against its signed trailer (see `verifyExport`). `lines` is the whole body or
+   * its lines, e.g. `client.audit.exportLines()`. `publicKey` is the trust anchor, or `"status"`
+   * to read it from `GET /v1/status` once the file has been read.
+   */
+  async verifyExport(
+    lines: LineSource,
+    publicKey: TrustedKey,
+    options: VerifyExportOptions & CallOptions = {},
+  ): Promise<ExportVerification> {
+    const scan = await scanExport(lines, options.previous ?? null);
+    const key = publicKey === STATUS_KEY ? await this.#statusKey(options) : publicKey;
+    return exportResult(scan, key, options.allowUnchained ?? false);
+  }
+
+  async #statusKey(call: CallOptions): Promise<string> {
+    const key = await this.publicKey(call);
+    if (key === null) throw new ValidationError(NO_STATUS_KEY);
+    return key;
   }
 }

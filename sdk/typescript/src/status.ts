@@ -7,6 +7,8 @@ import {
   stringOrNull,
 } from "./models.js";
 
+export const STATUS_PATH = "/v1/status";
+
 export interface StatusNotice {
   message: string;
   updatedAt: Date;
@@ -24,6 +26,13 @@ export interface StatusInfo {
   buildMatchesImage: boolean | null;
   startedAt: Date;
   notice: StatusNotice | null;
+  /**
+   * Ed25519 public key (urlsafe base64) that signs audit export trailers; `null` while the server
+   * signs no heads. The trust anchor for `client.audit.verifyHead()` and `verifyExport()`.
+   */
+  auditPublicKey: string | null;
+  /** First 16 hex characters of the SHA-256 of the raw audit public key; `null` like the key. */
+  auditKeyFingerprint: string | null;
 }
 
 function noticeFromPayload(data: unknown): StatusNotice | null {
@@ -46,5 +55,7 @@ export function statusFromPayload(data: unknown): StatusInfo {
     buildMatchesImage: typeof matches === "boolean" ? matches : null,
     startedAt: requiredTimestamp(raw["started_at"], "status"),
     notice: noticeFromPayload(raw["notice"]),
+    auditPublicKey: stringOrNull(raw["audit_public_key"]),
+    auditKeyFingerprint: stringOrNull(raw["audit_key_fingerprint"]),
   };
 }
