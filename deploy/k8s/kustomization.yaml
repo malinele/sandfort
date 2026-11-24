@@ -25,5 +25,5 @@ configMapGenerator:
       - seccomp.json=../seccomp.json
 # Pin the image here instead of editing api.yaml, for example:
 # images:
-#   - name: registry.example.com/sandfort
-#     newTag: "0.1.0"
+#   - name: ghcr.io/malinele/sandfort
+#     newTag: "v0.1.0-beta.81"

@@ -19,6 +19,8 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 
 from sandfort.api.envelope import Envelope, ok
+from sandfort.api.held_stream import capped_body
+from sandfort.api.routes.sandbox_logs import LogSlots
 from sandfort.api.schemas.image_builds import BuildImageRequest, BuildImageResponse, build_response
 from sandfort.api.sse import DEFAULT_KEEPALIVE_INTERVAL_S, format_event, with_keepalive
 from sandfort.api.wiring import IMAGE_BUILD_SERVICE_ATTR
@@ -127,15 +129,17 @@ _LOGS_DESCRIPTION = (
 
 @router.get("/{snapshot_id}/logs", description=_LOGS_DESCRIPTION)
 async def stream_build_logs(
-    snapshot_id: str, principal: Reader, service: Service
+    snapshot_id: str, principal: Reader, service: Service, slots: LogSlots
 ) -> StreamingResponse:
-    lines = await service.follow_build_logs(principal.org_id, snapshot_id)  # 404 before streaming
-    frames = with_keepalive(
-        _frames(service, principal.org_id, snapshot_id, lines),
-        interval_s=DEFAULT_KEEPALIVE_INTERVAL_S,
-    )
+    async def make_frames() -> AsyncIterator[str]:
+        lines = await service.follow_build_logs(principal.org_id, snapshot_id)  # 404 first
+        return with_keepalive(
+            _frames(service, principal.org_id, snapshot_id, lines),
+            interval_s=DEFAULT_KEEPALIVE_INTERVAL_S,
+        )
+
     return StreamingResponse(
-        frames,
+        await capped_body(slots, principal.org_id, make_frames),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

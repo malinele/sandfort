@@ -31,7 +31,9 @@ the beta is still not the place for your highest-risk code.
 - An empty runtime means whatever the daemon default is. If the daemon default runtime is
   gVisor (`default-runtime` set to `runsc`, which keeps image builds off plain runc), an
   empty `container=` would run the container tier on gVisor. Map the container tier
-  explicitly to runc in that case: `container=runc,gvisor=runsc,microvm=kata`.
+  explicitly to runc in that case: `container=runc,gvisor=runsc,microvm=kata`. In `prod`, a
+  blank runtime in an explicit tier map refuses the start at preflight unless
+  `SANDFORT_ALLOW_DEFAULT_RUNTIME_TIER=true` accepts the daemon default (since 2026-11-23).
 - If the node enables user-namespace remapping (`userns-remap`, a daemon-wide setting), the
   `microvm` tier runs with the host user namespace, because Kata cannot run in a remapped
   one; the other tiers run remapped. The Docker driver sets that per-container opt-out
@@ -195,9 +197,13 @@ it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor
   The state is polled for up to 3 s after a suspect exit or timeout, and an exec on a dead
   runsc/kata container returns within about 2 s instead of at its deadline. `timeout_s` is a
   budget, not an exact cutoff: a command at `timeout_s=10` returned after about 13 s (kill and
-  cleanup). Remaining caveat: the classic bash fork bomb `:(){ :|:& };:` usually returns exit 0
-  within about 1 s on gvisor and microvm; the NEXT exec then reports `sandbox_stopped` (after
-  up to about 5 s on microvm).
+  cleanup). Remaining caveat, narrowed: the classic bash fork bomb `:(){ :|:& };:` usually
+  returns exit 0 within about 1 s on gvisor and microvm, and that exec response itself still
+  says exit 0. Since the post-exec death probe (`src/sandfort/api/death_probe.py`), the exec
+  route on these two tiers re-inspects the container 2, 6 and 15 seconds after the latest exec
+  and settles a dead sandbox through the reconciler (state `stopped`, `sandbox.drift_detected`
+  audit row), so the row no longer waits for the next exec or the periodic pass; a later exec
+  still reports `sandbox_stopped` as before.
 - The CPU limit is enforced: CPU-seconds per wall second matched the requested 500, 1000 and 2000
   millicores. `nproc` reports 1, 2 and 3 for those sizes rather than the requested count, and
   `MemTotal` is somewhat below the requested memory (454328 kB for 512 MiB). Size thread pools
@@ -252,8 +258,6 @@ it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor
   needed.
 - On the container tier `nproc` and `MemTotal` show the host's values, not the sandbox limits;
   size thread pools from the requested resources.
-- On gvisor, streamed log events can split a line across events; join the data rather than
-  parsing each event.
 
 ## Snapshots and isolation tier
 
@@ -272,7 +276,8 @@ it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor
 ## Resize
 
 `POST /v1/sandboxes/{id}/resize` changes CPU and memory of a stopped sandbox (409 INVALID_STATE
-when it is started). There is no SDK or CLI helper for it yet. The root filesystem is kept: the
+when it is started). The TypeScript SDK has `resize`; the Python SDK and the CLI have no helper
+for it yet. The root filesystem is kept: the
 start that follows commits the stopped container to a local image (`sf-resize-<id>`) and creates
 the new container from it, on all three tiers. The image stays while the sandbox lives (the next
 resize commits to the same tag) and goes with the sandbox. A reset still wipes.

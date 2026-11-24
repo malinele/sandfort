@@ -27,6 +27,7 @@ from sandfort.admin_doctor_rows import (
     gate_status,
     gate_verdict,
     root_row,
+    tier_runtime_row,
     webhook_row,
 )
 from sandfort.config import PROD_ENVIRONMENT, Settings
@@ -302,6 +303,7 @@ def evaluate(
             webhook_row(settings),
             audit_keys_row(settings),
             capacity_row(settings),
+            tier_runtime_row(settings),
             _seccomp_check(settings),
             _cgroup_parent_check(settings, report),
             _userns_tiers_check(settings),

@@ -53,6 +53,7 @@ from sandfort.services.audit_chain import (
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 11, 11, 9, 0, tzinfo=UTC)
 KEY = Fernet.generate_key().decode()
+AUDIT_CHAIN_KEY = "a-test-audit-chain-key-32-bytes!!"  # prod refuses to start without one
 CAPACITY = {"host_capacity_cpu_millicores": 4000, "host_capacity_memory_mib": 8192}
 HINT_TEXT = "SANDFORT_EGRESS_ACKNOWLEDGED=true turns egress probe findings into warnings"
 FAKE_TRACEBACK = "Traceback (most recent call last):\n" + "  File x, line 1\n" * 130
@@ -198,6 +199,7 @@ def test_uvicorn_exits_3_with_plain_lines_for_a_refused_prod_start(
         driver="fake",
         api_key_pepper="test-pepper",
         webhook_secret_key=KEY,
+        audit_chain_key=AUDIT_CHAIN_KEY,
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'gate.db'}",
         **CAPACITY,
     )

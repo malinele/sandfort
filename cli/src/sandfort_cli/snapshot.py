@@ -88,6 +88,10 @@ def snapshot_fields(info: SnapshotInfo) -> dict[str, str]:
         fields["source_sandbox_id"] = shown(info.source_sandbox_id, key)
     if info.spec_hash:
         fields["spec_hash"] = shown(info.spec_hash, key)
+    if info.resources is not None:  # same rows, names and formatting as the sandbox view
+        fields["cpu_millicores"] = shown(info.resources.cpu_millicores, key)
+        fields["memory_mib"] = shown(info.resources.memory_mib, key)
+        fields["disk_gib"] = shown(info.resources.disk_gib, key)
     return fields
 
 

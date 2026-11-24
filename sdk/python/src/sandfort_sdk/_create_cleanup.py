@@ -367,6 +367,7 @@ def create_body(
     mounts: Sequence["VolumeMount | Sequence[str]"] | None = None,
     egress_allowlist: Sequence[str] | None = None,
     isolation: str | None = None,
+    inherit_resources: bool = False,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "name": name,
@@ -381,6 +382,7 @@ def create_body(
         "volumes": None if mounts is None else mounts_payload(mounts),
         "egress_allowlist": None if egress_allowlist is None else list(egress_allowlist),
         "isolation": isolation,
+        "inherit_resources": True if inherit_resources else None,
     }
     return {key: value for key, value in body.items() if value is not None}
 

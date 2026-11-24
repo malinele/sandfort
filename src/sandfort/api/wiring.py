@@ -72,7 +72,7 @@ from sandfort.services.user_admin import UserAdminService
 from sandfort.services.volume_transfer import VolumeTransfer
 from sandfort.services.volumes import VolumeService
 from sandfort.services.warm_pool import WarmPool, activate
-from sandfort.toolbox.pty import PtyRegistry, PtyService, PtyUnitOfWork
+from sandfort.toolbox.pty import OrgSlots, PtyRegistry, PtyService, PtyUnitOfWork
 from sandfort.toolbox.sessions import SessionRuntime
 from sandfort.webhooks.secret_box import SecretBox
 from sandfort.webhooks.ssrf import configure as configure_ssrf
@@ -91,6 +91,8 @@ SESSION_FACTORY_ATTR = "session_factory"
 PTY_REGISTRY_ATTR = "pty_registry"
 CONNECT_TOKENS_ATTR = "connect_tokens"
 SESSION_RUNTIME_ATTR = "session_runtime"  # the name routes.toolbox.sessions reads it under
+LOG_STREAM_SLOTS_ATTR = "log_stream_slots"  # org slots of live container-log follow streams
+LOG_STREAM_RETRY_AFTER_S = 30
 JOB_RUNNER_ATTR = "job_runner"
 SNAPSHOT_SERVICE_ATTR = "snapshot_service"
 IMAGE_BUILD_SERVICE_ATTR = "image_build_service"
@@ -541,6 +543,13 @@ def install_services(app: FastAPI, settings: Settings) -> AsyncEngine:
     setattr(app.state, PTY_REGISTRY_ATTR, pty_registry)
     setattr(app.state, CONNECT_TOKENS_ATTR, connect_tokens)
     setattr(app.state, SESSION_RUNTIME_ATTR, SessionRuntime(settings.max_async_commands_per_org))
+    log_stream_slots = OrgSlots(
+        settings.max_log_streams_per_org,
+        "live log streams",
+        frees_when="a log stream closes",
+        retry_after_s=LOG_STREAM_RETRY_AFTER_S,
+    )
+    setattr(app.state, LOG_STREAM_SLOTS_ATTR, log_stream_slots)
     # One preview-token store per process: the mint route writes it, a preview proxy served
     # by the same process (sandfort.main) reads it.
     setattr(app.state, PREVIEW_TOKENS_ATTR, InMemoryPreviewTokenStore(clock))

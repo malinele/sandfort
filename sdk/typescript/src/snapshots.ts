@@ -9,8 +9,10 @@ import {
   requiredNumber,
   requiredString,
   requiredTimestamp,
+  resourcesFromPayload,
   stringOrNull,
   type Page,
+  type Resources,
 } from "./models.js";
 import { concatChunks, exportTar, type SnapshotExportRequest } from "./snapshot-export.js";
 import type { Transport } from "./transport.js";
@@ -39,6 +41,11 @@ export interface SnapshotInfo {
   labels: Record<string, string>;
   /** Isolation tier recorded on the snapshot, or `null` when the server sends none. */
   isolation: string | null;
+  /**
+   * Resources of the sandbox this snapshot was committed from, as they were at snapshot time.
+   * `null` for registered or built images and for snapshots taken before this was recorded.
+   */
+  resources: Resources | null;
 }
 
 /** Options of `createFromSandbox`: the per-call fields plus optional snapshot labels. */
@@ -100,6 +107,7 @@ export function snapshotFromPayload(data: unknown): SnapshotInfo {
     reused: raw["reused"] === true,
     labels: optionalLabels(raw["labels"]) ?? {},
     isolation: stringOrNull(raw["isolation"]),
+    resources: raw["resources"] == null ? null : resourcesFromPayload(raw["resources"]),
   };
 }
 

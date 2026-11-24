@@ -141,6 +141,7 @@ async def create_sandbox(
         name=body.name,
         snapshot=body.snapshot,
         resources=body.resources,
+        inherit_resources=body.inherit_resources,
         env=body.env,
         labels=body.labels,
         network=body.network,

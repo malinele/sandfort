@@ -87,8 +87,9 @@ and "Cross-node toolbox routing"):
 
 - A reachable Postgres 16 database; the URL uses the asyncpg driver, for example
   `postgresql+asyncpg://sandfort:<password>@<host>:5432/sandfort`.
-- The image is built from `deploy/Dockerfile` and pushed to a registry. Replace the
-  `registry.example.com/sandfort:TAG` placeholder in `api.yaml`.
+- The image: `api.yaml` names the published `ghcr.io/malinele/sandfort:v0.1.0-beta.81` (public,
+  anonymous pull). For another build, build `deploy/Dockerfile`, push it to your registry and
+  change the image in `api.yaml`.
 - The sandbox node exposes `/var/run/docker.sock`. The socket grants host-level control of
   the node, so the node is dedicated: label it `sandfort.dev/sandbox-node=true` and taint it
   `sandfort.dev/sandbox-node=true:NoSchedule` (the Deployment selects and tolerates exactly
@@ -202,7 +203,7 @@ Afterwards, configure the server for the tiers the node offers (names from
 `src/sandfort/config.py`; in the Kubernetes kit they live in `deploy/k8s/configmap.yaml`):
 
 ```sh
-SANDFORT_ISOLATION_RUNTIMES="container=,gvisor=runsc,microvm=kata"   # drop microvm=kata without Kata
+SANDFORT_ISOLATION_RUNTIMES="container=runc,gvisor=runsc,microvm=kata"   # drop microvm=kata without Kata; a blank runtime (container=) means the daemon default and prod refuses it unless SANDFORT_ALLOW_DEFAULT_RUNTIME_TIER=true
 SANDFORT_DEFAULT_ISOLATION=gvisor
 ```
 
@@ -575,7 +576,7 @@ Upgrade, Kubernetes kit:
          restartPolicy: Never
          containers:
            - name: migrate
-             image: registry.example.com/sandfort:NEWTAG
+             image: ghcr.io/malinele/sandfort:NEWTAG
              command: ["python", "-m", "sandfort.admin_cli", "migrate"]
              envFrom: [{secretRef: {name: sandfort-secrets}}]
    ```
@@ -636,8 +637,10 @@ restoring the dump is the rollback.
 
 ### Metrics the server exports
 
-`GET /metrics` on the api (Prometheus text format, no authentication: keep it cluster-internal,
-as `deploy/k8s/ingress.yaml` does). The registry holds exactly the catalog below
+`GET /metrics` on the api (Prometheus text format; with `SANDFORT_METRICS_TOKEN` set, the
+endpoint requires `Authorization: Bearer <token>` and answers 401 otherwise — unset, it stays
+open; keep it cluster-internal either way, as `deploy/k8s/ingress.yaml` does, since the token
+travels in clear text without TLS in front). The registry holds exactly the catalog below
 (`src/sandfort/observability/metrics.py`); there are no process or GC collectors, so node CPU,
 memory and disk come from your node exporter. Names are an operator contract: renaming one is a
 breaking change that a snapshot test catches. Each process exports its own counters, so with
@@ -708,7 +711,8 @@ server, `audit-verify` and `audit-export` (`src/sandfort/config.py`,
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SANDFORT_AUDIT_CHAIN_KEY` | empty | HMAC key of the chain, at least 32 bytes (a shorter value fails settings load, so the process does not start). Each new row hash is `HMAC-SHA256(key, prev_hash + canonical(row))`. In `prod` an empty key does not refuse the start; it logs a warning at every start and keeps the unkeyed chain. Keep it in the secret store with the other server secrets and keep it stable: the verifier recomputes keyed rows with the configured key, so a different key cannot reproduce the stored hashes. |
+| `SANDFORT_AUDIT_CHAIN_KEY` | empty | HMAC key of the chain, at least 32 bytes (a shorter value fails settings load, so the process does not start). Each new row hash is `HMAC-SHA256(key, prev_hash + canonical(row))`. In `prod` an empty key refuses the start at preflight, unless `SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true` explicitly accepts the unkeyed chain; dev and test log a warning and start. Keep it in the secret store with the other server secrets and keep it stable: the verifier recomputes keyed rows with the configured key, so a different key cannot reproduce the stored hashes. |
+| `SANDFORT_METRICS_TOKEN` | empty | Optional bearer token for `GET /metrics` (at least 32 printable ASCII characters without whitespace; a shorter non-empty value fails settings load). Set, the endpoint requires `Authorization: Bearer <token>` and answers 401 with one fixed message otherwise; unset, `/metrics` stays open. Configure the same token in the scraper (Prometheus `authorization.credentials`) and keep the endpoint cluster-internal either way. |
 | `SANDFORT_AUDIT_SIGNING_KEY` | empty | Ed25519 key that signs heads; needs the chain key. |
 | `SANDFORT_AUDIT_CHAIN_ACCEPT_UNKEYED` | `true` | With a key set, `audit-verify` still accepts unkeyed rows written before the key existed, and prints `(N unkeyed row(s) accepted)`. Only rows before an org's first keyed row qualify: an unkeyed row after a keyed one is a finding. With `false`, every unkeyed row in a keyed chain is a finding. |
 
@@ -956,6 +960,7 @@ All names are read from `SANDFORT_*` by `src/sandfort/config.py`.
 | `SANDFORT_MAX_SANDBOX_CPU_MILLICORES`, `_MEMORY_MIB`, `_DISK_GIB` | 4000, 8192, 20 | Largest shape one sandbox may request. |
 | Org quotas (`PUT /v1/org/quota`) | unlimited | Per-org `max_vcpus`, `max_memory_mib`, `max_disk_gib`, `max_sandboxes`; over the limit is 429 `QUOTA_EXCEEDED`. |
 | `SANDFORT_MAX_PTYS_PER_ORG`, `SANDFORT_MAX_ASYNC_COMMANDS_PER_ORG` | 8, 16 | Live terminals and running async commands per org, per process. |
+| `SANDFORT_MAX_LOG_STREAMS_PER_ORG` | 16 | Live log streams per org, per process, one shared cap across container-log follow (`GET .../logs?follow=true`), command-log follow and build-log SSE (`0` = no cap); over it is 503 `CAPACITY` with `Retry-After: 30`, and a refused container-log follow writes no audit row. Non-follow log reads are not counted. |
 | `SANDFORT_MAX_VOLUME_TRANSFERS_PER_ORG`, `SANDFORT_MAX_VOLUME_TRANSFERS` | 2, 8 | Running volume exports and restores per org and in the process (`0` = no cap); over it is 409 `org_transfer_limit` or `transfer_limit`. |
 | `SANDFORT_RATE_LIMIT_REFILL_PER_S`, `SANDFORT_RATE_LIMIT_BURST` | 100, 1000 | Token bucket per API key. |
 | `SANDFORT_DOCKER_THREAD_LIMIT`, `SANDFORT_DOCKER_BULK_THREADS` | 64, 48 | Concurrent docker-py calls in the process (see "Docker driver threads and shutdown"). |
@@ -1395,6 +1400,7 @@ and exits 1 without running any check.
 | Gate | Refuses when | Variable and default | Override |
 |---|---|---|---|
 | Driver | The driver is not `docker`. Other drivers have no isolation self-check, so the host gates cannot be verified. | `SANDFORT_DRIVER` | None. |
+| Tier runtime mapping | An explicit tier map leaves a tier's runtime blank, so sandboxes of that tier run on whatever the daemon default runtime is. Legacy single-runtime mode (no tier map) is not flagged. | `SANDFORT_ISOLATION_RUNTIMES` | `SANDFORT_ALLOW_DEFAULT_RUNTIME_TIER=true` accepts the daemon default for the blank tiers. |
 | Egress probe | A canary on a managed network can reach a target it must not. The probe replaces the old honour-system acknowledgement. | `SANDFORT_EGRESS_PROBE`: on in `prod` unless set false; `SANDFORT_EGRESS_PROBE_IMAGE` (default `alpine:3.20`, needs `sh`, `nc`, `timeout`) | `SANDFORT_EGRESS_ACKNOWLEDGED=true` turns a probe refusal into a logged warning. With the probe off, it is the confirmation that `host-setup.sh` ran, and `prod` requires it. |
 | Build runtime | At least one tier is mapped to a runsc or kata runtime (a name containing `runsc` or `kata`, any case) and the daemon default runtime (tenant image builds run on it) is not one of those runtimes. Nothing is reported while no tier offers one. | `SANDFORT_REQUIRE_BUILD_RUNTIME`, default `true` | `SANDFORT_REQUIRE_BUILD_RUNTIME=false`, or set the daemon `default-runtime` to a strong runtime. |
 | Root on runc | A tier runs on a runc-class runtime (a name containing neither `runsc` nor `kata`; an empty mapping is the daemon default, and an unreported default counts as `runc`) without user-namespace remapping, or the tier is in `SANDFORT_USERNS_HOST_TIERS`, so container root is host root. | `SANDFORT_ALLOW_ROOT_SHARED_KERNEL`, default `false` | `SANDFORT_ALLOW_ROOT_SHARED_KERNEL=true`; or turn on `userns-remap` in `daemon.json` and keep those tiers out of `SANDFORT_USERNS_HOST_TIERS`; or map the tier to a strong runtime. |
@@ -2126,8 +2132,8 @@ told that absence of a notice is not a guarantee (the beta has no SLA).
 
 ## Where to look
 
-- Metrics: `GET /metrics` on the api (Prometheus text format, no authentication, keep
-  it cluster-internal). It includes HTTP, job, driver, queue depth and webhook delivery
+- Metrics: `GET /metrics` on the api (Prometheus text format; optional bearer token via
+  `SANDFORT_METRICS_TOKEN`, open when unset; keep it cluster-internal). It includes HTTP, job, driver, queue depth and webhook delivery
   metrics; the full list and the example alerts are under "Monitoring and alerting".
 - Logs: structured JSON on stdout with request ids:
   `kubectl -n sandfort logs deploy/sandfort-api`. The `kubectl` commands in this runbook apply
@@ -2143,7 +2149,9 @@ told that absence of a notice is not a guarantee (the beta has no SLA).
 
 `mcp_server/sandfort_mcp.py` is a stdio MCP server that exposes sandboxes as tools
 (`create_sandbox`, `run_code`, `run_command`, `upload_text_file`, `download_text_file`,
-`list_sandboxes`, `delete_sandbox`, `create_snapshot`) to any MCP client. It needs the
+`list_sandboxes`, `delete_sandbox`, `create_snapshot`, and the filesystem tools
+`list_directory`, `stat_path`, `make_directory`, `delete_path`, `upload_binary_file`,
+`download_binary_file`) to any MCP client. It needs the
 `mcp` package (the dev extra) and two environment variables:
 
 - `SANDFORT_BASE_URL`: the Sandfort server url.
@@ -2165,4 +2173,7 @@ using the command line below (adjust paths), for example in an `mcpServers` entr
 ```
 
 Tool errors from the SDK are returned as `error: <message>` text, and files over 1 MiB are
-not returned by `download_text_file`. stdout carries the protocol; logs go to stderr.
+not returned by `download_text_file` or `download_binary_file` (binary transfer is base64,
+which inflates the payload by about a third; uploads over 1 MiB are refused before decoding).
+`list_directory` returns at most 1000 entries and sets `truncated` when more exist. stdout
+carries the protocol; logs go to stderr.

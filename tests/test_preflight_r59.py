@@ -31,6 +31,7 @@ from sandfort.config import Settings
 from sandfort.preflight import (
     FERNET_KEY_COMMAND,
     UNGUARDED_HOST_MESSAGE,
+    UNKEYED_AUDIT_CHAIN_MESSAGE,
     ConfigurationError,
     check_preflight,
     prod_findings,
@@ -41,10 +42,14 @@ CAPACITY = {"host_capacity_cpu_millicores": 4000, "host_capacity_memory_mib": 81
 OVERRIDE = "SANDFORT_EGRESS_ACKNOWLEDGED=true"
 METADATA = "169.254.169.254:80"
 SERVABLE = {"driver": "fake", "api_key_pepper": "test-pepper", "allow_unbounded_host": True}
+CHAIN_KEY = "c" * 40
+CHAIN_ENV = "SANDFORT_AUDIT_CHAIN_KEY"
+UNKEYED_ACK_ENV = "SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED"
 
 
 def prod(**changes: Any) -> Settings:
-    return Settings(environment="prod", **changes)
+    """Prod settings with the audit chain key set, so the other findings stand alone."""
+    return Settings(environment="prod", **{"audit_chain_key": CHAIN_KEY, **changes})
 
 
 # --- the findings -----------------------------------------------------------------------
@@ -102,6 +107,61 @@ def test_the_webhook_finding_gives_a_command_that_generates_a_fernet_key() -> No
     Fernet(result.stdout.strip().encode())  # a valid key: does not raise
 
 
+def test_prod_without_an_audit_chain_key_is_refused_unless_acknowledged() -> None:
+    settings = Settings(environment="prod", webhook_secret_key=KEY, **CAPACITY)
+
+    assert prod_findings(settings) == [UNKEYED_AUDIT_CHAIN_MESSAGE]
+    with pytest.raises(ConfigurationError) as raised:
+        check_preflight(settings)
+    assert raised.value.findings == (UNKEYED_AUDIT_CHAIN_MESSAGE,)
+    assert CHAIN_ENV in UNKEYED_AUDIT_CHAIN_MESSAGE
+    assert UNKEYED_ACK_ENV in UNKEYED_AUDIT_CHAIN_MESSAGE
+    assert "\n" not in UNKEYED_AUDIT_CHAIN_MESSAGE
+
+
+def test_a_blank_audit_chain_key_counts_as_unset() -> None:
+    settings = Settings(
+        environment="prod", webhook_secret_key=KEY, audit_chain_key="   ", **CAPACITY
+    )
+
+    assert prod_findings(settings) == [UNKEYED_AUDIT_CHAIN_MESSAGE]
+
+
+def test_acknowledging_the_unkeyed_chain_clears_the_finding() -> None:
+    settings = Settings(
+        environment="prod",
+        webhook_secret_key=KEY,
+        unkeyed_audit_chain_acknowledged=True,
+        **CAPACITY,
+    )
+
+    assert prod_findings(settings) == []
+    check_preflight(settings)  # does not raise
+
+
+def test_a_set_audit_chain_key_has_no_unkeyed_finding() -> None:
+    settings = Settings(
+        environment="prod", webhook_secret_key=KEY, audit_chain_key=CHAIN_KEY, **CAPACITY
+    )
+
+    assert UNKEYED_AUDIT_CHAIN_MESSAGE not in prod_findings(settings)
+    check_preflight(settings)  # does not raise
+
+
+def test_outside_prod_an_unkeyed_chain_is_not_a_finding() -> None:
+    for environment in ("dev", "test"):
+        assert prod_findings(Settings(environment=environment)) == []
+
+
+def test_the_unacknowledged_default_is_false_and_the_flag_is_read_from_the_environment() -> None:
+    assert Settings().unkeyed_audit_chain_acknowledged is False
+    acknowledged = Settings.from_env({"SANDFORT_ENVIRONMENT": "prod", UNKEYED_ACK_ENV: "true"})
+    unset = Settings.from_env({"SANDFORT_ENVIRONMENT": "prod"})
+
+    assert acknowledged.unkeyed_audit_chain_acknowledged is True
+    assert unset.unkeyed_audit_chain_acknowledged is False
+
+
 def test_the_error_carries_every_finding_one_line_each() -> None:
     with pytest.raises(ConfigurationError) as raised:
         check_preflight(prod())
@@ -115,7 +175,7 @@ def test_the_error_carries_every_finding_one_line_each() -> None:
 
 
 def test_from_env_in_prod_without_the_key_no_longer_raises() -> None:
-    settings = Settings.from_env({"SANDFORT_ENVIRONMENT": "prod"})
+    settings = Settings.from_env({"SANDFORT_ENVIRONMENT": "prod", CHAIN_ENV: CHAIN_KEY})
 
     assert settings.webhook_secret_key == ""
     with pytest.raises(ConfigurationError) as raised:
@@ -147,6 +207,7 @@ CLEARED = (
     "SANDFORT_ALLOW_UNBOUNDED_HOST",
     "SANDFORT_ROLE",
     "SANDFORT_PROXY_ENABLED",
+    UNKEYED_ACK_ENV,
 )
 
 
@@ -154,6 +215,7 @@ def unprepared_host(monkeypatch: pytest.MonkeyPatch, environment: str = "prod") 
     for name in CLEARED:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SANDFORT_ENVIRONMENT", environment)
+    monkeypatch.setenv(CHAIN_ENV, CHAIN_KEY)  # the audit chain key is not what is unprepared
     started: list[Any] = []
     monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **kwargs: started.append(app))
     monkeypatch.setattr(server_main, "build_app", lambda settings: started.append(settings))

@@ -184,8 +184,10 @@ no <code>X-RateLimit-*</code> headers.</li>
 burst 10. It is installed when rate limiting is enabled.</li>
 <li>Exempt: <code>/healthz</code>, <code>/readyz</code> and the PTY websocket.</li>
 </ul>
-<p>Other caps: 8 live PTYs and 16 running async commands per organization
-(<code>SANDFORT_MAX_PTYS_PER_ORG</code>, <code>SANDFORT_MAX_ASYNC_COMMANDS_PER_ORG</code>; per process, <code>0</code> =
+<p>Other caps: 8 live PTYs, 16 running async commands and 16 live log streams per organization
+(one shared log-stream cap across container-log follow, command-log follow and build-log SSE:
+<code>SANDFORT_MAX_PTYS_PER_ORG</code>, <code>SANDFORT_MAX_ASYNC_COMMANDS_PER_ORG</code>,
+<code>SANDFORT_MAX_LOG_STREAMS_PER_ORG</code>; per process, <code>0</code> =
 unlimited), 2 running volume exports or restores per organization and 8 per process
 (<code>SANDFORT_MAX_VOLUME_TRANSFERS_PER_ORG</code>, <code>SANDFORT_MAX_VOLUME_TRANSFERS</code>; 409 <code>org_transfer_limit</code>
 or <code>transfer_limit</code>), 16 MiB JSON request bodies (<code>SANDFORT_MAX_REQUEST_BODY_BYTES</code>, 413
@@ -269,7 +271,8 @@ action, target, outcome, request id, details and time. IP and user agent are not
 Rows link by <code>prev_hash</code>. The chain is tamper-evident: it shows a changed, removed or
 reordered row, not who changed it. With the key set, a writer who only has database access
 cannot recompute the hashes of a rewritten history; without the key a writer can (and in
-<code>prod</code> the server logs a warning at startup while the key is unset).</p></li>
+<code>prod</code> the server refuses to start while the key is unset, unless
+<code>SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true</code> accepts the unkeyed chain explicitly).</p></li>
 <li><p>Keyed chain settings (<code>src/sandfort/services/audit_chain.py</code>):</p>
 <ul>
 <li><code>SANDFORT_AUDIT_CHAIN_KEY</code>: the HMAC key. Keep it out of the database and out of backups

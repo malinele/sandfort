@@ -81,9 +81,9 @@ Five defects, each verified in the code:
 1. One limiter for everything. A log follow parks a thread for as long as the container is
    quiet, an upload pins one for its whole duration, and a pull or commit pins one for
    minutes. 64 such calls leave `start`, `stop`, `inspect` and exec setup queued behind them.
-   Terminals and async commands are capped per org (`max_ptys_per_org` 8,
-   `max_async_commands_per_org` 16); log followers and uploads are not (the roadmap lists
-   per-org caps on streams as open).
+   Terminals, async commands and all live log followers (container-log, command-log and
+   build-log, one shared cap) are capped per org (`max_ptys_per_org` 8,
+   `max_async_commands_per_org` 16, `max_log_streams_per_org` 16); uploads are not.
 2. Two cancellation regimes. An anyio-scope cancel waits for the thread; a native cancel
    releases the token while the thread runs on. In the second case the process can exceed
    `docker_thread_limit` threads, and a failure of the abandoned call is lost.

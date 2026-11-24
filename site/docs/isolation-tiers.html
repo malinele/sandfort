@@ -61,7 +61,9 @@ only tier is the default tier on <code>SANDFORT_CONTAINER_RUNTIME</code>, as bef
 <li>An empty runtime means whatever the daemon default is. If the daemon default runtime is
 gVisor (<code>default-runtime</code> set to <code>runsc</code>, which keeps image builds off plain runc), an
 empty <code>container=</code> would run the container tier on gVisor. Map the container tier
-explicitly to runc in that case: <code>container=runc,gvisor=runsc,microvm=kata</code>.</li>
+explicitly to runc in that case: <code>container=runc,gvisor=runsc,microvm=kata</code>. In <code>prod</code>, a
+blank runtime in an explicit tier map refuses the start at preflight unless
+<code>SANDFORT_ALLOW_DEFAULT_RUNTIME_TIER=true</code> accepts the daemon default (since 2026-11-23).</li>
 <li>If the node enables user-namespace remapping (<code>userns-remap</code>, a daemon-wide setting), the
 <code>microvm</code> tier runs with the host user namespace, because Kata cannot run in a remapped
 one; the other tiers run remapped. The Docker driver sets that per-container opt-out
@@ -201,9 +203,13 @@ exec often returned exit 124 only at the full timeout, or 255, with <code>sandbo
 The state is polled for up to 3 s after a suspect exit or timeout, and an exec on a dead
 runsc/kata container returns within about 2 s instead of at its deadline. <code>timeout_s</code> is a
 budget, not an exact cutoff: a command at <code>timeout_s=10</code> returned after about 13 s (kill and
-cleanup). Remaining caveat: the classic bash fork bomb <code>:(){ :|:&amp; };:</code> usually returns exit 0
-within about 1 s on gvisor and microvm; the NEXT exec then reports <code>sandbox_stopped</code> (after
-up to about 5 s on microvm).</li>
+cleanup). Remaining caveat, narrowed: the classic bash fork bomb <code>:(){ :|:&amp; };:</code> usually
+returns exit 0 within about 1 s on gvisor and microvm, and that exec response itself still
+says exit 0. Since the post-exec death probe (<code>src/sandfort/api/death_probe.py</code>), the exec
+route on these two tiers re-inspects the container 2, 6 and 15 seconds after the latest exec
+and settles a dead sandbox through the reconciler (state <code>stopped</code>, <code>sandbox.drift_detected</code>
+audit row), so the row no longer waits for the next exec or the periodic pass; a later exec
+still reports <code>sandbox_stopped</code> as before.</li>
 <li>The CPU limit is enforced: CPU-seconds per wall second matched the requested 500, 1000 and 2000
 millicores. <code>nproc</code> reports 1, 2 and 3 for those sizes rather than the requested count, and
 <code>MemTotal</code> is somewhat below the requested memory (454328 kB for 512 MiB). Size thread pools
@@ -258,8 +264,6 @@ sandbox is a runtime error). The server retries a delete after a crash, so no cl
 needed.</li>
 <li>On the container tier <code>nproc</code> and <code>MemTotal</code> show the host&#x27;s values, not the sandbox limits;
 size thread pools from the requested resources.</li>
-<li>On gvisor, streamed log events can split a line across events; join the data rather than
-parsing each event.</li>
 </ul>
 <h2 id="snapshots-and-isolation-tier">Snapshots and isolation tier<a class="anchor" href="#snapshots-and-isolation-tier" aria-label="Link to section: Snapshots and isolation tier">#</a></h2>
 <ul>
@@ -277,7 +281,8 @@ itself; the snapshot content it starts from does not count against <code>disk_gi
 </ul>
 <h2 id="resize">Resize<a class="anchor" href="#resize" aria-label="Link to section: Resize">#</a></h2>
 <p><code>POST /v1/sandboxes/{id}/resize</code> changes CPU and memory of a stopped sandbox (409 INVALID_STATE
-when it is started). There is no SDK or CLI helper for it yet. The root filesystem is kept: the
+when it is started). The TypeScript SDK has <code>resize</code>; the Python SDK and the CLI have no helper
+for it yet. The root filesystem is kept: the
 start that follows commits the stopped container to a local image (<code>sf-resize-&lt;id&gt;</code>) and creates
 the new container from it, on all three tiers. The image stays while the sandbox lives (the next
 resize commits to the same tag) and goes with the sandbox. A reset still wipes.</p>

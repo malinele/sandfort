@@ -101,6 +101,7 @@ from sandfort.services.quota import QuotaService, reservation_for
 from sandfort.services.sandbox_jobs import AuditNote, Lifecycle
 from sandfort.services.sandbox_listing import list_by_stop_cause
 from sandfort.services.sandbox_reset import SandboxReset
+from sandfort.services.snapshot_resources import merge_recorded
 from sandfort.services.snapshots import snapshot_in_label_scope
 from sandfort.services.usage import with_usage_metering
 from sandfort.services.volume_limit import MountGuard, MountLimit
@@ -206,6 +207,7 @@ class CreateSandboxCommand:
     name: str | None = None
     snapshot: str | None = None
     resources: ResourceSpec = field(default_factory=ResourceSpec)
+    inherit_resources: bool = False  # adopt the resources recorded on ``snapshot``, if any
     env: Mapping[str, str] = field(default_factory=dict)
     labels: Mapping[str, str] = field(default_factory=dict)
     network: NetworkPolicy = field(default_factory=NetworkPolicy)
@@ -431,6 +433,7 @@ class SandboxService:
             command = dataclasses.replace(command, labels=merge_scope(command.labels, scope))
         await self._require_visible_snapshot(org_id, command.snapshot)  # before any pool claim
         command = await self._inherit_snapshot_tier(org_id, command)
+        command = await self._inherit_snapshot_resources(org_id, command)  # before the pool claim
         # Standbys run the default tier, so only a create on that tier may claim one.
         default_tier = command.isolation in (None, self._settings.default_isolation)
         cap = None if command.standby else current_key_sandbox_cap()
@@ -995,6 +998,28 @@ class SandboxService:
         self._validate_isolation(found.isolation, f" (recorded on snapshot {snapshot_id})")
         return dataclasses.replace(command, isolation=found.isolation)
 
+    async def _inherit_snapshot_resources(
+        self, org_id: str, command: CreateSandboxCommand
+    ) -> CreateSandboxCommand:
+        """Opt-in: fill the resource fields the request left unset from the snapshot's record.
+
+        Only a snapshot id (names are resolved to ids before this) whose row recorded resources
+        changes anything; an explicit field wins. The merged values face the per-sandbox
+        maximum again, so an oversized record is a 422, never clamped.
+        """
+        snapshot_id = command.snapshot
+        if not command.inherit_resources or snapshot_id is None:
+            return command
+        if not snapshot_id.startswith(SNAPSHOT_ID_PREFIX):
+            return command
+        async with self._uow_factory() as uow:
+            found = await uow.snapshots.get(org_id, snapshot_id)
+        if found is None or found.resources is None:  # a missing snapshot is reported later
+            return command
+        merged = merge_recorded(command.resources, found.resources)
+        self._check_resource_maximum(merged)
+        return dataclasses.replace(command, resources=merged)
+
     async def _require_visible_snapshot(self, org_id: str, snapshot: str | None) -> None:
         """A label-scoped create from a snapshot id needs its source sandbox in scope (else 404).
 
@@ -1061,6 +1086,22 @@ class SandboxService:
             snapshot=command.snapshot,
         )
 
+    def _check_resource_maximum(self, resources: ResourceSpec) -> None:
+        """422 when ``resources`` exceed the deployment's per-sandbox maximum."""
+        maximum = ResourceSpec(
+            cpu_millicores=self._settings.max_sandbox_cpu_millicores,
+            memory_mib=self._settings.max_sandbox_memory_mib,
+            disk_gib=self._settings.max_sandbox_disk_gib,
+        )
+        if not resources.fits_within(maximum):
+            raise Unprocessable(
+                "requested resources exceed the per-sandbox maximum",
+                details={
+                    "requested": resources.model_dump(),
+                    "maximum": maximum.model_dump(),
+                },
+            )
+
     def _validate_create(self, command: CreateSandboxCommand) -> None:
         image = command.snapshot
         if image is not None and not image.startswith(SNAPSHOT_ID_PREFIX):
@@ -1074,19 +1115,7 @@ class SandboxService:
         malformed = sorted(name for name in command.env if not _ENV_NAME.fullmatch(name))
         if malformed:
             raise Unprocessable("invalid environment variable names", details={"names": malformed})
-        maximum = ResourceSpec(
-            cpu_millicores=self._settings.max_sandbox_cpu_millicores,
-            memory_mib=self._settings.max_sandbox_memory_mib,
-            disk_gib=self._settings.max_sandbox_disk_gib,
-        )
-        if not command.resources.fits_within(maximum):
-            raise Unprocessable(
-                "requested resources exceed the per-sandbox maximum",
-                details={
-                    "requested": command.resources.model_dump(),
-                    "maximum": maximum.model_dump(),
-                },
-            )
+        self._check_resource_maximum(command.resources)
         self._validate_minutes(command.auto_stop_minutes, command.auto_delete_minutes)
         self._validate_labels(command.labels)
         self._validate_isolation(command.isolation)

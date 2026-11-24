@@ -36,6 +36,9 @@ class SnapshotRow(Base):
     source_sandbox_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     spec_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     isolation: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cpu_millicores: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    memory_mib: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disk_gib: Mapped[int | None] = mapped_column(Integer, nullable=True)
     labels: Mapped[dict[str, str]] = mapped_column(
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )

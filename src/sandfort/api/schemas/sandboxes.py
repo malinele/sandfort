@@ -159,6 +159,17 @@ class CreateSandboxRequest(BaseModel):
         ),
     )
     resources: ResourceSpecRequest = Field(default_factory=ResourceSpecRequest)
+    inherit_resources: StrictBool = Field(
+        default=False,
+        description=(
+            "When true and `snapshot` is a snapshot (id or name) that recorded the resources "
+            "of its source sandbox, every field of `resources` you leave out is taken from "
+            "that record instead of the default; a field you set always wins. The merged "
+            "values must fit the per-sandbox maximum (422 otherwise, never clamped). Has no "
+            "effect for an image reference, for a snapshot without recorded resources, or "
+            "when no snapshot is given."
+        ),
+    )
     env: dict[str, str] = Field(default_factory=dict)
     labels: RequestLabels = Field(default_factory=dict)
     network: NetworkPolicy = Field(default_factory=NetworkPolicy)

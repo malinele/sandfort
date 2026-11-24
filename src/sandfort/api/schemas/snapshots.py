@@ -8,6 +8,7 @@ from sandfort.api.schemas.common import RequestModel
 from sandfort.api.schemas.sandboxes import RequestLabels
 from sandfort.api.schemas.text_checks import check_label_content, check_reserved_labels
 from sandfort.auth.label_scope import current_label_scope
+from sandfort.domain.resources import ResourceSpec
 from sandfort.domain.snapshot import Snapshot, SnapshotState
 
 # Image references and snapshot names: registry host, path, tag and digest characters.
@@ -72,6 +73,15 @@ class SnapshotResponse(BaseModel):
         ),
     )
     isolation: str | None = None
+    resources: ResourceSpec | None = Field(
+        default=None,
+        description=(
+            "Resources (cpu_millicores, memory_mib, disk_gib) of the sandbox this snapshot was "
+            "committed from, as they were at snapshot time. Null for registered or built "
+            "images and for snapshots taken before this was recorded. A sandbox create can "
+            "adopt them with `inherit_resources`."
+        ),
+    )
     labels: dict[str, str]
     created_at: datetime
 
@@ -93,6 +103,7 @@ def snapshot_response(snapshot: Snapshot) -> SnapshotResponse:
         layer_count=snapshot.layer_count,
         source_sandbox_id=None if label_scoped else snapshot.source_sandbox_id,
         isolation=snapshot.isolation,
+        resources=snapshot.resources,
         labels=dict(snapshot.labels),
         created_at=snapshot.created_at,
     )

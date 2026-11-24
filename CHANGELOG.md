@@ -49,6 +49,125 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 79 (after tag v0.1.0-beta.81; the Kubernetes kit names the published image)
+- **feat(sdk,cli,ts): `inherit_resources` reaches all three clients; snapshots expose their
+  recorded resources.** The Python SDK gains keyword-only `inherit_resources: bool = False` on
+  `create_sandbox` (sync and async; the key is sent only when True) and `SnapshotInfo.resources`
+  (`Resources | None`) (05a51578). The CLI gains `sandbox create --inherit-resources`, and
+  `sandfort snapshot` detail output prints `cpu_millicores`/`memory_mib`/`disk_gib` rows when
+  recorded (2316fb37). The TypeScript SDK 0.1.8 gains `inheritResources` on `createSandbox`
+  and `SnapshotInfo.resources` (`Resources | null`); the OpenAPI conformance test now covers
+  the field (`sdk/typescript/src/create-body.ts`, `sdk/typescript/src/snapshots.ts`; this
+  commit; the hash is recorded in the next round). Closes the "SDK/CLI/TypeScript parameters
+  are follow-ups" note of the snapshot-resources entry below.
+- **feat(preflight): a prod tier map with a blank runtime is refused unless explicitly
+  acknowledged.** An explicit `SANDFORT_ISOLATION_RUNTIMES` entry like `container=` means the
+  tier runs on whatever the daemon default runtime is; prod preflight now refuses that start
+  and names the blank tiers, unless `SANDFORT_ALLOW_DEFAULT_RUNTIME_TIER=true` accepts it.
+  The gvisor/microvm family check is also repeated in preflight for settings built in code.
+  Legacy single-runtime mode (no tier map) is unchanged. New `tier runtimes` admin doctor row
+  mirrors the gate; `deploy/node-setup.sh` and the runbook example now recommend
+  `container=runc`. (`src/sandfort/preflight.py`, `src/sandfort/config.py`,
+  `src/sandfort/admin_doctor_rows.py`, `src/sandfort/admin_doctor.py`; this commit; the hash
+  is recorded in the next round)
+- **feat(api): snapshots record the source sandbox's resources; creates can adopt them with
+  `inherit_resources`.** A snapshot taken from a sandbox now stores the source's
+  `cpu_millicores`, `memory_mib` and `disk_gib` (migration 0026; `SnapshotResponse` exposes
+  them, null for registered or built images and for older rows). `POST /v1/sandboxes` gains an
+  opt-in `inherit_resources: bool` flag: from a snapshot with recorded values, each resource
+  field the request did not set explicitly is taken from the record (explicit fields win); the
+  per-sandbox maximum is re-checked after the merge (422, no clamping), and a snapshot without
+  recorded resources makes the flag a no-op. Default behavior is unchanged. SDK/CLI/TypeScript
+  parameters are follow-ups. (`src/sandfort/services/snapshot_resources.py`,
+  `src/sandfort/migrations/versions/r0026_snapshot_resources.py`; this commit; the hash is
+  recorded in the next round)
+- **feat(api): the per-org live-log-stream cap now covers command-log follow and build-log
+  SSE.** The two remaining follow endpoints (`GET .../commands/{id}/logs/follow` and `GET
+  /v1/snapshots/{id}/logs`) take a slot from the same `SANDFORT_MAX_LOG_STREAMS_PER_ORG` pool
+  as container-log follow, so one cap bounds all live log streams of an org; the slot is held
+  before the command or build lookup, over the cap the answer is 503 `CAPACITY` with
+  `Retry-After: 30`, and the slot frees when the stream closes, including never-read bodies.
+  (`src/sandfort/api/held_stream.py` `capped_body`,
+  `src/sandfort/api/routes/toolbox/sessions.py`, `src/sandfort/api/routes/image_builds.py`;
+  this commit; the hash is recorded in the next round)
+- **feat(mcp): filesystem tools for the stdio MCP server.** Six new tools next to the
+  existing eight: `list_directory` (at most 1000 entries, `truncated` flag), `stat_path`,
+  `make_directory`, `delete_path` (`recursive` off by default), `upload_binary_file` and
+  `download_binary_file` (base64; the 1 MiB limit of the text tools applies, checked before
+  decoding on upload; base64 inflates the payload by about a third). Same error convention as
+  the existing tools (`error: <message>`). (`mcp_server/sandfort_mcp.py`; this commit; the
+  hash is recorded in the next round)
+- **feat(api): per-org cap on live container-log follow streams.** `GET
+  /v1/sandboxes/{id}/logs?follow=true` now takes a per-org slot
+  (`SANDFORT_MAX_LOG_STREAMS_PER_ORG`, default 16, per process, `0` = no cap); over the cap
+  the answer is 503 `CAPACITY` with `Retry-After: 30` and no audit row is written for the
+  refused follow. The slot frees when the stream closes, including bodies the client never
+  reads (`weakref.finalize` on the wrapped generator). Non-follow log reads take no slot;
+  command-log follow and build-log SSE stay uncapped and remain on the roadmap. Terminals and
+  async commands were already capped. (`src/sandfort/api/routes/sandbox_logs.py`,
+  `src/sandfort/api/held_stream.py`, `src/sandfort/config.py`, `src/sandfort/api/wiring.py`;
+  this commit; the hash is recorded in the next round)
+- **feat(ops): optional bearer token for `GET /metrics`.** With `SANDFORT_METRICS_TOKEN` set
+  (at least 32 printable ASCII characters), the endpoint requires `Authorization: Bearer
+  <token>` — compared in constant time — and answers 401 with one fixed message on any
+  failure, before touching the database; unset, `/metrics` stays open as before. The token is
+  kept out of `repr(Settings)` and out of error texts, and the route stays outside the OpenAPI
+  spec. Keep the endpoint cluster-internal either way: the token travels in clear text without
+  TLS in front. (`src/sandfort/api/metrics_auth.py`, `src/sandfort/config.py`,
+  `src/sandfort/api/app.py`; this commit; the hash is recorded in the next round)
+- **feat(toolbox): post-exec death probe settles a sandbox killed right after an exit-0
+  exec.** A background fork bomb lets an exec answer exit 0 and kills the container a moment
+  later; the row kept saying `started` until the next exec or the periodic reconciler pass. On
+  the `gvisor` and `microvm` tiers the exec route now schedules one best-effort probe task per
+  sandbox that re-inspects the container 2, 6 and 15 seconds after the latest exec and settles
+  a dead one through `Reconciler.mark_stopped_unexpectedly` (state `stopped`, stop cause
+  `container_exited`, `sandbox.drift_detected` audit row, existing lifecycle event). A new exec
+  extends the pending probe instead of adding a task; the probe never raises into the exec
+  path and the reconciler pass stays the safety net. The exec response itself still reports
+  exit 0 — the probe settles the row, it does not rewrite the answer.
+  (`src/sandfort/api/death_probe.py`, `src/sandfort/api/routes/toolbox/process.py`; this
+  commit; the hash is recorded in the next round)
+- **feat(sdk,cli): sandbox resize in the Python SDK and the CLI.** `Sandbox.resize` and
+  `AsyncSandbox.resize` (keyword-only `cpu_millicores`, `memory_mib`, `disk_gib`; at least one
+  required, client-side bounds match the server schema) call `POST /v1/sandboxes/{id}/resize`
+  and update the handle, mirroring `reset`; `sandfort sandbox resize <sandbox>
+  --cpu-millicores/--memory-mib/--disk-gib` renders the updated sandbox and honours the global
+  `--json`. Resize still applies to stopped sandboxes only (server rule, 409 otherwise); the
+  TypeScript SDK already had it (checked 2026-11-16). (`sdk/python/src/sandfort_sdk/sandbox.py`,
+  `sdk/python/src/sandfort_sdk/handles.py`, `cli/src/sandfort_cli/resize_cmd.py`; this commit;
+  the hash is recorded in the next round)
+- **feat(preflight): a prod start without an audit chain key is refused unless explicitly
+  acknowledged.** Without `SANDFORT_AUDIT_CHAIN_KEY` the audit chain is an unkeyed SHA-256 that
+  anyone who can write the database can rewrite consistently; until now prod only logged a
+  warning. `check_preflight` now refuses that start; setting
+  `SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true` (new `Settings` field) starts without a key.
+  `Settings.from_env` still does not raise for a missing chain key — the gate lives in preflight,
+  like the host-capacity gate. The admin doctor's `audit keys` row mirrors the gate: FAIL in prod
+  with neither key and no acknowledgement, WARN when acknowledged; dev and test are unchanged.
+  The hosted beta already sets a chain key, so it is unaffected. (`src/sandfort/preflight.py`,
+  `src/sandfort/config.py`, `src/sandfort/admin_doctor_rows.py`; this commit; the hash is
+  recorded in the next round)
+- **chore(deploy): the Kubernetes kit and the runbook name the published image
+  `ghcr.io/malinele/sandfort:v0.1.0-beta.81` instead of the `registry.example.com/sandfort:TAG`
+  placeholder.** The repository and the GHCR package are public since tag `v0.1.0-beta.81`
+  (anonymous pull verified 2026-11-23). Building from `deploy/Dockerfile` and pushing to your own
+  registry remains supported, and is required for older tags, which have no published image.
+  (`deploy/k8s/api.yaml`, `deploy/k8s/kustomization.yaml`, `deploy/k8s/README.md`,
+  `docs/operations.md`; 740e20fa)
+- **docs(recipes): agent tool loop — wiring a model's tool-use loop to a sandbox through the
+  Python SDK.** `docs/recipes/agent-tool-loop.md` shows three tools (`run_command`,
+  `write_file`, `read_file`) over `process_exec` and the fs API, driven by the Anthropic SDK
+  tool runner; `examples/agent_tool_loop.py` runs the same loop with a scripted stand-in for
+  the model, so it needs no model API key and exits non-zero on failure (ran locally against
+  real Docker: `AGENT TOOL LOOP: PASS`, 3.9 s). (912053eb)
+- **docs(recipes): OpenAI tool loop — the same three tools driven by a hand-written Chat
+  Completions tool-calling loop.** `docs/recipes/openai-tool-loop.md` shows the `tools` JSON
+  Schema definitions, executing `tool_calls` and appending `role: "tool"` results keyed by
+  `tool_call_id`; `examples/openai_tool_loop.py` runs the loop with a scripted stand-in for the
+  model, so it needs no `openai` package and no API key and exits non-zero on failure (ran
+  locally against real Docker: `OPENAI TOOL LOOP: PASS`, 3.9 s). The OpenAI request and response
+  side is not exercised by the example. (this commit; the hash is recorded in the next round)
+
 #### Round 78 (after tag v0.1.0-beta.80; TypeScript SDK 0.1.7: snapshot export download)
 - **feat(ts-sdk): snapshot export — download of the `docker save` tar from the TypeScript SDK.**
   `client.exportSnapshotStream(id)` streams the tar chunk by chunk (`GET /v1/snapshots/{id}/export`,

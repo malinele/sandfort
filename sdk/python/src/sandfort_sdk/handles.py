@@ -10,12 +10,44 @@ import math
 from datetime import datetime
 
 from sandfort_sdk.exceptions import NotFound, SandboxTimeoutError
-from sandfort_sdk.models import Resources, SandboxInfo
+from sandfort_sdk.models import Resources, SandboxInfo, require_int_range
 
 logger = logging.getLogger(__name__)
 
 # Added to ``wait_timeout_s`` for the read timeout of a create that blocks until started.
 CREATE_READ_MARGIN_S = 5.0
+
+# The bounds of ``ResizeSandboxRequest`` (the server answers 422 outside them).
+MIN_CPU_MILLICORES = 100
+MAX_CPU_MILLICORES = 1_000_000
+MIN_MEMORY_MIB = 64
+MAX_MEMORY_MIB = 16_777_216
+MIN_DISK_GIB = 1
+MAX_DISK_GIB = 1_048_576
+
+
+def resize_body(
+    cpu_millicores: int | None, memory_mib: int | None, disk_gib: int | None
+) -> dict[str, int]:
+    """The resize request body: only the given fields, each checked against the server bounds.
+
+    Raises ``ValueError`` before any request for a value that is not an ``int`` in range (a
+    ``bool`` or a float such as ``5.0`` is refused) and when no field is given.
+    """
+    body: dict[str, int] = {}
+    if cpu_millicores is not None:
+        body["cpu_millicores"] = require_int_range(
+            cpu_millicores, "cpu_millicores", MIN_CPU_MILLICORES, MAX_CPU_MILLICORES
+        )
+    if memory_mib is not None:
+        body["memory_mib"] = require_int_range(
+            memory_mib, "memory_mib", MIN_MEMORY_MIB, MAX_MEMORY_MIB
+        )
+    if disk_gib is not None:
+        body["disk_gib"] = require_int_range(disk_gib, "disk_gib", MIN_DISK_GIB, MAX_DISK_GIB)
+    if not body:
+        raise ValueError("nothing to resize: pass cpu_millicores, memory_mib or disk_gib")
+    return body
 
 
 def check_wait_budget(wait: bool, wait_timeout_s: float | None) -> None:

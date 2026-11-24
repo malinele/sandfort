@@ -21,7 +21,12 @@ from sandfort.config import (
     Settings,
 )
 from sandfort.drivers.docker.capabilities import DockerCapabilities, root_on_host_tiers
-from sandfort.preflight import audit_key_findings, host_capacity_findings, webhook_key_findings
+from sandfort.preflight import (
+    audit_key_findings,
+    host_capacity_findings,
+    tier_runtime_findings,
+    webhook_key_findings,
+)
 
 QUOTA_PREFIX = "disk quota support"  # the prefix the startup gate also keys on
 ROOT_PREFIX = "root on a shared kernel"
@@ -32,6 +37,8 @@ WEBHOOK_KEY_VAR = f"{ENV_PREFIX}WEBHOOK_SECRET_KEY"
 CPU_VAR = f"{ENV_PREFIX}HOST_CAPACITY_CPU_MILLICORES"
 MEMORY_VAR = f"{ENV_PREFIX}HOST_CAPACITY_MEMORY_MIB"
 AUDIT_KEYS_ROW = "audit keys"
+TIER_RUNTIMES_ROW = "tier runtimes"
+DEFAULT_RUNTIME_VAR = f"{ENV_PREFIX}ALLOW_DEFAULT_RUNTIME_TIER"
 FINGERPRINT_CHARS = 16  # hex characters of sha256(raw public key), as the CLI prints
 GATE_REFUSES = "the start gate would refuse: {count} failing check(s)"
 GATE_STARTS = "the start gate would start"
@@ -120,7 +127,8 @@ def audit_keys_row(settings: Settings) -> CheckResult:
     (prod, the same ``audit_key_findings`` the preflight uses, so the verdict line is true); in
     dev and test the server starts with a warning, so the row is a WARN with the same detail.
     A malformed signing key is a FAIL everywhere (the settings load refuses it). A blank signing
-    key counts as unset. The chain key alone, or neither key, only warns.
+    key counts as unset. Neither key is a FAIL in prod unless the unkeyed chain is acknowledged
+    (again the preflight's own finding) and a WARN elsewhere. The chain key alone only warns.
     """
     chain = bool(settings.audit_chain_key.strip())
     try:
@@ -138,6 +146,9 @@ def audit_keys_row(settings: Settings) -> CheckResult:
     if chain:
         detail = f"exports are HMAC-chained but unsigned: {AUDIT_SIGNING_KEY_ENV} is not set"
         return CheckResult(AUDIT_KEYS_ROW, Status.WARN, detail)
+    refusal = audit_key_findings(settings)  # prod, neither key, not acknowledged
+    if refusal:
+        return CheckResult(AUDIT_KEYS_ROW, Status.FAIL, refusal[0])
     detail = (
         f"{AUDIT_CHAIN_KEY_ENV} and {AUDIT_SIGNING_KEY_ENV} are not set: the audit chain is an"
         " unkeyed hash and exports are unsigned"
@@ -162,6 +173,28 @@ def capacity_row(settings: Settings) -> CheckResult:
         return CheckResult(name, Status.PASS, detail)
     detail = "not configured: admission has no host-wide limit (prod requires it)"
     return CheckResult(name, Status.WARN, detail)
+
+
+def tier_runtime_row(settings: Settings) -> CheckResult:
+    """Tiers mapped to an empty runtime: the preflight's finding, or PASS (never a WARN).
+
+    A prod map that leaves tiers blank is refused by ``tier_runtime_findings`` unless
+    ``allow_default_runtime_tier`` accepts the daemon default; the row mirrors that verdict.
+    """
+    findings = tier_runtime_findings(settings)
+    if findings:
+        return CheckResult(TIER_RUNTIMES_ROW, Status.FAIL, findings[0])
+    if not settings.isolation_runtimes:
+        return CheckResult(TIER_RUNTIMES_ROW, Status.PASS, "single-runtime mode: no tier map")
+    tiers = settings.isolation_tiers()
+    blank = sorted(tier for tier, runtime in tiers.items() if not runtime.strip())
+    if settings.environment == PROD_ENVIRONMENT and blank:
+        detail = (
+            f"tiers {blank} run on the daemon default runtime; accepted by {DEFAULT_RUNTIME_VAR}"
+        )
+        return CheckResult(TIER_RUNTIMES_ROW, Status.PASS, detail)
+    listed = ", ".join(f"{tier}={runtime}" for tier, runtime in tiers.items())
+    return CheckResult(TIER_RUNTIMES_ROW, Status.PASS, f"tiers: {listed}")
 
 
 def catch_all_rows(found: Findings) -> list[CheckResult]:

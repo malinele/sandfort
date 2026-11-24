@@ -18,6 +18,13 @@ dist/
 brag-output*/
 media/video/brag/**/work/
 media/video/brag/**/*.mp4
+media/video/pitch/**/work/
+media/video/pitch/**/*.mp4
+.DS_Store
+
+# local tool state (Codex client hooks, impeccable review screenshots)
+.codex/
+.impeccable/review/
 
 # personal Claude Code permission overrides
 .claude/settings.local.json

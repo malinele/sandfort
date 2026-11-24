@@ -45,6 +45,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO_PROFILE = ROOT / "deploy" / "seccomp.json"
 CLONE_NEWUSER = 0x10000000
 EPERM = 1
+AUDIT_CHAIN_KEY = "a-test-audit-chain-key-32-bytes!!"  # prod refuses to start without one
 ENOSYS = 38
 CREATED_ATTRS: dict[str, Any] = {
     "Id": "abc123",
@@ -484,6 +485,7 @@ def guarded_app(tmp_path: Path, environment: str, *, acknowledged: bool = True) 
         egress_acknowledged=acknowledged,
         egress_probe=False,
         webhook_secret_key=Fernet.generate_key().decode(),
+        audit_chain_key=AUDIT_CHAIN_KEY,
         host_capacity_cpu_millicores=8000,
         host_capacity_memory_mib=16384,
         **WORKERS_OFF,

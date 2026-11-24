@@ -60,8 +60,10 @@ Kata (`microvm` tier), and scraping configuration (ServiceMonitor).
    before the rollout. The doctor does not check host capacity or the driver.
 3. **Postgres 16** reachable from the node, with a URL of the form
    `postgresql+asyncpg://sandfort:<password>@<host>:5432/sandfort`.
-4. **The image**, built from `deploy/Dockerfile` and pushed to a registry the node can pull from.
-   Replace `registry.example.com/sandfort:TAG` in `api.yaml` (or pin it in `kustomization.yaml`).
+4. **The image**. `api.yaml` names the published image `ghcr.io/malinele/sandfort:v0.1.0-beta.81`
+   (public, anonymous pull). To deploy another build, build `deploy/Dockerfile`, push it to a
+   registry the node can pull from, and change the tag in `api.yaml` (or pin it in
+   `kustomization.yaml`).
 5. **Cluster add-ons you use**: an ingress controller (the examples are for ingress-nginx and a TLS
    secret), a CNI that enforces NetworkPolicy on host-networked pods if you rely on
    `networkpolicy.yaml`, and the Prometheus Operator CRD for `prometheusrule.yaml`.

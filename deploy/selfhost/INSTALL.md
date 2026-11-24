@@ -232,7 +232,8 @@ sandfort sandbox create tier-gvisor --isolation gvisor --wait
 sandfort sandbox rm tier-gvisor
 ```
 
-`/metrics` has no authentication. Do not publish that port.
+`/metrics` is open unless `SANDFORT_METRICS_TOKEN` is set (optional bearer token, at least 32
+characters). Do not publish that port either way.
 
 ## 7. Upgrade and rollback
 

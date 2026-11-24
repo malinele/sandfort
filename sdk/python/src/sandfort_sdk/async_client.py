@@ -180,6 +180,7 @@ class AsyncClient:
         public: bool | None = None,
         mounts: Sequence[VolumeMount | tuple[str, str]] | None = None,
         isolation: str | None = None,
+        inherit_resources: bool = False,
         idempotency_key: str | None = None,
         wait: bool = True,
         wait_timeout_s: float = DEFAULT_WAIT_TIMEOUT_S,
@@ -187,7 +188,8 @@ class AsyncClient:
         delete_on_cancel: bool = True,
         delete_on_failure: bool = True,
     ) -> AsyncSandbox:
-        """``mounts``, ``isolation``, ``idempotency_key``: as :meth:`.client.Client.create_sandbox`.
+        """``mounts``, ``isolation``, ``inherit_resources``, ``idempotency_key``: as
+        :meth:`.client.Client.create_sandbox`.
 
         ``delete_on_cancel``: when the awaiting task is cancelled, the sandbox must not leak.
         Cancelled during the create request, it still runs to the end (shielded) and the sandbox
@@ -228,6 +230,7 @@ class AsyncClient:
             public=public,
             mounts=mounts,
             isolation=isolation,
+            inherit_resources=inherit_resources,
         )
         headers = idempotency_headers(idempotency_key)
         check = None

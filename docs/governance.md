@@ -177,8 +177,10 @@ could start a sandbox from that organization's committed snapshot.
   burst 10. It is installed when rate limiting is enabled.
 - Exempt: `/healthz`, `/readyz` and the PTY websocket.
 
-Other caps: 8 live PTYs and 16 running async commands per organization
-(`SANDFORT_MAX_PTYS_PER_ORG`, `SANDFORT_MAX_ASYNC_COMMANDS_PER_ORG`; per process, `0` =
+Other caps: 8 live PTYs, 16 running async commands and 16 live log streams per organization
+(one shared log-stream cap across container-log follow, command-log follow and build-log SSE:
+`SANDFORT_MAX_PTYS_PER_ORG`, `SANDFORT_MAX_ASYNC_COMMANDS_PER_ORG`,
+`SANDFORT_MAX_LOG_STREAMS_PER_ORG`; per process, `0` =
 unlimited), 2 running volume exports or restores per organization and 8 per process
 (`SANDFORT_MAX_VOLUME_TRANSFERS_PER_ORG`, `SANDFORT_MAX_VOLUME_TRANSFERS`; 409 `org_transfer_limit`
 or `transfer_limit`), 16 MiB JSON request bodies (`SANDFORT_MAX_REQUEST_BODY_BYTES`, 413
@@ -284,7 +286,8 @@ Each event stores: actor (type and id), action, target (type and id), outcome (`
   Rows link by `prev_hash`. The chain is tamper-evident: it shows a changed, removed or
   reordered row, not who changed it. With the key set, a writer who only has database access
   cannot recompute the hashes of a rewritten history; without the key a writer can (and in
-  `prod` the server logs a warning at startup while the key is unset).
+  `prod` the server refuses to start while the key is unset, unless
+  `SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true` accepts the unkeyed chain explicitly).
 - Keyed chain settings (`src/sandfort/services/audit_chain.py`):
   - `SANDFORT_AUDIT_CHAIN_KEY`: the HMAC key. Keep it out of the database and out of backups
     of the database. Changing or losing it makes keyed rows fail `audit-verify`.

@@ -44,6 +44,8 @@ export interface CreateFields {
   isolation?: IsolationTier;
   resources?: ResourceRequest;
   egressAllowlist?: readonly string[];
+  /** Fill resource fields you leave out from the snapshot's recorded resources (a field you set always wins). */
+  inheritResources?: boolean;
 }
 
 export const MAX_VOLUMES = 16;
@@ -175,5 +177,6 @@ export function createBody(
     volumes: mounts.length === 0 ? undefined : mounts.map(mountPayload),
     egress_allowlist: fields.egressAllowlist === undefined ? undefined : [...fields.egressAllowlist],
     isolation: fields.isolation,
+    inherit_resources: fields.inheritResources,
   });
 }

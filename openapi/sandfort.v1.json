@@ -1102,6 +1102,17 @@
             "title": "Name",
             "type": "string"
           },
+          "resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resources (cpu_millicores, memory_mib, disk_gib) of the sandbox this snapshot was committed from, as they were at snapshot time. Null for registered or built images and for snapshots taken before this was recorded. A sandbox create can adopt them with `inherit_resources`."
+          },
           "reused": {
             "default": false,
             "title": "Reused",
@@ -1708,6 +1719,12 @@
             },
             "title": "Env",
             "type": "object"
+          },
+          "inherit_resources": {
+            "default": false,
+            "description": "When true and `snapshot` is a snapshot (id or name) that recorded the resources of its source sandbox, every field of `resources` you leave out is taken from that record instead of the default; a field you set always wins. The merged values must fit the per-sandbox maximum (422 otherwise, never clamped). Has no effect for an image reference, for a snapshot without recorded resources, or when no snapshot is given.",
+            "title": "Inherit Resources",
+            "type": "boolean"
           },
           "isolation": {
             "anyOf": [
@@ -6781,6 +6798,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resources (cpu_millicores, memory_mib, disk_gib) of the sandbox this snapshot was committed from, as they were at snapshot time. Null for registered or built images and for snapshots taken before this was recorded. A sandbox create can adopt them with `inherit_resources`."
           },
           "source_sandbox_id": {
             "anyOf": [

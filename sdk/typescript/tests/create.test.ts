@@ -61,6 +61,12 @@ describe("createSandbox option parity with the CreateSandboxRequest schema", () 
     expect(body["egress_allowlist"]).toEqual([]);
   });
 
+  it("maps inheritResources to inherit_resources and omits it when unset", async () => {
+    const body = await sentBody({ inheritResources: true, snapshot: "snap_1" });
+    expect(body["inherit_resources"]).toBe(true);
+    expect(await sentBody({ snapshot: "snap_1" })).not.toHaveProperty("inherit_resources");
+  });
+
   it("looks a volume up by name when no id is given", async () => {
     const { client, requests } = clientFor([
       ok([volume("vol_a", "other")], "c1"),

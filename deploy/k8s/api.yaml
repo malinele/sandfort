@@ -57,7 +57,7 @@ spec:
         supplementalGroups: [999]
       containers:
         - name: sandfort
-          image: registry.example.com/sandfort:TAG
+          image: ghcr.io/malinele/sandfort:v0.1.0-beta.81
           command: ["python", "-c", "from sandfort.main import main; main()"]
           ports:
             # With hostNetwork these are ports of the node itself.

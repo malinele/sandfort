@@ -511,7 +511,7 @@ daemon_facts() {
 }
 
 report() {
-    local tiers="container=,gvisor=runsc"
+    local tiers="container=runc,gvisor=runsc"
     case " $(runtimes_registered)" in *" kata "*) tiers="$tiers,microvm=kata" ;; esac
     say "docker storage driver: $(docker info --format '{{.Driver}}' 2>/dev/null || echo unknown); runtimes: $(runtimes_registered)"
     daemon_facts

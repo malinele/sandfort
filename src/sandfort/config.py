@@ -97,6 +97,8 @@ def parse_allowed_registries(raw: str) -> tuple[str, ...]:
 DEFAULT_REQUIRE_BUILD_RUNTIME = True
 # The env default of ALLOW_ROOT_SHARED_KERNEL; the dataclass field is True for the same reason.
 DEFAULT_ALLOW_ROOT_SHARED_KERNEL = False
+# The env default of ALLOW_DEFAULT_RUNTIME_TIER; the dataclass field is True for the same reason.
+DEFAULT_ALLOW_DEFAULT_RUNTIME_TIER = False
 RUNC_VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?")  # MIN_RUNC_VERSION, e.g. 1.1.12
 GVISOR_RUNTIME_PREFIX = "runsc"  # a gvisor tier's runtime name starts with this
 KATA_RUNTIME_MARKER = "kata"  # a microvm tier's runtime name contains this
@@ -107,6 +109,8 @@ FALSE_WORDS = ("0", "false", "no", "off")
 AUDIT_CHAIN_KEY_ENV = ENV_PREFIX + "AUDIT_CHAIN_KEY"
 AUDIT_CHAIN_ACCEPT_UNKEYED_ENV = ENV_PREFIX + "AUDIT_CHAIN_ACCEPT_UNKEYED"
 MIN_AUDIT_CHAIN_KEY_BYTES = 32
+METRICS_TOKEN_ENV = ENV_PREFIX + "METRICS_TOKEN"
+METRICS_TOKEN_PATTERN = re.compile(r"[\x21-\x7e]+")  # printable ASCII, no whitespace
 SIGNING_WITHOUT_CHAIN_KEY = (
     f"{AUDIT_SIGNING_KEY_ENV} is set without {AUDIT_CHAIN_KEY_ENV}: signing needs the chain"
     f" key, so audit heads would not be signed; set {AUDIT_CHAIN_KEY_ENV} as well"
@@ -261,6 +265,7 @@ class Settings:
     max_output_bytes: int = 1024 * 1024
     max_ptys_per_org: int = 8  # live terminals per org in this process; 0 = unlimited
     max_async_commands_per_org: int = 16  # running async session commands per org; 0 = unlimited
+    max_log_streams_per_org: int = 16  # live log follow streams per org; 0 = unlimited
     max_volume_transfers_per_org: int = 2  # running volume exports and restores per org; 0 = no cap
     max_volume_transfers: int = 8  # the same in this process, all orgs; 0 = no cap
     reconcile_interval_s: int = 30
@@ -331,10 +336,14 @@ class Settings:
     egress_token_ttl_s: int = DEFAULT_EGRESS_TOKEN_TTL_S
     # HMAC key of the audit hash chain (>= 32 bytes); "" = the unkeyed SHA-256 chain.
     audit_chain_key: str = ""
+    # Explicit override: prod may start with no audit chain key (the unkeyed SHA-256 chain).
+    unkeyed_audit_chain_acknowledged: bool = False
     # Ed25519 private key (raw urlsafe base64 or PEM) signing the audit head; "" = HMAC head only.
     audit_signing_key: str = field(default="", repr=False)
     # With a key set, verify still accepts unkeyed rows written before the key existed.
     audit_chain_accept_unkeyed: bool = True
+    # Bearer token GET /metrics requires; "" = open.
+    metrics_token: str = field(default="", repr=False)
     audit_retention_days: int = 0  # prune audit rows older than this many days; 0 = disabled
     audit_retention_interval_s: int = 3600  # pause between retention passes
     seccomp_profile_path: str = ""  # JSON profile for sandboxes; "" = docker's default profile
@@ -351,6 +360,9 @@ class Settings:
     # container root is host root (no userns remapping for it), unless this is set. The env
     # default is false; the field stays True like require_build_runtime's stays False.
     allow_root_shared_kernel: bool = True
+    # Prod refuses a tier map entry with an empty runtime (it runs on the daemon default) unless
+    # this is set. The env default is false; the field stays True like allow_root_shared_kernel.
+    allow_default_runtime_tier: bool = True
     min_runc_version: str = ""  # oldest runc the daemon may report, e.g. "1.1.12"; "" = no check
     # Docker network mode for image builds ("" = the daemon default network).
     build_network: str = ""
@@ -640,6 +652,9 @@ class Settings:
             max_async_commands_per_org=non_negative(
                 "MAX_ASYNC_COMMANDS_PER_ORG", defaults.max_async_commands_per_org
             ),
+            max_log_streams_per_org=non_negative(
+                "MAX_LOG_STREAMS_PER_ORG", defaults.max_log_streams_per_org
+            ),
             max_volume_transfers_per_org=non_negative(
                 "MAX_VOLUME_TRANSFERS_PER_ORG", defaults.max_volume_transfers_per_org
             ),
@@ -732,8 +747,12 @@ class Settings:
             egress_idle_timeout_s=egress_limits.idle_timeout_s,
             egress_token_ttl_s=egress_limits.token_ttl_s,
             audit_chain_key=audit_chain_key,
+            unkeyed_audit_chain_acknowledged=boolean(
+                "UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED", defaults.unkeyed_audit_chain_acknowledged
+            ),
             audit_signing_key=audit_signing_key,
             audit_chain_accept_unkeyed=audit_chain_accept_unkeyed_from(source),
+            metrics_token=metrics_token_from(source),
             audit_retention_days=integer("AUDIT_RETENTION_DAYS", defaults.audit_retention_days),
             audit_retention_interval_s=integer(
                 "AUDIT_RETENTION_INTERVAL_S", defaults.audit_retention_interval_s
@@ -747,6 +766,9 @@ class Settings:
             require_build_runtime=boolean("REQUIRE_BUILD_RUNTIME", DEFAULT_REQUIRE_BUILD_RUNTIME),
             allow_root_shared_kernel=boolean(
                 "ALLOW_ROOT_SHARED_KERNEL", DEFAULT_ALLOW_ROOT_SHARED_KERNEL
+            ),
+            allow_default_runtime_tier=boolean(
+                "ALLOW_DEFAULT_RUNTIME_TIER", DEFAULT_ALLOW_DEFAULT_RUNTIME_TIER
             ),
             min_runc_version=min_runc_version,
             build_network=build_network,
@@ -789,6 +811,18 @@ def audit_chain_key_from(source: Mapping[str, str]) -> str:
             f"{AUDIT_CHAIN_KEY_ENV} must be at least {MIN_AUDIT_CHAIN_KEY_BYTES} bytes when set"
         )
     return key
+
+
+def metrics_token_from(source: Mapping[str, str]) -> str:
+    """The /metrics bearer token in ``source`` ("" = open); 32+ printable ASCII chars when set."""
+    token = source.get(METRICS_TOKEN_ENV, "").strip()
+    if not token:
+        return ""
+    if len(token) < MIN_SESSION_SECRET_CHARS:
+        raise ValueError(f"{METRICS_TOKEN_ENV} must be at least {MIN_SESSION_SECRET_CHARS} chars")
+    if not METRICS_TOKEN_PATTERN.fullmatch(token):
+        raise ValueError(f"{METRICS_TOKEN_ENV} must be printable ASCII without whitespace")
+    return token
 
 
 def audit_signing_key_from(source: Mapping[str, str]) -> str:

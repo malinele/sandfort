@@ -64,6 +64,7 @@ const FULL: CreateFields = {
   isolation: "gvisor",
   resources: { cpuMillicores: 500, memoryMib: 256, diskGib: 2 },
   egressAllowlist: ["pypi.org"],
+  inheritResources: true,
 };
 const MOUNTS = [{ volumeId: "vol_1", mountPath: "/d", readOnly: true }] as const;
 

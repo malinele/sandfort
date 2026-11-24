@@ -29,6 +29,7 @@ SECRET = "S3cretS3cretS3cretS3cretS3cretS3cretS3cre"  # 40 characters, then thre
 FULL_KEY = f"{PREFIX}_{SECRET}XYZ"
 CPU_MILLICORES = 4000
 MEMORY_MIB = 8192
+AUDIT_CHAIN_KEY = "a-test-audit-chain-key-32-bytes!!"  # prod refuses to start without one
 UNBOUNDED_ENV = "SANDFORT_ALLOW_UNBOUNDED_HOST"
 CPU_ENV = "SANDFORT_HOST_CAPACITY_CPU_MILLICORES"
 MEMORY_ENV = "SANDFORT_HOST_CAPACITY_MEMORY_MIB"
@@ -71,6 +72,7 @@ def prod_settings(tmp_path: Path, **changes: Any) -> Settings:
         environment="prod",
         egress_acknowledged=True,
         webhook_secret_key=Fernet.generate_key().decode(),
+        audit_chain_key=AUDIT_CHAIN_KEY,
         require_userns_remap=True,
         database_url=POSTGRES_URL,
         seccomp_profile_path=str(profile),

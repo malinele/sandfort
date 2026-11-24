@@ -1,11 +1,10 @@
 """``/process/sessions``: exec sessions, synchronous and asynchronous commands, logs and kill.
 
-Log events carry exactly one line each (``line`` keeps its ``\\n`` / ``\\r\\n``; ``offset`` is
-the byte where it starts). Log follow is a server-sent-event stream (no envelope): one
-``stdout`` / ``stderr`` event per line whose ``id`` is the byte offset where the *next* line
-starts, so a client reconnecting with ``Last-Event-ID`` (or ``?offset=``) resumes exactly after
-the last delivered line, and a final ``exit`` event carrying the exit code. Idle streams emit a
-keepalive comment.
+Log events carry exactly one line each (``line`` keeps its ``\\n`` / ``\\r\\n``; ``offset`` is the
+byte where it starts). Log follow is a server-sent-event stream (no envelope): one ``stdout`` /
+``stderr`` event per line whose ``id`` is the byte offset where the *next* line starts, so a client
+reconnecting with ``Last-Event-ID`` (or ``?offset=``) resumes exactly after the last delivered
+line, and a final ``exit`` event carrying the exit code. Idle streams emit a keepalive comment.
 """
 
 import hashlib
@@ -17,7 +16,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from sandfort.api.deps import UOW_FACTORY_ATTR, get_audit_recorder, get_driver
 from sandfort.api.envelope import Envelope, ok
+from sandfort.api.held_stream import capped_body
 from sandfort.api.query_guard import KnownQuery, single_valued
+from sandfort.api.routes.sandbox_logs import LogSlots
 from sandfort.api.routes.toolbox.scope_guard import require_visible_sandbox
 from sandfort.api.schemas.toolbox_process import execute_response
 from sandfort.api.schemas.toolbox_sessions import (
@@ -368,23 +369,22 @@ async def follow_command_logs(
     command_id: str,
     principal: ToolboxUser,
     service: Service,
+    slots: LogSlots,
     _known: KnownQuery,
     _once: FollowOnce,
     offset: Annotated[int | None, Query(ge=0)] = None,
     last_event_id: Annotated[str | None, Header()] = None,
 ) -> StreamingResponse:
-    record = await service.get_command(principal.org_id, sandbox_id, session_id, command_id)
-    start = _resume_offset(offset, last_event_id)
-    frames = with_keepalive(
-        _follow_frames(
-            service.log_for(record),
-            start,
-            lambda state: _stop_cause(service, record.id, state),
-        ),
-        interval_s=KEEPALIVE_INTERVAL_S,
-    )
+    async def make_frames() -> AsyncIterator[str]:
+        record = await service.get_command(principal.org_id, sandbox_id, session_id, command_id)
+        start = _resume_offset(offset, last_event_id)
+        frames = _follow_frames(
+            service.log_for(record), start, lambda s: _stop_cause(service, record.id, s)
+        )
+        return with_keepalive(frames, interval_s=KEEPALIVE_INTERVAL_S)
+
     return StreamingResponse(
-        frames,
+        await capped_body(slots, principal.org_id, make_frames),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

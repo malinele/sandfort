@@ -282,11 +282,17 @@ class SnapshotService:
                 state=SnapshotState.PENDING,
                 source_sandbox_id=sandbox_id,
                 isolation=recorded_tier(sandbox.labels) or self._default_tier,
+                resources=sandbox.resources,
                 labels=stored,
                 created_at=self._clock.now(),
             )
             await uow.snapshots.add(snapshot)
-            details = {"name": name, "sandbox_id": sandbox_id, "labels": dict(snapshot.labels)}
+            details = {
+                "name": name,
+                "sandbox_id": sandbox_id,
+                "labels": dict(snapshot.labels),
+                "resources": sandbox.resources.model_dump(mode="json"),
+            }
             await self._record(uow, snapshot, actor_id, "snapshot.create", details)
             job = SnapshotCreateJob(org_id, snapshot_id, actor_id)
             await enqueue_job(uow, self._clock, org_id, SNAPSHOT_CREATE, job.payload())

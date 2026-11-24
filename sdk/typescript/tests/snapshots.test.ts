@@ -140,6 +140,7 @@ describe("createSnapshot", () => {
       reused: true,
       labels: {},
       isolation: null,
+      resources: null,
     });
   });
 });
@@ -196,5 +197,24 @@ describe("getSnapshot and deleteSnapshot", () => {
     const { client } = clientFor([new Response(JSON.stringify(body), { status: 409 })]);
 
     await expect(client.deleteSnapshot("snap_1")).rejects.toBeInstanceOf(Conflict);
+  });
+
+  it("parses the recorded resources of the source sandbox", async () => {
+    const recorded = { cpu_millicores: 500, memory_mib: 256, disk_gib: 1 };
+    const { client } = clientFor([ok(snapshot("ready", { resources: recorded }))]);
+
+    const info = await client.getSnapshot("snap_1");
+
+    expect(info.resources).toEqual({ cpuMillicores: 500, memoryMib: 256, diskGib: 1 });
+  });
+
+  it("reports null resources when the snapshot recorded none", async () => {
+    const { client } = clientFor([
+      ok(snapshot("ready")),
+      ok(snapshot("ready", { resources: null })),
+    ]);
+
+    expect((await client.getSnapshot("snap_1")).resources).toBeNull();
+    expect((await client.getSnapshot("snap_1")).resources).toBeNull();
   });
 });

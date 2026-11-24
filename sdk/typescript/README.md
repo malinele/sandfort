@@ -94,6 +94,7 @@ const sbx = await client.createSandbox({
   labels: { team: "agents" },
   blockNetwork: false,
   egressAllowlist: ["pypi.org"],                          // [] means no network
+  inheritResources: true,                                 // fill unset resource fields from the snapshot's record
   volumes: [
     { volumeId: vol.id, mountPath: "/data" },             // up to 16 mounts
     { volumeName: "models", mountPath: "/models", readOnly: true },

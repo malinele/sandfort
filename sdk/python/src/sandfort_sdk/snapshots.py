@@ -49,6 +49,7 @@ from sandfort_sdk.exceptions import InvalidResponseError, TransportError
 from sandfort_sdk.image import Image
 from sandfort_sdk.models import (
     Page,
+    Resources,
     _as_dict,
     _as_list,
     _optional_str,
@@ -80,6 +81,8 @@ class SnapshotInfo:
 
     ``image_ref`` and ``digest`` are ``None`` when the server hides them: it answers null for
     both to a label-scoped API key. ``labels`` is empty when the snapshot has none.
+    ``resources`` is the resource spec recorded when the snapshot was taken from a sandbox;
+    ``None`` for registered or built images and for snapshots taken before recording existed.
     """
 
     id: str
@@ -94,10 +97,12 @@ class SnapshotInfo:
     reused: bool = False
     isolation: str | None = None
     labels: dict[str, str] = field(default_factory=dict)  # empty when the server omits them
+    resources: Resources | None = None
 
     @classmethod
     def from_payload(cls, data: Any) -> "SnapshotInfo":
         raw = _as_dict(data, "snapshot")
+        recorded = raw.get("resources")
         snapshot_id, name, state, image_ref, layer_count = _required(
             raw, "snapshot", "id", "name", "state", "image_ref", "layer_count"
         )
@@ -114,6 +119,7 @@ class SnapshotInfo:
             reused=bool(raw.get("reused", False)),
             isolation=raw.get("isolation"),
             labels=dict(_as_dict(raw.get("labels") or {}, "snapshot labels")),
+            resources=None if recorded is None else Resources.from_payload(recorded),
         )
 
 

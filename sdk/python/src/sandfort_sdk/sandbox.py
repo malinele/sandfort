@@ -14,7 +14,7 @@ from sandfort_sdk._transport import AsyncTransport, SyncTransport
 from sandfort_sdk.code_contexts import AsyncCodeContexts, CodeContexts
 from sandfort_sdk.fs import AsyncFs, Fs
 from sandfort_sdk.git import AsyncGit, Git
-from sandfort_sdk.handles import SandboxFields, delete_error_is_ignored
+from sandfort_sdk.handles import SandboxFields, delete_error_is_ignored, resize_body
 from sandfort_sdk.models import ExecResult, PreviewInfo, SandboxInfo
 from sandfort_sdk.process import AsyncProcess, Process
 from sandfort_sdk.pty import AsyncPty, Pty
@@ -102,6 +102,25 @@ class Sandbox(SandboxFields):
         gone. Works on a started or stopped sandbox and leaves it in the same state.
         """
         return self._apply("POST", sandbox_path(self.id, "/reset"))
+
+    def resize(
+        self,
+        *,
+        cpu_millicores: int | None = None,
+        memory_mib: int | None = None,
+        disk_gib: int | None = None,
+    ) -> Self:
+        """Change the CPU, memory or disk of a stopped sandbox; fields left out keep their value.
+
+        Raises ``ValueError`` before any request when no field is given or a value is not an
+        ``int`` within the server bounds. The server answers 409 (:class:`InvalidState`) unless
+        the sandbox is stopped, 429 (:class:`QuotaExceeded`) over the quota and 503
+        (:class:`CapacityExceeded`) without capacity; ``info`` is replaced only on success.
+        """
+        body = resize_body(cpu_millicores, memory_mib, disk_gib)
+        reply = self._transport.request("POST", sandbox_path(self.id, "/resize"), json=body)
+        self.info = SandboxInfo.from_payload(reply.data)
+        return self
 
     def delete(self) -> Self:
         return self._apply("DELETE", sandbox_path(self.id))
@@ -223,6 +242,22 @@ class AsyncSandbox(SandboxFields):
         gone. Works on a started or stopped sandbox and leaves it in the same state.
         """
         return await self._apply("POST", sandbox_path(self.id, "/reset"))
+
+    async def resize(
+        self,
+        *,
+        cpu_millicores: int | None = None,
+        memory_mib: int | None = None,
+        disk_gib: int | None = None,
+    ) -> Self:
+        """Change the CPU, memory or disk of a stopped sandbox; fields left out keep their value.
+
+        Same checks and errors as :meth:`Sandbox.resize`.
+        """
+        body = resize_body(cpu_millicores, memory_mib, disk_gib)
+        reply = await self._transport.request("POST", sandbox_path(self.id, "/resize"), json=body)
+        self.info = SandboxInfo.from_payload(reply.data)
+        return self
 
     async def delete(self) -> Self:
         return await self._apply("DELETE", sandbox_path(self.id))

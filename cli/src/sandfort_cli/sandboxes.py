@@ -1,4 +1,5 @@
-"""``login`` and the ``sandbox`` group (create, list, get, isolation, stop, start, reset, rm).
+"""``login`` and the ``sandbox`` group (create, list, get, isolation, stop, start, reset,
+resize, rm).
 
 ``sandbox delete`` is a hidden alias of ``sandbox rm``, ``sandbox ls`` of ``sandbox list``.
 """
@@ -1529,6 +1530,13 @@ def create(
             help="Isolation tier to run on (default: the server's; see 'sandbox isolation').",
         ),
     ] = None,
+    inherit_resources: Annotated[
+        bool,
+        typer.Option(
+            "--inherit-resources",
+            help="Fill resource fields you leave out from the snapshot's recorded resources.",
+        ),
+    ] = False,
 ) -> None:
     """Create a sandbox."""
     reject_empty_name(name, NAME_METAVAR)
@@ -1568,6 +1576,7 @@ def create(
                     labels=labels,
                     resources=resources,
                     isolation=None if isolation is None else isolation.value,
+                    inherit_resources=inherit_resources,
                 )
             except SandboxFailedError as failed:
                 settled = settle_failed_start(client, failed, keep=keep_on_failure)

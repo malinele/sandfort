@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel
 
 from sandfort.api.dead_sandbox import settle_dead_sandbox
+from sandfort.api.death_probe import schedule_death_probe
 from sandfort.api.deps import get_audit_recorder, get_driver, get_uow
 from sandfort.api.envelope import Envelope, ok
 from sandfort.api.routes.toolbox.scope_guard import require_visible_sandbox
@@ -515,6 +516,7 @@ async def _run_watching_death(
             await _on_death(request, driver, sandbox)
         raise
     if not (result.sandbox_stopped or _is_bare_kill(result)):
+        schedule_death_probe(request, driver, sandbox)  # a death after a normal answer
         return ExecOutcome(result)
     reason = await _gone_reason(request, sandbox)
     if reason is not None:
@@ -525,6 +527,8 @@ async def _run_watching_death(
         return oom
     if result.sandbox_stopped:
         await _on_death(request, driver, sandbox)
+    else:
+        schedule_death_probe(request, driver, sandbox)
     return ExecOutcome(result)
 
 

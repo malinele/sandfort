@@ -229,6 +229,7 @@ class Client:
         mounts: Sequence[VolumeMount | tuple[str, str]] | None = None,
         egress_allowlist: Sequence[str] | None = None,
         isolation: str | None = None,
+        inherit_resources: bool = False,
         idempotency_key: str | None = None,
         wait: bool = True,
         wait_timeout_s: float = DEFAULT_WAIT_TIMEOUT_S,
@@ -249,6 +250,10 @@ class Client:
         ``isolation``: tier to run on (``"container"``, ``"gvisor"`` or ``"microvm"``; the
         server answers 422 for one it does not offer); ``None`` leaves the field out and the
         server default applies.
+
+        ``inherit_resources``: ``True`` asks the server to fill the resource fields you leave
+        unset from the snapshot's recorded resources (a field you set always wins); ``False``
+        leaves the key out.
 
         ``idempotency_key``: sent as the ``Idempotency-Key`` header. Retrying with the same
         key and the same arguments returns the same sandbox instead of creating another (the
@@ -287,6 +292,7 @@ class Client:
             mounts=None,
             egress_allowlist=egress_allowlist,
             isolation=isolation,
+            inherit_resources=inherit_resources,
         )
         if mounts is not None:
             body["volumes"] = mounts_wire(mounts)

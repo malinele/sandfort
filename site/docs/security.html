@@ -284,7 +284,9 @@ channel and the supported versions, is <code>SECURITY.md</code> at the repositor
 <li><strong>No built-in TLS.</strong> The server runs uvicorn without TLS options (<code>deploy/Dockerfile</code>,
 <code>src/sandfort/main.py</code>), and the Kubernetes Service is <code>ClusterIP</code>. API keys, session
 tokens and sandbox data travel in clear text unless you terminate TLS in front of the API.</li>
-<li><strong><code>/metrics</code> has no authentication.</strong> The runbook says to keep it cluster-internal.</li>
+<li><strong><code>/metrics</code> is open by default.</strong> An optional bearer token (<code>SANDFORT_METRICS_TOKEN</code>)
+guards it when set; the runbook says to keep it cluster-internal either way, because the
+token travels in clear text without TLS in front.</li>
 <li><strong>The node-to-node hop is not encrypted.</strong> With cross-node routing, a request for a
 sandbox on another node is forwarded over plain HTTP. The hop carries a route token
 (HMAC-SHA-256 under <code>SANDFORT_ROUTING_SECRET</code>, valid 30 seconds, no principal) that proves
@@ -301,7 +303,8 @@ because the membership check fails.</li>
 <code>hash = HMAC-SHA256(key, prev_hash + canonical(row))</code>, where <code>key</code> is
 <code>SANDFORT_AUDIT_CHAIN_KEY</code> (at least 32 bytes) and the canonical form covers the fixed
 fields of the row (<code>src/sandfort/services/audit_chain.py</code>). With no key set the hash is plain
-<code>sha256</code> over the same input, and <code>prod</code> logs a warning at startup. Audit rows are written in the
+<code>sha256</code> over the same input; <code>prod</code> refuses to start in that state unless
+<code>SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true</code> accepts the unkeyed chain explicitly. Audit rows are written in the
 same transaction as the change they describe. The rule is one event per mutating call, with
 named exceptions: a meta-test checks that every non-GET route writes one row for what it did.
 A call refused after a valid key writes a <code>request.denied</code> row instead (a create or start
@@ -362,7 +365,8 @@ export regularly and keep the exports somewhere the database operators cannot wr
 <li>[ ] Put a private network or an encrypted overlay between nodes if you use cross-node
 routing, and do not expose <code>SANDFORT_NODE_INTERNAL_URL</code> ports to clients.</li>
 <li>[ ] Terminate TLS in front of the API. The server does not.</li>
-<li>[ ] Keep <code>/metrics</code> reachable only from inside the cluster.</li>
+<li>[ ] Keep <code>/metrics</code> reachable only from inside the cluster (and set
+<code>SANDFORT_METRICS_TOKEN</code> if it must cross a boundary).</li>
 <li>[ ] Use a Docker storage setup that supports disk quotas (<code>overlay2</code> on XFS with
 <code>pquota</code>) and verify a create succeeds in <code>prod</code>.</li>
 <li>[ ] Run <code>deploy/host-setup.sh</code> on every sandbox node after the Docker daemon starts and on

@@ -2,8 +2,8 @@
 
 Middleware order, outermost first: request id, then telemetry (span, HTTP metrics, access
 log), the sign-on exchange limiter, the request body limit, then the routes; rate limiting
-runs inside authentication. ``/metrics`` sits on this root application with no
-authentication and serves the Prometheus text exposition.
+runs inside authentication. ``/metrics`` sits on this root application, open unless
+``SANDFORT_METRICS_TOKEN`` is set (then a bearer token), and serves the Prometheus text exposition.
 Before any worker starts, the lifespan runs the driver's isolation self-check: in prod a
 missing capability refuses the start, in dev it is logged. On shutdown it stops the workers,
 then closes the driver (when it has an ``aclose``), then disposes the engine.
@@ -25,6 +25,7 @@ from sandfort import __version__
 from sandfort.api.deps import DRIVER_ATTR
 from sandfort.api.docs_pages import install_docs_pages
 from sandfort.api.errors import register_exception_handlers
+from sandfort.api.metrics_auth import require_metrics_token
 from sandfort.api.middleware.body_limit import BodyLimitMiddleware
 from sandfort.api.middleware.rate_limit import install_exchange_rate_limit
 from sandfort.api.middleware.request_id import RequestIdMiddleware
@@ -331,7 +332,9 @@ async def _refresh_queue_depth(app: FastAPI) -> None:
 
 
 async def metrics_endpoint(request: Request) -> Response:
-    """Prometheus text exposition of the metric catalog (no authentication)."""
+    """Prometheus text exposition of the metric catalog (bearer token only when one is set)."""
+    settings: Settings = request.app.state.settings
+    require_metrics_token(settings, request.headers.get("authorization"))
     await _refresh_queue_depth(request.app)
     body, content_type = render_metrics()
     return Response(content=body, media_type=content_type)

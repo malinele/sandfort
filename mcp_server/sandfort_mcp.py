@@ -8,6 +8,8 @@ stdout belongs to the MCP protocol; every diagnostic in this module goes to stde
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import sys
@@ -24,6 +26,9 @@ from sandfort_sdk import Client, SandfortSDKError  # noqa: E402
 URL_ENV = "SANDFORT_BASE_URL"
 KEY_ENV = "SANDFORT_API_KEY"
 MAX_DOWNLOAD_BYTES = 1024 * 1024
+MAX_BINARY_BYTES = MAX_DOWNLOAD_BYTES
+MAX_BASE64_CHARS = 4 * ((MAX_BINARY_BYTES + 2) // 3)
+MAX_LIST_ENTRIES = 1000
 DEFAULT_TIMEOUT_S = 60
 HIDDEN_STATES = frozenset({"destroyed", "deleting"})
 
@@ -77,6 +82,18 @@ def _exec_json(result: Any) -> str:
             "timed_out": result.timed_out,
         }
     )
+
+
+def _entry_json(entry: Any) -> dict[str, Any]:
+    modified = entry.modified_at
+    return {
+        "name": entry.name,
+        "path": entry.path,
+        "kind": entry.kind,
+        "size_bytes": entry.size_bytes,
+        "mode": entry.mode,
+        "modified_at": modified.isoformat() if modified is not None else None,
+    }
 
 
 @mcp.tool()
@@ -144,6 +161,104 @@ def download_text_file(sandbox_id: str, path: str) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return f"error: {path} is not valid UTF-8 text"
+
+
+@mcp.tool()
+def list_directory(sandbox_id: str, path: str = "/") -> str:
+    """List a directory in a sandbox. Returns JSON with path, entries and truncated.
+
+    Each entry has name, path, kind, size_bytes, mode and modified_at. At most 1000
+    entries are returned; when truncated is true the rest is left out.
+    """
+    try:
+        sandbox = HOLDER.get().get(sandbox_id)
+        listing = sandbox.fs.list_dir(path)
+        entries = [_entry_json(e) for e in listing.entries[:MAX_LIST_ENTRIES]]
+        truncated = len(listing.entries) > MAX_LIST_ENTRIES
+        return json.dumps({"path": listing.path, "entries": entries, "truncated": truncated})
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+
+
+@mcp.tool()
+def stat_path(sandbox_id: str, path: str) -> str:
+    """Describe one file, directory or symlink in a sandbox. Returns a JSON entry."""
+    try:
+        sandbox = HOLDER.get().get(sandbox_id)
+        return json.dumps(_entry_json(sandbox.fs.stat(path)))
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+
+
+@mcp.tool()
+def make_directory(sandbox_id: str, path: str, parents: bool = True) -> str:
+    """Create a directory in a sandbox, with missing parents by default.
+
+    Returns JSON with path and created.
+    """
+    try:
+        sandbox = HOLDER.get().get(sandbox_id)
+        result = sandbox.fs.mkdir(path, parents=parents)
+        return json.dumps({"path": result.path, "created": result.created})
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+
+
+@mcp.tool()
+def delete_path(sandbox_id: str, path: str, recursive: bool = False) -> str:
+    """Delete a file or directory in a sandbox. Returns JSON with path and deleted.
+
+    recursive=True removes a whole directory tree; use it with care.
+    """
+    try:
+        sandbox = HOLDER.get().get(sandbox_id)
+        result = sandbox.fs.delete(path, recursive=recursive)
+        return json.dumps({"path": result.path, "deleted": result.deleted})
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+
+
+@mcp.tool()
+def upload_binary_file(
+    sandbox_id: str, path: str, content_base64: str, overwrite: bool = True
+) -> str:
+    """Write base64-encoded bytes to a file path inside a sandbox.
+
+    Content over 1 MiB (decoded) is refused. An existing file is replaced unless
+    overwrite is false.
+    """
+    if len(content_base64) > MAX_BASE64_CHARS:
+        return "error: content is over the 1 MiB limit; not uploaded"
+    try:
+        data = base64.b64decode(content_base64, validate=True)
+    except binascii.Error:
+        return "error: content_base64 is not valid base64"
+    if len(data) > MAX_BINARY_BYTES:
+        return "error: content is over the 1 MiB limit; not uploaded"
+    try:
+        sandbox = HOLDER.get().get(sandbox_id)
+        sandbox.fs.upload_file(path, data, overwrite=overwrite)
+        return f"uploaded {len(data)} bytes to {path}"
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+
+
+@mcp.tool()
+def download_binary_file(sandbox_id: str, path: str) -> str:
+    """Read a file from a sandbox as base64. Files over 1 MiB are refused.
+
+    Returns JSON with path, size_bytes and content_base64; base64 inflates the
+    output by about a third.
+    """
+    try:
+        sandbox = HOLDER.get().get(sandbox_id)
+        data = sandbox.fs.read_bytes(path)
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+    if len(data) > MAX_DOWNLOAD_BYTES:
+        return f"error: {path} is {len(data)} bytes, over the 1 MiB limit; not returned"
+    encoded = base64.b64encode(data).decode("ascii")
+    return json.dumps({"path": path, "size_bytes": len(data), "content_base64": encoded})
 
 
 @mcp.tool()

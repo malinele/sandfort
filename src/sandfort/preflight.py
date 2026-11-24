@@ -9,17 +9,26 @@ running host (isolation capabilities, the egress probe) stay in ``sandfort.api.a
 
 from collections.abc import Iterable
 
-from sandfort.config import ENV_PREFIX, PROD_ENVIRONMENT, SIGNING_WITHOUT_CHAIN_KEY, Settings
+from sandfort.config import (
+    ENV_PREFIX,
+    PROD_ENVIRONMENT,
+    SIGNING_WITHOUT_CHAIN_KEY,
+    Settings,
+    check_tier_families,
+)
 
 __all__ = [
+    "DEFAULT_RUNTIME_TIER_MESSAGE",
     "FERNET_KEY_COMMAND",
     "UNGUARDED_HOST_MESSAGE",
+    "UNKEYED_AUDIT_CHAIN_MESSAGE",
     "WEBHOOK_KEY_MESSAGE",
     "ConfigurationError",
     "audit_key_findings",
     "check_preflight",
     "host_capacity_findings",
     "prod_findings",
+    "tier_runtime_findings",
     "webhook_key_findings",
 ]
 
@@ -34,6 +43,18 @@ UNGUARDED_HOST_MESSAGE = (
     "host capacity is not configured: prod requires SANDFORT_HOST_CAPACITY_CPU_MILLICORES and"
     " SANDFORT_HOST_CAPACITY_MEMORY_MIB (both above zero) so admission can refuse an over-full"
     " host; set SANDFORT_ALLOW_UNBOUNDED_HOST=true to start without a host-wide limit"
+)
+UNKEYED_AUDIT_CHAIN_MESSAGE = (
+    "the audit chain key is unset: the chain is an unkeyed sha256 that anyone who can write the"
+    " database can rewrite consistently; set SANDFORT_AUDIT_CHAIN_KEY (at least 32 bytes; rows"
+    " written before the key stay verifiable while SANDFORT_AUDIT_CHAIN_ACCEPT_UNKEYED is true)"
+    " or set SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true to start without one"
+)
+DEFAULT_RUNTIME_TIER_MESSAGE = (
+    "tier mapping: tiers {tiers} map to an empty runtime, so they run on whatever the daemon"
+    " default runtime is (runc, or runsc when the daemon default-runtime is runsc); name the"
+    " runtime in SANDFORT_ISOLATION_RUNTIMES (for example container=runc) or set"
+    " SANDFORT_ALLOW_DEFAULT_RUNTIME_TIER=true to accept the daemon default"
 )
 
 
@@ -62,15 +83,42 @@ def host_capacity_findings(settings: Settings) -> list[str]:
 
 
 def audit_key_findings(settings: Settings) -> list[str]:
-    """A signing key without the chain key in prod; ``Settings.from_env`` refuses it as well.
+    """The prod audit key blockers: a signing key without the chain key, or neither key.
 
-    Settings built in code (constructor or ``replace``) skip ``from_env``, so the same refusal
-    is repeated here and the doctor's FAIL equals the start gate's refusal on every path.
+    A signing key without the chain key is also refused by ``Settings.from_env``; settings built
+    in code (constructor or ``replace``) skip ``from_env``, so the refusal is repeated here and
+    the doctor's FAIL equals the start gate's refusal on every path. Neither key leaves the
+    chain an unkeyed hash: ``from_env`` only warns and the refusal lives here, unless the
+    operator set ``unkeyed_audit_chain_acknowledged``.
+    """
+    if settings.environment != PROD_ENVIRONMENT or settings.audit_chain_key.strip():
+        return []
+    if settings.audit_signing_key.strip():
+        return [SIGNING_WITHOUT_CHAIN_KEY]
+    if settings.unkeyed_audit_chain_acknowledged:
+        return []
+    return [UNKEYED_AUDIT_CHAIN_MESSAGE]
+
+
+def tier_runtime_findings(settings: Settings) -> list[str]:
+    """Prod tiers that run on the daemon default runtime, unless that is acknowledged.
+
+    The family check runs first (it also covers settings built in code, which skip
+    ``from_env``), so a blank gvisor or microvm runtime surfaces as that error. Legacy
+    single-runtime mode and the no-map default are deliberately not flagged.
     """
     if settings.environment != PROD_ENVIRONMENT:
         return []
-    if settings.audit_signing_key.strip() and not settings.audit_chain_key.strip():
-        return [SIGNING_WITHOUT_CHAIN_KEY]
+    tiers = settings.isolation_tiers()
+    try:
+        check_tier_families(tiers)
+    except ValueError as exc:
+        return [str(exc)]
+    if settings.allow_default_runtime_tier or not settings.isolation_runtimes:
+        return []
+    empty = sorted(tier for tier, runtime in tiers.items() if not runtime.strip())
+    if empty:
+        return [DEFAULT_RUNTIME_TIER_MESSAGE.format(tiers=empty)]
     return []
 
 
@@ -80,6 +128,7 @@ def prod_findings(settings: Settings) -> list[str]:
         *webhook_key_findings(settings),
         *host_capacity_findings(settings),
         *audit_key_findings(settings),
+        *tier_runtime_findings(settings),
     ]
 
 

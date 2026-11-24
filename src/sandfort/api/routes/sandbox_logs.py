@@ -7,23 +7,29 @@ the error envelope match the other sandbox routes: everything that can fail befo
 byte (scope, missing or foreign sandbox, no container) answers with the envelope; a driver
 failure mid-stream ends the stream with an ``error`` event. The read is audited once
 (``sandbox.logs.read``) when the stream starts, in a unit of work closed before the driver is
-called; audit details carry the query, never log content.
+called; audit details carry the query, never log content. A follow stream holds one per-org slot
+(``max_log_streams_per_org``) until its body closes; a refused follow answers 503 ``CAPACITY``
+before the audit row and the driver call. Non-follow reads take no slot.
 """
 
 import logging
 import math
+import weakref
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BeforeValidator
 from pydantic_core import PydanticCustomError
 
 from sandfort.api.deps import get_audit_recorder, get_driver, get_uow
+from sandfort.api.held_stream import held_stream
 from sandfort.api.query_guard import KnownQuery, single_valued
 from sandfort.api.sse import DEFAULT_KEEPALIVE_INTERVAL_S, format_event, with_keepalive
+from sandfort.api.wiring import LOG_STREAM_SLOTS_ATTR
 from sandfort.auth.principal import Principal
 from sandfort.auth.scopes import require_scopes
 from sandfort.db.repositories.ports import UnitOfWorkPort
@@ -32,8 +38,9 @@ from sandfort.domain.org import Scope
 from sandfort.domain.sandbox import SandboxState
 from sandfort.drivers.base import LogEntry, LogsDriver, SandboxDriver
 from sandfort.drivers.errors import DriverError, DriverUnsupported
-from sandfort.errors import NotFound, no_container_conflict
+from sandfort.errors import InternalError, NotFound, no_container_conflict
 from sandfort.services.audit import AuditRecorder
+from sandfort.toolbox.pty import OrgSlots
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +84,17 @@ Uow = Annotated[UnitOfWorkPort, Depends(get_uow)]
 Driver = Annotated[SandboxDriver, Depends(get_driver)]
 Recorder = Annotated[AuditRecorder, Depends(get_audit_recorder)]
 LogsOnce = Annotated[None, Depends(single_valued("follow", "tail", "since"))]
+
+
+def get_log_slots(request: Request) -> OrgSlots:
+    """The app-wide per-org slots of live follow streams (wired in ``sandfort.api.wiring``)."""
+    slots = getattr(request.app.state, LOG_STREAM_SLOTS_ATTR, None)
+    if not isinstance(slots, OrgSlots):
+        raise InternalError(f"{LOG_STREAM_SLOTS_ATTR} is not configured")
+    return slots
+
+
+LogSlots = Annotated[OrgSlots, Depends(get_log_slots)]
 
 
 def _logs_driver(driver: SandboxDriver) -> LogsDriver:
@@ -139,6 +157,7 @@ async def stream_sandbox_logs(
     uow: Uow,
     driver: Driver,
     recorder: Recorder,
+    slots: LogSlots,
     _known: KnownQuery,
     _once: LogsOnce,
     follow: bool = False,
@@ -148,13 +167,29 @@ async def stream_sandbox_logs(
     logs_driver = _logs_driver(driver)
     lines = min(tail, MAX_TAIL)
     details = {"follow": follow, "tail": lines, "since": since}
-    ref = await _audited_ref(uow, recorder, principal, sandbox_id, details)
-    await driver.inspect(ref)  # a vanished container answers 404 before the stream starts
-    since_at = None if since is None else datetime.fromtimestamp(since, UTC)
-    entries = logs_driver.stream_logs(ref, follow=follow, tail=lines, since=since_at)
-    frames = with_keepalive(_log_frames(entries, ref), interval_s=KEEPALIVE_INTERVAL_S)
+    # Only a follow stream stays open, so only it holds a slot. The slot is taken before the audit
+    # row and the driver call: a refused follow leaves no trace.
+    slot_key = uuid4().hex if follow else None
+    if slot_key is not None:
+        slots.hold(principal.org_id, slot_key)
+    try:
+        ref = await _audited_ref(uow, recorder, principal, sandbox_id, details)
+        await driver.inspect(ref)  # a vanished container answers 404 before the stream starts
+        since_at = None if since is None else datetime.fromtimestamp(since, UTC)
+        entries = logs_driver.stream_logs(ref, follow=follow, tail=lines, since=since_at)
+        frames = with_keepalive(_log_frames(entries, ref), interval_s=KEEPALIVE_INTERVAL_S)
+    except BaseException:
+        if slot_key is not None:
+            slots.release(slot_key)
+        raise
+    body: AsyncIterator[str] = frames
+    if slot_key is not None:
+        held_key = slot_key
+        body = held_stream(frames, lambda: slots.release(held_key))
+        # a body that is never iterated never reaches its ``finally``: the slot still frees
+        weakref.finalize(body, slots.release, held_key)
     return StreamingResponse(
-        frames,
+        body,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sandfort.db.models.snapshots import SnapshotRow
 from sandfort.db.repositories.ports import LABEL_FILTER_KEY
 from sandfort.db.support import as_utc, rowcount
+from sandfort.domain.resources import ResourceSpec
 from sandfort.domain.snapshot import Snapshot, SnapshotState
 from sandfort.errors import ALREADY_EXISTS, NAME_TAKEN, Conflict, Unprocessable
 
@@ -41,6 +42,15 @@ def _conflict_error(snapshot: Snapshot, exc: IntegrityError) -> Conflict:
     return Conflict("could not create the snapshot (constraint conflict)")
 
 
+def _resources_of(row: SnapshotRow) -> ResourceSpec | None:
+    """The recorded resources, only when all three columns are set."""
+    if row.cpu_millicores is None or row.memory_mib is None or row.disk_gib is None:
+        return None
+    return ResourceSpec(
+        cpu_millicores=row.cpu_millicores, memory_mib=row.memory_mib, disk_gib=row.disk_gib
+    )
+
+
 def _to_entity(row: SnapshotRow) -> Snapshot:
     return Snapshot(
         id=row.id,
@@ -53,6 +63,7 @@ def _to_entity(row: SnapshotRow) -> Snapshot:
         source_sandbox_id=row.source_sandbox_id,
         spec_hash=row.spec_hash,
         isolation=row.isolation,
+        resources=_resources_of(row),
         labels=dict(row.labels),
         created_at=as_utc(row.created_at),
     )
@@ -63,6 +74,7 @@ class SqlSnapshotRepository:
         self._session = session
 
     async def add(self, snapshot: Snapshot) -> None:
+        resources = snapshot.resources
         self._session.add(
             SnapshotRow(
                 id=snapshot.id,
@@ -75,6 +87,9 @@ class SqlSnapshotRepository:
                 source_sandbox_id=snapshot.source_sandbox_id,
                 spec_hash=snapshot.spec_hash,
                 isolation=snapshot.isolation,
+                cpu_millicores=None if resources is None else resources.cpu_millicores,
+                memory_mib=None if resources is None else resources.memory_mib,
+                disk_gib=None if resources is None else resources.disk_gib,
                 labels=dict(snapshot.labels),
                 created_at=as_utc(snapshot.created_at),
             )

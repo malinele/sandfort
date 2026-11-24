@@ -34,17 +34,18 @@ What remains open:
 - Container logs, the preview proxy and the web terminal page stay node-local.
 - The Kubernetes kit covers one sandbox node; a multi-node deployment needs your own `api` and
   `worker` manifests.
-- Per-org caps on terminals and async commands are counted per node.
+- Per-org caps on terminals, async commands and container-log follow streams are counted per
+  node.
 - Rescheduling, live migration and rebalancing of running sandboxes are not planned.
 
 ## Near-term: the current phase
 
 The remaining hardening items are:
 
-- Webhook signing secrets encrypted at rest.
-- Concurrent webhook dispatch.
-- Per-org caps on live streams and terminals.
-- User-namespace remapping guidance.
+- None open in this group: per-org caps now cover terminals, async commands and all three live
+  log streams — container-log follow, command-log follow and build-log SSE share one cap
+  (`SANDFORT_MAX_LOG_STREAMS_PER_ORG`, default 16, per process, since 2026-11-23). All of these
+  caps count per node, not per cluster.
 
 Done in this phase:
 
@@ -52,9 +53,15 @@ Done in this phase:
   node that owns the sandbox without a router in front of per-node api instances.
 - SCIM provisioning (2026-11-02): an identity provider manages the members of one org through
   SCIM 2.0 Users with a per-org bearer token (no groups, no bulk, no etag).
+- Webhook signing secrets encrypted at rest, and concurrent webhook dispatch bounded at eight
+  in-flight attempts per pass (2026-11-02).
+- User-namespace remapping: an opt-in per-tier mechanism (`SANDFORT_USERNS_HOST_TIERS`) and node
+  setup guidance (`deploy/node-setup.sh --userns-remap`).
 
 The phase also includes exposing single sign-on and member administration through the Python
-SDK and the CLI. It also includes a TypeScript SDK covering the core agent workflow.
+SDK and the CLI. The Python SDK has both (`exchange_sso`, members); the CLI has member
+administration but no SSO command yet. The TypeScript SDK covering the core agent workflow has
+shipped.
 
 ## Later: explicitly unscheduled
 

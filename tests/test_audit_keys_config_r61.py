@@ -24,7 +24,12 @@ from sandfort.admin_doctor_rows import audit_keys_row
 from sandfort.api.routes import health
 from sandfort.config import SIGNING_WITHOUT_CHAIN_KEY, Settings
 from sandfort.drivers.docker.capabilities import DockerCapabilities
-from sandfort.preflight import ConfigurationError, check_preflight, prod_findings
+from sandfort.preflight import (
+    UNKEYED_AUDIT_CHAIN_MESSAGE,
+    ConfigurationError,
+    check_preflight,
+    prod_findings,
+)
 from sandfort.services.audit_chain import ChainPolicy
 
 CHAIN_ENV = "SANDFORT_AUDIT_CHAIN_KEY"
@@ -279,8 +284,8 @@ def test_doctor_row_for_a_signing_key_alone_fails_only_where_the_start_refuses(
     assert SIGNING_KEY not in row.detail
 
 
-@pytest.mark.parametrize("environment", ["prod", "dev"])
-def test_doctor_warns_when_neither_key_is_set(environment: str) -> None:
+@pytest.mark.parametrize("environment", ["dev", "test"])
+def test_doctor_warns_when_neither_key_is_set_outside_prod(environment: str) -> None:
     row = doctor_row(Settings(environment=environment))
 
     assert row.status is Status.WARN
@@ -288,11 +293,34 @@ def test_doctor_warns_when_neither_key_is_set(environment: str) -> None:
     assert SIGN_ENV in row.detail
 
 
-def test_prod_with_neither_key_only_warns_in_the_audit_keys_row() -> None:
+def test_prod_with_neither_key_fails_the_audit_keys_row_unless_acknowledged() -> None:
     results = admin_doctor.evaluate(Settings(environment="prod"), None, "no daemon")
     keys = [r for r in results if r.name == ROW]
 
+    assert [r.status for r in keys] == [Status.FAIL]
+    assert keys[0].detail == UNKEYED_AUDIT_CHAIN_MESSAGE
+
+
+def test_prod_with_neither_key_acknowledged_only_warns_in_the_audit_keys_row() -> None:
+    settings = Settings(environment="prod", unkeyed_audit_chain_acknowledged=True)
+    results = admin_doctor.evaluate(settings, None, "no daemon")
+    keys = [r for r in results if r.name == ROW]
+
     assert [r.status for r in keys] == [Status.WARN]
+    assert CHAIN_ENV in keys[0].detail
+    assert SIGN_ENV in keys[0].detail
+
+
+def test_the_doctor_row_and_the_gate_agree_on_a_missing_chain_key_in_prod() -> None:
+    for acknowledged in (False, True):
+        settings = Settings(environment="prod", unkeyed_audit_chain_acknowledged=acknowledged)
+        gate_refuses = UNKEYED_AUDIT_CHAIN_MESSAGE in prod_findings(settings)
+
+        assert gate_refuses is not acknowledged
+        assert (audit_keys_row(settings).status is Status.FAIL) is gate_refuses
+    keyed = Settings(environment="prod", audit_chain_key=CHAIN_KEY)
+    assert UNKEYED_AUDIT_CHAIN_MESSAGE not in prod_findings(keyed)
+    assert audit_keys_row(keyed).status is Status.WARN  # chain key alone: unsigned exports
 
 
 def test_the_row_function_and_the_doctor_agree() -> None:
@@ -451,7 +479,9 @@ def test_a_whitespace_only_signing_key_is_treated_as_unset(environment: str, cha
 
     row = doctor_row(settings)
 
-    assert row.status is Status.WARN
+    # chain unset in prod is now refused by the gate (no signing key counts as neither key)
+    expected = Status.FAIL if environment == "prod" and not chain else Status.WARN
+    assert row.status is expected
     assert NEEDS_CHAIN not in row.detail
     assert settings.audit_signer() is None
 
@@ -502,13 +532,24 @@ def test_the_preflight_lists_the_signing_finding_next_to_the_others() -> None:
     assert SIGNING_WITHOUT_CHAIN_KEY in findings
 
 
-@pytest.mark.parametrize("changes", [{"audit_chain_key": CHAIN_KEY}, {}], ids=["chain", "none"])
-def test_the_preflight_accepts_the_other_key_combinations(changes: dict[str, str]) -> None:
+@pytest.mark.parametrize(
+    "changes",
+    [{"audit_chain_key": CHAIN_KEY}, {"unkeyed_audit_chain_acknowledged": True}],
+    ids=["chain", "none-acknowledged"],
+)
+def test_the_preflight_accepts_the_other_key_combinations(changes: dict[str, Any]) -> None:
     check_preflight(Settings(**PROD_READY, **changes))
 
 
+def test_the_preflight_refuses_neither_key_without_the_acknowledgement() -> None:
+    with pytest.raises(ConfigurationError) as raised:
+        check_preflight(Settings(**PROD_READY))
+
+    assert raised.value.findings == (UNKEYED_AUDIT_CHAIN_MESSAGE,)
+
+
 def test_the_preflight_ignores_a_whitespace_only_signing_key() -> None:
-    check_preflight(Settings(**PROD_READY, audit_signing_key="   "))
+    check_preflight(Settings(**PROD_READY, audit_chain_key=CHAIN_KEY, audit_signing_key="   "))
 
 
 @pytest.mark.parametrize("environment", ["dev", "test"])
