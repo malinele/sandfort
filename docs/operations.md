@@ -72,9 +72,15 @@ Multi-node is not the default kit. It needs all of the following (details under 
 and "Cross-node toolbox routing"):
 
 - `SANDFORT_SANDBOX_JOBS_ENABLED=true` on every api instance. Jobs mode refuses creates that
-  mount volumes or use an egress allowlist, and has no sandbox reset
-  (`src/sandfort/services/sandboxes.py`, `src/sandfort/services/sandbox_reset.py`).
+  mount volumes and has no sandbox reset (`src/sandfort/services/sandboxes.py`,
+  `src/sandfort/services/sandbox_reset.py`). Creates with an egress allowlist are accepted, under
+  the requirements below.
 - One database shared by every node, and a unique `SANDFORT_NODE_ID` per node.
+- For egress-allowlisted sandboxes, on top of the list above (details under "Egress proxy"):
+  the same `SANDFORT_EGRESS_SECRET` on every api and proxy process; on every node a proxy, the
+  DNS sink, `deploy/host-setup.sh` including the sink exception, and `SANDFORT_EGRESS_POLICY_URL`
+  reachable over the private network; and synchronized clocks, because the policy channel
+  accepts requests and responses within a 30-second window.
 - For toolbox calls through any api process: the same `SANDFORT_ROUTING_SECRET` (at least 32
   characters) on every node, `SANDFORT_NODE_INTERNAL_URL` on each serving node, and
   synchronized clocks.
@@ -1120,7 +1126,9 @@ Layout:
   `SANDFORT_NODE_ID`. Each worker heartbeats into the node registry every
   `SANDFORT_NODE_HEARTBEAT_INTERVAL_S` seconds; `SANDFORT_NODE_MAX_SANDBOXES` (0 means
   unlimited) is the node's advertised maximum for placement. It is not a hard cap: a create
-  still lands on the local node when no node qualifies (see "Capacity and sizing").
+  still lands on the local node when no node qualifies (see "Capacity and sizing"). A create with
+  an egress allowlist is the exception: it needs a node that reports `egress_ready` and never
+  falls back to the local node (see "Egress in jobs mode and multi-node").
 - Placement and background work follow node ownership automatically: a create is placed on
   the least loaded active, fresh node below capacity, and the jobs of a sandbox run on the
   node that owns it. A node with no heartbeat for 90 seconds is reported `stale` and
@@ -1227,6 +1235,14 @@ length). Each node's `deploy/host-setup.sh` creates the `sf-egress-net` bridge a
 Dry-run it with `DRY_RUN=1`. The prod acknowledgement (`SANDFORT_EGRESS_ACKNOWLEDGED=true`)
 covers these rules.
 
+A proxy that sets `SANDFORT_EGRESS_POLICY_URL` reads per-sandbox policies from the api's
+internal route `POST /internal/egress/v1/policies`. That route is off by default: set
+`SANDFORT_EGRESS_POLICY_ROUTE_ENABLED=true` on exactly the api instances the policy URL
+points at, and leave it unset on api instances that face anything beyond the private
+network. Without the flag (or without `SANDFORT_EGRESS_SECRET`) the route is not mounted
+and the proxy treats every policy as unavailable, which fails closed
+(`docs/egress-v2-design.md` section 3.6).
+
 **The proxy port must match the INPUT guard port.** `3128` above is an example, not a fixed
 value. `deploy/host-setup.sh` opens exactly one tcp port to the proxy, on both INPUT
 (`SANDFORT-HOST-GUARD-PROXY`) and FORWARD (`SANDFORT-EGRESS-PROXY`). If the proxy listens on any
@@ -1245,9 +1261,52 @@ that part. Deploy any other way and a proxy from an older image keeps its old ru
 and read that startup line.
 
 Fail-closed behavior: with the proxy address or secret unset, an allowlisted create is refused
-(409), never run with open egress. Allowlisted creates are also refused when sandboxes are
-created by jobs. If `sf-egress-net` is missing on a node, Docker rejects the create. Sandboxes
-without an allowlist are unaffected.
+(409), never run with open egress. If `sf-egress-net` is missing on a node, Docker rejects the
+create. Sandboxes without an allowlist are unaffected.
+
+Policy-channel rollout order (design section 9.3): proxies first. The round 2 proxy accepts
+v1 and v2 tokens, and an old proxy refuses a v2 token with 407, which fails closed; the
+policy URL is set on every proxy in the same deploy step that brings the round 3 api. The
+policy hop is plain HTTP on the private network, like the toolbox routing hop; the request
+and response MACs give integrity and freshness, not confidentiality. The whole mechanism is
+an egress proxy enforcing hostnames and address ranges per sandbox.
+
+### Egress in jobs mode and multi-node
+
+Jobs mode accepts allowlisted creates (`docs/egress-v2-design.md` section 7). The api stores the
+sandbox without proxy variables, and the node that owns it mints the egress token before it
+creates the container, with its own proxy address and secret. The proxy URL therefore always
+names the proxy of the owning node, and nodes may have different `sf-egress-net` subnets. A node
+with no egress settings fails the job with error code `egress_unavailable`, and no container is
+created.
+
+Placement is egress-aware. Each node reports `egress_ready` in its heartbeat, true when the
+process that heartbeats has `SANDFORT_EGRESS_PROXY_ADDRESS`, `SANDFORT_EGRESS_SECRET` and
+`SANDFORT_EGRESS_POLICY_URL` in its own environment. The proxy reads the policy URL, but the
+heartbeating process needs the same variable too, or its node reports not ready. An
+allowlisted create is placed only on an active, fresh node below capacity that reports
+`egress_ready`. It never falls back to the local node unless the local node qualifies. When no
+node qualifies, the create gets 409 `conflict` with "no node can run egress-allowlisted
+sandboxes". This also holds for an empty node registry, and for `egress_allowlist: []`, which is
+stored as block-all. A node that stops heartbeating goes stale and stops qualifying. Migration
+`0028` adds the `nodes.egress_ready` column with default false, so every node reports not ready
+until its next heartbeat writes the flag, and a node that lacks the settings above keeps
+reporting false. Creates without an allowlist ignore the flag.
+
+Requirements for every node that should run allowlisted sandboxes, on top of the multi-node list
+at the top of this runbook ("Supported topology"):
+
+- The same `SANDFORT_EGRESS_SECRET` on every api and proxy process.
+- A proxy, the DNS sink, `deploy/host-setup.sh` (including the sink exception, see "Controlled
+  DNS: the sink") and `SANDFORT_EGRESS_POLICY_URL` reachable over the private network, on every
+  node.
+- Synchronized clocks. Policy requests and responses carry a 30-second window.
+
+Limit: sandbox reset is unavailable in jobs mode, so neither the egress epoch nor the token can
+be refreshed there. An allowlisted jobs-mode sandbox that outlives `SANDFORT_EGRESS_TOKEN_TTL_S`
+(default 7 days, or its auto-delete horizon plus one day) loses egress. Changing the
+allowlist with `PATCH` still works in jobs mode, because it makes no driver call. The volume
+refusal in jobs mode is unchanged.
 
 ### Egress proxy limits
 
@@ -1261,13 +1320,61 @@ process at startup.
 | `SANDFORT_EGRESS_ALLOWED_PORTS` | `443,80` | CONNECT target ports; any other port is refused (403). |
 | `SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX` | `64` (1 to 100000) | Concurrent tunnels one sandbox may hold; the next one gets 429. |
 | `SANDFORT_EGRESS_IDLE_TIMEOUT_S` | `300` (1 to 86400) | An idle tunnel is closed after this many seconds. |
-| `SANDFORT_EGRESS_TOKEN_TTL_S` | `604800`, 7 days (60 to 34560000) | Lifetime of the egress token minted for a sandbox. The proxy refuses a longer-lived token, except tokens that earlier releases minted for up to 400 days: those are accepted until they expire. |
+| `SANDFORT_EGRESS_TOKEN_TTL_S` | `604800`, 7 days (60 to 34560000) | Lifetime of the egress token minted for a sandbox. The proxy refuses a longer-lived token, except tokens that earlier releases minted for up to 400 days: those are accepted until they expire. An inline-mode reset mints a fresh token (and revokes the previous one through the credential epoch); jobs mode has no reset, see "Egress in jobs mode and multi-node". |
+| `SANDFORT_EGRESS_POLICY_URL` | unset | Base URL of an api instance on the private network. Unset: v2 tokens get 503, v1 tokens follow their claims with no lookup and no revocation, and the proxy logs a startup warning. |
+| `SANDFORT_EGRESS_POLICY_CACHE_S` | `5` (2 to 60) | How long a fetched policy is used, counted from when the request was sent; also the sweep interval. |
+| `SANDFORT_EGRESS_POLICY_TIMEOUT_S` | `2` (1 to 10, and less than the cache setting) | Timeout of one policy lookup. |
+| `SANDFORT_EGRESS_POLICY_MAX_STALE_S` | `60` (at least the cache setting) | Open tunnels of a sandbox whose policy cannot be refreshed are closed after this long. |
+| `SANDFORT_EGRESS_DNS_PIN_S` | `30` (0 to 300) | How long the proxy reuses the addresses it resolved for a name, per sandbox and name, so a CONNECT inside the window dials the same set without a new query. `0` resolves on every CONNECT. At most 256 pins per sandbox and 65536 per proxy. A failed, empty or unreachable answer is never pinned, and a pin is dropped when the sandbox's policy no longer admits the name. |
+| `SANDFORT_EGRESS_DNS_SINK_LISTEN` | unset | Proxy only. The IPv4 address the proxy binds the DNS sink to, udp and tcp port 53 (below). `addr` or `addr:53`; any other port, IPv6, a hostname or a list is refused at startup. Unset: no sink. |
+| `SANDFORT_EGRESS_DNS_SINK_ADDRESS` | unset | Api and driver. The sink address given as the only DNS server to sandboxes on `sf-egress-net` (below). Same accepted forms as the listen setting. It must name the address the proxy listens on. |
 
 This release has no setting for a process-wide ceiling on proxy connections and none for a limit
 on connections that have not authenticated yet. The only configurable cap is the per-sandbox one
 above. The request-read timeout (15 s) and the upstream connect timeout (10 s) are constants in
 `src/sandfort/egress/proxy.py`. Bound the proxy from outside, with the host firewall or the
 process's file-descriptor limit.
+
+### Controlled DNS: the sink
+
+A sandbox on `sf-egress-net` that shares the host's network stack gets its names from Docker's
+embedded resolver, which forwards to the host's upstream servers, so a name can carry data out
+even though the proxy refuses the connection. With `SANDFORT_EGRESS_DNS_SINK_ADDRESS` set, the api
+creates those containers with `dns=[<sink address>]`, and the proxy serves the sink on
+`SANDFORT_EGRESS_DNS_SINK_LISTEN`, udp and tcp port 53. The rule fails closed: every container on
+the egress network gets the sink unless its runtime brings its own network stack, which means a
+runtime name that starts with `runsc` (gVisor) or contains `kata`. `crun`, `nvidia`, a custom
+alias and any name the api does not recognise all get the sink. The sink answers every query
+REFUSED and forwards nothing, so only the proxy resolves names (`docs/egress-v2-design.md`
+section 6). It logs, once a minute, how many queries each source
+address sent, and never a queried name. gVisor and Kata containers and sandboxes on the open
+network get no `dns` option, so the setting changes nothing for them.
+
+- **Port 53 is privileged.** Run the proxy as root or with `CAP_NET_BIND_SERVICE`. If the sink
+  cannot bind, the proxy logs that and stops; nothing falls back to another port.
+- **The address must be reachable from `sf-egress-net`**, normally the network's gateway. The
+  api (`..._ADDRESS`) and the proxy (`..._LISTEN`) must name the same address.
+- **Unset keeps the old behavior.** Sandboxes keep the daemon's resolvers, and the api logs a
+  startup warning when an egress proxy is configured without a sink.
+- **Existing sandboxes keep their resolvers.** A `container`-tier sandbox on the egress network
+  that was created before the sink was first configured keeps the daemon's resolvers across stop
+  and start, so reset or recreate it after you set the sink; otherwise it keeps the embedded
+  resolver's upstreams.
+- **Host rules.** When `SANDFORT_EGRESS_DNS_SINK_ADDRESS` is in the environment or in the env
+  file, `deploy/host-setup.sh` adds one exception to `SANDFORT-HOST-GUARD-PROXY`: udp and tcp port
+  53 to that address. Nothing else is opened on port 53. The script reads the exception from
+  `deploy/egress-dns-sink.sh`, so ship that file next to it; without it the script warns and
+  skips the exception.
+- **`prod` probe.** With a sink set, the start gate runs a runc canary on `sf-egress-net` and
+  reports a finding if it resolves a public name, which refuses the start unless
+  `SANDFORT_EGRESS_ACKNOWLEDGED=true` overrides it. The egress network must stay IPv4-only, and the
+  driver removes a freshly created `sf-egress-net` that came up with IPv6 enabled and refuses to
+  adopt an existing one that has it. `deploy/host-setup.sh` creates the network with
+  `--ipv6=false`.
+
+`examples/gate11.py` checks the pin window (two fetches, one lookup) and the sink's REFUSED
+replies. The container resolution check needs a Linux Docker host and
+`GATE11_DNS_SINK_ADDRESS`, and the gate reports it as skipped otherwise.
 
 ### Egress rules on the host: `host-setup.sh`
 

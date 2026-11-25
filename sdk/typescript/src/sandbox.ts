@@ -12,6 +12,7 @@ import {
 import type { BinaryChannel } from "./fs.js";
 import { Fs } from "./fs.js";
 import { Git } from "./git.js";
+import type { SandboxErrorCode } from "./error-codes.js";
 import type { Resources, SandboxInfo, VolumeMountInfo } from "./models.js";
 import {
   Process,
@@ -65,6 +66,7 @@ export class Sandbox implements SandboxInfo {
   readonly autoStopMinutes: number;
   readonly autoDeleteMinutes: number;
   readonly errorReason: string | null;
+  readonly errorCode: SandboxErrorCode | (string & {}) | null;
   readonly jobId: string | null;
   readonly createdAt?: Date | null | undefined;
   readonly updatedAt?: Date | null | undefined;
@@ -73,6 +75,7 @@ export class Sandbox implements SandboxInfo {
   readonly isolation?: string | undefined;
   readonly volumes?: readonly VolumeMountInfo[] | undefined;
   readonly egressAllowlist?: readonly string[] | null | undefined;
+  readonly egressPolicyGeneration: number;
   readonly #process: Process;
   readonly #fs: Fs;
   readonly #sessions: Sessions;
@@ -92,6 +95,7 @@ export class Sandbox implements SandboxInfo {
     this.autoStopMinutes = info.autoStopMinutes;
     this.autoDeleteMinutes = info.autoDeleteMinutes;
     this.errorReason = info.errorReason;
+    this.errorCode = info.errorCode;
     this.jobId = info.jobId;
     this.createdAt = info.createdAt;
     this.updatedAt = info.updatedAt;
@@ -100,6 +104,7 @@ export class Sandbox implements SandboxInfo {
     this.isolation = info.isolation;
     this.volumes = info.volumes;
     this.egressAllowlist = info.egressAllowlist;
+    this.egressPolicyGeneration = info.egressPolicyGeneration;
     const toolboxPath = sandboxPath(info.id, "/toolbox");
     this.#process = new Process(transport, toolboxPath);
     this.#fs = new Fs(transport, binary, toolboxPath);
@@ -238,7 +243,10 @@ export class Sandbox implements SandboxInfo {
 
   // --- sandbox operations (src/sandbox-ops.ts); each returns a new handle -------------------
 
-  /** PATCH this sandbox: labels, auto-stop / auto-delete minutes, `public`. */
+  /**
+   * PATCH this sandbox: labels, auto-stop / auto-delete minutes, `public`, and the
+   * `egressAllowlist` (host names, leading-dot domains and CIDR ranges).
+   */
   update(options: UpdateSandboxOptions): Promise<Sandbox> {
     return this.#ops.update(this.id, options);
   }

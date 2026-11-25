@@ -195,6 +195,42 @@ def parse_ports(raw: str) -> tuple[int, ...]:
     return tuple(ports)
 
 
+DNS_SINK_PORT = "53"  # the sink serves port 53 only, so ``addr:53`` is the one allowed suffix
+DNS_SINK_ADDRESS_VAR = ENV_PREFIX + "EGRESS_DNS_SINK_ADDRESS"
+
+
+def parse_dns_sink_address(raw: str, variable: str = DNS_SINK_ADDRESS_VAR) -> str:
+    """The canonical text of one IPv4 sink address; blank = unset. Anything else is refused.
+
+    ``addr`` and ``addr:53`` are accepted (the sink binds port 53 only; deploy/egress-dns-sink.sh
+    takes the same two forms). The egress network is IPv4-only (egress v2 design 4.5), so an
+    IPv6 address cannot be a sink. ``variable`` names the environment variable in the error.
+    """
+    value = raw.strip()
+    if not value:
+        return ""
+    host, sep, port = value.partition(":")
+    try:
+        if sep and port != DNS_SINK_PORT:
+            raise ValueError(port)
+        return str(ipaddress.IPv4Address(host))
+    except ValueError:
+        raise ValueError(
+            f"{variable} {value!r} is not a single IPv4 address (optionally with :{DNS_SINK_PORT})"
+        ) from None
+
+
+def brings_own_network_stack(runtime: str) -> bool:
+    """True for the runtime families ``check_tier_families`` pins to a tier: runsc and kata.
+
+    Those runtimes run their own kernel and network stack, so Docker's embedded resolver does
+    not serve them. Every other runtime name (runc, crun, nvidia, a custom alias, anything
+    unrecognised) is treated as sharing the host stack, which is the fail-closed side.
+    """
+    name = runtime.strip().lower()
+    return name.startswith(GVISOR_RUNTIME_PREFIX) or KATA_RUNTIME_MARKER in name
+
+
 def parse_nameservers(raw: str) -> tuple[str, ...]:
     """Parse a comma-separated IPv4/IPv6 list; blank means no entries.
 
@@ -314,6 +350,7 @@ class Settings:
     egress_acknowledged: bool = False
     egress_probe: bool | None = None  # canary probe of the managed networks; None = on in prod
     egress_probe_image: str = "alpine:3.20"  # canary image; needs sh, nc and timeout (busybox)
+    egress_dns_sink_address: str = ""  # runc egress-net sandboxes resolve here; "" = v1 behaviour
     enforce_disk_quota: bool = False  # per-sandbox disk size outside prod (prod always enforces)
     default_block_network: bool = False  # a create naming no network policy gets block_all
     # Operator policy: a create asking for block_all false or an allowlist is refused (403).
@@ -327,6 +364,8 @@ class Settings:
     egress_allowlist_max_entries: int = 16  # hosts one sandbox's egress allowlist may name
     egress_proxy_address: str = ""  # host:port sandboxes reach the egress proxy on; "" = off
     egress_secret: str = ""  # signs egress tokens; "" = allowlisted creates are refused
+    # Mounts the internal egress policy route the proxy reads (needs egress_secret too); off = 404.
+    egress_policy_route_enabled: bool = False
     # Proxy targets refused after DNS resolution (the node's own addresses are always added).
     egress_denied_cidrs: tuple[str, ...] = DEFAULT_EGRESS_DENIED_CIDRS
     egress_allowed_ports: tuple[int, ...] = DEFAULT_EGRESS_ALLOWED_PORTS  # CONNECT target ports
@@ -595,6 +634,9 @@ class Settings:
             boolean("EGRESS_PROBE", True) if ENV_PREFIX + "EGRESS_PROBE" in source else None
         )
         egress_probe_image = text("EGRESS_PROBE_IMAGE", "").strip() or defaults.egress_probe_image
+        egress_dns_sink_address = parse_dns_sink_address(
+            text("EGRESS_DNS_SINK_ADDRESS", defaults.egress_dns_sink_address)
+        )
         node_internal_url = text("NODE_INTERNAL_URL", defaults.node_internal_url).strip()
         routing_secret = text("ROUTING_SECRET", defaults.routing_secret)
         _check_routing_settings(node_internal_url, routing_secret)
@@ -726,6 +768,7 @@ class Settings:
             egress_acknowledged=boolean("EGRESS_ACKNOWLEDGED", defaults.egress_acknowledged),
             egress_probe=egress_probe,
             egress_probe_image=egress_probe_image,
+            egress_dns_sink_address=egress_dns_sink_address,
             enforce_disk_quota=boolean("ENFORCE_DISK_QUOTA", defaults.enforce_disk_quota),
             default_block_network=boolean("DEFAULT_BLOCK_NETWORK", defaults.default_block_network),
             enforce_block_network=boolean("ENFORCE_BLOCK_NETWORK", defaults.enforce_block_network),
@@ -741,6 +784,9 @@ class Settings:
                 "EGRESS_PROXY_ADDRESS", defaults.egress_proxy_address
             ).strip(),
             egress_secret=egress_secret,
+            egress_policy_route_enabled=boolean(
+                "EGRESS_POLICY_ROUTE_ENABLED", defaults.egress_policy_route_enabled
+            ),
             egress_denied_cidrs=egress_limits.denied_cidrs,
             egress_allowed_ports=egress_limits.allowed_ports,
             egress_max_connections=egress_limits.max_connections,

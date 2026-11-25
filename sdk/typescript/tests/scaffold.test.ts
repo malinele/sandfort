@@ -27,6 +27,7 @@ describe("export surface", () => {
         "MAX_TOTAL_RETRY_WAIT_S",
         "RequestAbortedError",
         "RequestTimeoutError",
+        "SANDBOX_ERROR_CODES",
         "SandboxFailedError",
         "SandboxTimeoutError",
         "SandfortClient",

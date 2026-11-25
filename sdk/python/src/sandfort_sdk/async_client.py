@@ -47,6 +47,7 @@ from sandfort_sdk.client import (
     settled,
     start_timeout_error,
 )
+from sandfort_sdk.egress import aset_allowlist
 from sandfort_sdk.exceptions import (
     InvalidResponseError,
     RequestTimedOut,
@@ -450,6 +451,18 @@ class AsyncClient:
 
     async def delete(self, sandbox_id: str) -> AsyncSandbox:
         return await self._act("DELETE", sandbox_path(sandbox_id))
+
+    async def set_egress_allowlist(self, sandbox_id: str, entries: Sequence[str]) -> AsyncSandbox:
+        """Replace the egress allowlist of a sandbox created with one; ``[]`` blocks all hosts.
+
+        Entries are sent as given and validated by the server. The server stores the list at
+        once and the egress proxy picks it up within its cache window, so the change is not
+        instant. Errors: :class:`Forbidden` (operator policy), :class:`InvalidState` (the
+        sandbox has no allowlist to replace, was created with an empty one while the network
+        blocks all hosts, or needs ``reset`` first), :class:`Unprocessable` or
+        :class:`ValidationFailed` (invalid entries).
+        """
+        return await aset_allowlist(self._transport, sandbox_id, entries)
 
     async def _act(self, method: str, path: str) -> AsyncSandbox:
         reply = await self._transport.request(method, path)

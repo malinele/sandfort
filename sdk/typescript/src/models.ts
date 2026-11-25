@@ -1,4 +1,5 @@
 import { InvalidResponseError } from "./errors.js";
+import type { SandboxErrorCode } from "./error-codes.js";
 
 export interface Resources {
   cpuMillicores: number;
@@ -18,6 +19,12 @@ export interface SandboxInfo {
   autoStopMinutes: number;
   autoDeleteMinutes: number;
   errorReason: string | null;
+  /**
+   * Machine-readable cause of the `error` state, one of `SANDBOX_ERROR_CODES` (for example
+   * `egress_unavailable`); `null` when the server sends none. Like `state`, the field is an
+   * open enum: a code a newer server adds comes through as the plain string, never an error.
+   */
+  errorCode: SandboxErrorCode | (string & {}) | null;
   jobId: string | null;
   /** The optional fields below are `undefined` when the server omits them. */
   createdAt?: Date | null | undefined;
@@ -27,8 +34,19 @@ export interface SandboxInfo {
   stoppedAt?: Date | null | undefined;
   isolation?: string | undefined;
   volumes?: readonly VolumeMountInfo[] | undefined;
-  /** Host names reachable through the egress proxy; `null` means the network policy default. */
+  /**
+   * Host names, leading-dot domains and CIDR ranges reachable through the egress proxy; `null`
+   * means the sandbox was created without an allowlist (the network policy default).
+   */
   egressAllowlist?: readonly string[] | null | undefined;
+  /**
+   * Version of the egress allowlist. 0 is ambiguous on its own: the server sends null when
+   * `egressAllowlist` is null and 0 for a legacy v1 sandbox, and both read as 0 here. Read it
+   * together with `egressAllowlist`: 0 with a non-null list is a legacy v1 credential (`reset`
+   * upgrades it); with `egressAllowlist: null` no allowlist was ever set, and neither `update`
+   * nor `reset` will enable one.
+   */
+  egressPolicyGeneration: number;
 }
 
 /** A volume mount as a sandbox response reports it. */
@@ -181,6 +199,14 @@ function optionalStringList(value: unknown): readonly string[] | null | undefine
   return asArray(value, "egress allowlist").map((item) => String(item));
 }
 
+function egressGeneration(value: unknown): number {
+  if (value === undefined || value === null) return 0;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new InvalidResponseError("expected an integer for 'egress_policy_generation'");
+  }
+  return value;
+}
+
 export function sandboxFromPayload(data: unknown): SandboxInfo {
   const raw = asRecord(data, "sandbox");
   const network = raw["network"] == null ? {} : asRecord(raw["network"], "network");
@@ -197,6 +223,7 @@ export function sandboxFromPayload(data: unknown): SandboxInfo {
     autoStopMinutes: numberOr(raw["auto_stop_minutes"], 15),
     autoDeleteMinutes: numberOr(raw["auto_delete_minutes"], -1),
     errorReason: stringOrNull(raw["error_reason"]),
+    errorCode: stringOrNull(raw["error_code"]),
     jobId: stringOrNull(raw["job_id"]),
     createdAt: optionalTimestamp(raw, "created_at"),
     updatedAt: optionalTimestamp(raw, "updated_at"),
@@ -208,6 +235,7 @@ export function sandboxFromPayload(data: unknown): SandboxInfo {
         ? undefined
         : asArray(volumes, "volumes").map((item) => volumeMountFromPayload(item)),
     egressAllowlist: optionalStringList(raw["egress_allowlist"]),
+    egressPolicyGeneration: egressGeneration(raw["egress_policy_generation"]),
   };
 }
 

@@ -29,7 +29,11 @@ class AuditVerifyMixin:
         def public_key(self) -> str | None: ...
 
     def verify_head(
-        self, head_line: str | Mapping[str, Any], public_key: str | bytes
+        self,
+        head_line: str | Mapping[str, Any],
+        public_key: str | bytes,
+        *,
+        expected_org_id: str | None = None,
     ) -> HeadVerification:
         """Check the Ed25519 signature of an export's ``audit_head`` line.
 
@@ -43,6 +47,10 @@ class AuditVerifyMixin:
         ``signed_at``: a signed head without one (beta.60 to beta.64 heads) returns ``ok=False``
         with reason ``"undated"``. ``HeadVerification.anchored`` was removed.
 
+        ``HeadVerification.org_id`` is the head's org. With ``expected_org_id`` a signed head of
+        another org (or without one) returns ``ok=False`` with reason ``"expected_org_mismatch"``;
+        an empty ``expected_org_id`` raises ``ValueError``.
+
         Contract change: ``public_key`` has no default and is required (a call without it is a
         ``TypeError``), so the caller always names the trust anchor.
         """
@@ -51,8 +59,8 @@ class AuditVerifyMixin:
             key = self.public_key()
             if key is None:
                 raise ValueError(NO_STATUS_KEY)
-            return verify_head(head_line, key)
-        return verify_head(head_line, public_key)
+            return verify_head(head_line, key, expected_org_id=expected_org_id)
+        return verify_head(head_line, public_key, expected_org_id=expected_org_id)
 
     def verify_export(
         self,
@@ -61,9 +69,11 @@ class AuditVerifyMixin:
         *,
         allow_unchained: bool = False,
         previous: str | Iterable[str] | None = None,
+        expected_org_id: str | None = None,
     ) -> ExportVerification:
         """:func:`~sandfort_sdk.audit_export.verify_export`; ``public_key`` as for
-        :meth:`verify_head` (``"status"`` is read after the file was scanned).
+        :meth:`verify_head` (``"status"`` is read after the file was scanned), and so is
+        ``expected_org_id`` (reason ``"expected_org_mismatch"``).
 
         A head from round 63 on binds the export's content (line count, first row and a SHA-256 of
         every event line), so the file is checked as a whole against what the server signed
@@ -82,7 +92,9 @@ class AuditVerifyMixin:
         key = self.public_key() if public_key == STATUS_KEY else public_key
         if key is None:
             raise ValueError(NO_STATUS_KEY)
-        return export_result(scan, key, allow_unchained=allow_unchained)
+        return export_result(
+            scan, key, allow_unchained=allow_unchained, expected_org_id=expected_org_id
+        )
 
 
 class AsyncAuditVerifyMixin:
@@ -93,7 +105,11 @@ class AsyncAuditVerifyMixin:
         async def public_key(self) -> str | None: ...
 
     async def verify_head(
-        self, head_line: str | Mapping[str, Any], public_key: str | bytes
+        self,
+        head_line: str | Mapping[str, Any],
+        public_key: str | bytes,
+        *,
+        expected_org_id: str | None = None,
     ) -> HeadVerification:
         """Check the Ed25519 signature of an export's ``audit_head`` line.
 
@@ -106,8 +122,8 @@ class AsyncAuditVerifyMixin:
             key = await self.public_key()
             if key is None:
                 raise ValueError(NO_STATUS_KEY)
-            return verify_head(head_line, key)
-        return verify_head(head_line, public_key)
+            return verify_head(head_line, key, expected_org_id=expected_org_id)
+        return verify_head(head_line, public_key, expected_org_id=expected_org_id)
 
     async def verify_export(
         self,
@@ -116,6 +132,7 @@ class AsyncAuditVerifyMixin:
         *,
         allow_unchained: bool = False,
         previous: str | Iterable[str] | None = None,
+        expected_org_id: str | None = None,
     ) -> ExportVerification:
         """Same as :meth:`Audit.verify_export`, as a coroutine (``"status"`` reads the key from
         the server). ``lines`` may also be an asynchronous iterable of lines, such as
@@ -134,4 +151,6 @@ class AsyncAuditVerifyMixin:
         key = await self.public_key() if public_key == STATUS_KEY else public_key
         if key is None:
             raise ValueError(NO_STATUS_KEY)
-        return export_result(scan, key, allow_unchained=allow_unchained)
+        return export_result(
+            scan, key, allow_unchained=allow_unchained, expected_org_id=expected_org_id
+        )

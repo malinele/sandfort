@@ -35,7 +35,7 @@
 <div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations" aria-current="page">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
 <main id="main">
 <div class="frame"><div class="doc has-toc">
-<details class="toc"><summary>On this page</summary><ul><li><a href="#supported-topology">Supported topology</a></li><li><a href="#prerequisites">Prerequisites</a></li><li><a href="#node-preparation">Node preparation</a><ul><li><a href="#daemon-settings-beyond-node-setupsh">Daemon settings beyond node-setup.sh</a></li></ul></li><li><a href="#first-deploy">First deploy</a></li><li><a href="#recovering-a-lost-api-key-create-key">Recovering a lost API key: <code>create-key</code></a><ul><li><a href="#revoking-from-the-host-revoke-key">Revoking from the host: <code>revoke-key</code></a></li></ul></li><li><a href="#backup">Backup</a></li><li><a href="#restore">Restore</a></li><li><a href="#backup-and-restore-of-node-data">Backup and restore of node data</a></li><li><a href="#upgrade-and-rollback">Upgrade and rollback</a></li><li><a href="#monitoring-and-alerting">Monitoring and alerting</a><ul><li><a href="#metrics-the-server-exports">Metrics the server exports</a></li><li><a href="#example-alert-rules">Example alert rules</a></li><li><a href="#what-to-watch-outside-metrics">What to watch outside metrics</a></li><li><a href="#keyed-audit-chain-and-the-export-head">Keyed audit chain and the export head</a></li><li><a href="#signing-the-audit-export">Signing the audit export</a></li><li><a href="#acknowledging-historical-audit-findings-audit-reanchor">Acknowledging historical audit findings: <code>audit-reanchor</code></a></li><li><a href="#audit-growth-and-archiving">Audit growth and archiving</a></li></ul></li><li><a href="#capacity-and-sizing">Capacity and sizing</a><ul><li><a href="#controls-that-cap-a-node">Controls that cap a node</a></li><li><a href="#measured-facts-that-exist">Measured facts that exist</a></li><li><a href="#a-method-to-size-a-node">A method to size a node</a></li></ul></li><li><a href="#scaling">Scaling</a><ul><li><a href="#docker-driver-threads-and-shutdown">Docker driver threads and shutdown</a></li></ul></li><li><a href="#multi-node">Multi-node</a><ul><li><a href="#cross-node-toolbox-routing">Cross-node toolbox routing</a></li></ul></li><li><a href="#egress-proxy">Egress proxy</a><ul><li><a href="#egress-proxy-limits">Egress proxy limits</a></li><li><a href="#egress-rules-on-the-host-host-setupsh">Egress rules on the host: <code>host-setup.sh</code></a></li></ul></li><li><a href="#doctor-python--m-sandfortadmin_cli-doctor">Doctor: <code>python -m sandfort.admin_cli doctor</code></a></li><li><a href="#production-start-gate">Production start gate</a><ul><li><a href="#two-instances-or-a-dev-box-next-to-a-rig-on-one-docker-daemon">Two instances, or a dev box next to a rig, on one Docker daemon</a></li></ul></li><li><a href="#operator-policy-settings">Operator policy settings</a><ul><li><a href="#fault-injection-test-hook">Fault injection test hook</a></li></ul></li><li><a href="#release-page">Release page</a></li><li><a href="#scim-provisioning">SCIM provisioning</a><ul><li><a href="#mint-and-revoke-the-scim-token">Mint and revoke the SCIM token</a></li><li><a href="#identity-provider-configuration">Identity provider configuration</a></li><li><a href="#what-is-supported">What is supported</a></li><li><a href="#deactivation">Deactivation</a></li></ul></li><li><a href="#behind-a-tls-terminating-proxy">Behind a TLS-terminating proxy</a></li><li><a href="#client-facing-errors">Client-facing errors</a><ul><li><a href="#codes-and-statuses">Codes and statuses</a></li><li><a href="#exec-stop-reasons">Exec stop reasons</a></li><li><a href="#sandbox-error_code-values">Sandbox <code>error_code</code> values</a></li><li><a href="#sandbox-stop_cause-values">Sandbox <code>stop_cause</code> values</a></li><li><a href="#the-sandboxfailed-audit-row">The <code>sandbox.failed</code> audit row</a></li><li><a href="#find-a-request-in-the-server-logs">Find a request in the server logs</a></li></ul></li><li><a href="#snapshot-export">Snapshot export</a></li><li><a href="#volume-export-and-restore">Volume export and restore</a><ul><li><a href="#examples">Examples</a></li><li><a href="#semantics">Semantics</a></li><li><a href="#archive-policy-on-restore">Archive policy on restore</a></li><li><a href="#export-notes-and-failures">Export notes and failures</a></li></ul></li><li><a href="#status-notice">Status notice</a><ul><li><a href="#deploy-notice-practice">Deploy notice practice</a></li></ul></li><li><a href="#where-to-look">Where to look</a></li><li><a href="#mcp-server">MCP server</a></li></ul></details>
+<details class="toc"><summary>On this page</summary><ul><li><a href="#supported-topology">Supported topology</a></li><li><a href="#prerequisites">Prerequisites</a></li><li><a href="#node-preparation">Node preparation</a><ul><li><a href="#daemon-settings-beyond-node-setupsh">Daemon settings beyond node-setup.sh</a></li></ul></li><li><a href="#first-deploy">First deploy</a></li><li><a href="#recovering-a-lost-api-key-create-key">Recovering a lost API key: <code>create-key</code></a><ul><li><a href="#revoking-from-the-host-revoke-key">Revoking from the host: <code>revoke-key</code></a></li></ul></li><li><a href="#backup">Backup</a></li><li><a href="#restore">Restore</a></li><li><a href="#backup-and-restore-of-node-data">Backup and restore of node data</a></li><li><a href="#upgrade-and-rollback">Upgrade and rollback</a></li><li><a href="#monitoring-and-alerting">Monitoring and alerting</a><ul><li><a href="#metrics-the-server-exports">Metrics the server exports</a></li><li><a href="#example-alert-rules">Example alert rules</a></li><li><a href="#what-to-watch-outside-metrics">What to watch outside metrics</a></li><li><a href="#keyed-audit-chain-and-the-export-head">Keyed audit chain and the export head</a></li><li><a href="#signing-the-audit-export">Signing the audit export</a></li><li><a href="#acknowledging-historical-audit-findings-audit-reanchor">Acknowledging historical audit findings: <code>audit-reanchor</code></a></li><li><a href="#audit-growth-and-archiving">Audit growth and archiving</a></li></ul></li><li><a href="#capacity-and-sizing">Capacity and sizing</a><ul><li><a href="#controls-that-cap-a-node">Controls that cap a node</a></li><li><a href="#measured-facts-that-exist">Measured facts that exist</a></li><li><a href="#a-method-to-size-a-node">A method to size a node</a></li></ul></li><li><a href="#scaling">Scaling</a><ul><li><a href="#docker-driver-threads-and-shutdown">Docker driver threads and shutdown</a></li></ul></li><li><a href="#multi-node">Multi-node</a><ul><li><a href="#cross-node-toolbox-routing">Cross-node toolbox routing</a></li></ul></li><li><a href="#egress-proxy">Egress proxy</a><ul><li><a href="#egress-in-jobs-mode-and-multi-node">Egress in jobs mode and multi-node</a></li><li><a href="#egress-proxy-limits">Egress proxy limits</a></li><li><a href="#controlled-dns-the-sink">Controlled DNS: the sink</a></li><li><a href="#egress-rules-on-the-host-host-setupsh">Egress rules on the host: <code>host-setup.sh</code></a></li></ul></li><li><a href="#doctor-python--m-sandfortadmin_cli-doctor">Doctor: <code>python -m sandfort.admin_cli doctor</code></a></li><li><a href="#production-start-gate">Production start gate</a><ul><li><a href="#two-instances-or-a-dev-box-next-to-a-rig-on-one-docker-daemon">Two instances, or a dev box next to a rig, on one Docker daemon</a></li></ul></li><li><a href="#operator-policy-settings">Operator policy settings</a><ul><li><a href="#fault-injection-test-hook">Fault injection test hook</a></li></ul></li><li><a href="#release-page">Release page</a></li><li><a href="#scim-provisioning">SCIM provisioning</a><ul><li><a href="#mint-and-revoke-the-scim-token">Mint and revoke the SCIM token</a></li><li><a href="#identity-provider-configuration">Identity provider configuration</a></li><li><a href="#what-is-supported">What is supported</a></li><li><a href="#deactivation">Deactivation</a></li></ul></li><li><a href="#behind-a-tls-terminating-proxy">Behind a TLS-terminating proxy</a></li><li><a href="#client-facing-errors">Client-facing errors</a><ul><li><a href="#codes-and-statuses">Codes and statuses</a></li><li><a href="#exec-stop-reasons">Exec stop reasons</a></li><li><a href="#sandbox-error_code-values">Sandbox <code>error_code</code> values</a></li><li><a href="#sandbox-stop_cause-values">Sandbox <code>stop_cause</code> values</a></li><li><a href="#the-sandboxfailed-audit-row">The <code>sandbox.failed</code> audit row</a></li><li><a href="#find-a-request-in-the-server-logs">Find a request in the server logs</a></li></ul></li><li><a href="#snapshot-export">Snapshot export</a></li><li><a href="#volume-export-and-restore">Volume export and restore</a><ul><li><a href="#examples">Examples</a></li><li><a href="#semantics">Semantics</a></li><li><a href="#archive-policy-on-restore">Archive policy on restore</a></li><li><a href="#export-notes-and-failures">Export notes and failures</a></li></ul></li><li><a href="#status-notice">Status notice</a><ul><li><a href="#deploy-notice-practice">Deploy notice practice</a></li></ul></li><li><a href="#where-to-look">Where to look</a></li><li><a href="#mcp-server">MCP server</a></li></ul></details>
 <article class="prose">
 <h1 id="operations-runbook">Operations runbook<a class="anchor" href="#operations-runbook" aria-label="Link to section: Operations runbook">#</a></h1>
 <p>This runbook covers two deployments: Kubernetes (the kit in <code>deploy/k8s/</code>) and docker compose
@@ -96,9 +96,15 @@ self-check are in place.</li>
 and &quot;Cross-node toolbox routing&quot;):</p>
 <ul>
 <li><code>SANDFORT_SANDBOX_JOBS_ENABLED=true</code> on every api instance. Jobs mode refuses creates that
-mount volumes or use an egress allowlist, and has no sandbox reset
-(<code>src/sandfort/services/sandboxes.py</code>, <code>src/sandfort/services/sandbox_reset.py</code>).</li>
+mount volumes and has no sandbox reset (<code>src/sandfort/services/sandboxes.py</code>,
+<code>src/sandfort/services/sandbox_reset.py</code>). Creates with an egress allowlist are accepted, under
+the requirements below.</li>
 <li>One database shared by every node, and a unique <code>SANDFORT_NODE_ID</code> per node.</li>
+<li>For egress-allowlisted sandboxes, on top of the list above (details under &quot;Egress proxy&quot;):
+the same <code>SANDFORT_EGRESS_SECRET</code> on every api and proxy process; on every node a proxy, the
+DNS sink, <code>deploy/host-setup.sh</code> including the sink exception, and <code>SANDFORT_EGRESS_POLICY_URL</code>
+reachable over the private network; and synchronized clocks, because the policy channel
+accepts requests and responses within a 30-second window.</li>
 <li>For toolbox calls through any api process: the same <code>SANDFORT_ROUTING_SECRET</code> (at least 32
 characters) on every node, <code>SANDFORT_NODE_INTERNAL_URL</code> on each serving node, and
 synchronized clocks.</li>
@@ -948,7 +954,9 @@ that owns the database and decides placement.</li>
 <code>SANDFORT_NODE_ID</code>. Each worker heartbeats into the node registry every
 <code>SANDFORT_NODE_HEARTBEAT_INTERVAL_S</code> seconds; <code>SANDFORT_NODE_MAX_SANDBOXES</code> (0 means
 unlimited) is the node&#x27;s advertised maximum for placement. It is not a hard cap: a create
-still lands on the local node when no node qualifies (see &quot;Capacity and sizing&quot;).</li>
+still lands on the local node when no node qualifies (see &quot;Capacity and sizing&quot;). A create with
+an egress allowlist is the exception: it needs a node that reports <code>egress_ready</code> and never
+falls back to the local node (see &quot;Egress in jobs mode and multi-node&quot;).</li>
 <li>Placement and background work follow node ownership automatically: a create is placed on
 the least loaded active, fresh node below capacity, and the jobs of a sandbox run on the
 node that owns it. A node with no heartbeat for 90 seconds is reported <code>stale</code> and
@@ -1029,6 +1037,13 @@ length). Each node&#x27;s <code>deploy/host-setup.sh</code> creates the <code>sf
 <code>SF_EGRESS_PROXY</code>, the address sandboxes reach the proxy on (see &quot;Egress rules on the host&quot;).
 Dry-run it with <code>DRY_RUN=1</code>. The prod acknowledgement (<code>SANDFORT_EGRESS_ACKNOWLEDGED=true</code>)
 covers these rules.</p>
+<p>A proxy that sets <code>SANDFORT_EGRESS_POLICY_URL</code> reads per-sandbox policies from the api&#x27;s
+internal route <code>POST /internal/egress/v1/policies</code>. That route is off by default: set
+<code>SANDFORT_EGRESS_POLICY_ROUTE_ENABLED=true</code> on exactly the api instances the policy URL
+points at, and leave it unset on api instances that face anything beyond the private
+network. Without the flag (or without <code>SANDFORT_EGRESS_SECRET</code>) the route is not mounted
+and the proxy treats every policy as unavailable, which fails closed
+(<code>docs/egress-v2-design.md</code> section 3.6).</p>
 <p><strong>The proxy port must match the INPUT guard port.</strong> <code>3128</code> above is an example, not a fixed
 value. <code>deploy/host-setup.sh</code> opens exactly one tcp port to the proxy, on both INPUT
 (<code>SANDFORT-HOST-GUARD-PROXY</code>) and FORWARD (<code>SANDFORT-EGRESS-PROXY</code>). If the proxy listens on any
@@ -1045,19 +1060,96 @@ container to run and its log to show <code>egress allowed ports:</code>. <code>r
 that part. Deploy any other way and a proxy from an older image keeps its old rules, so restart it
 and read that startup line.</p>
 <p>Fail-closed behavior: with the proxy address or secret unset, an allowlisted create is refused
-(409), never run with open egress. Allowlisted creates are also refused when sandboxes are
-created by jobs. If <code>sf-egress-net</code> is missing on a node, Docker rejects the create. Sandboxes
-without an allowlist are unaffected.</p>
+(409), never run with open egress. If <code>sf-egress-net</code> is missing on a node, Docker rejects the
+create. Sandboxes without an allowlist are unaffected.</p>
+<p>Policy-channel rollout order (design section 9.3): proxies first. The round 2 proxy accepts
+v1 and v2 tokens, and an old proxy refuses a v2 token with 407, which fails closed; the
+policy URL is set on every proxy in the same deploy step that brings the round 3 api. The
+policy hop is plain HTTP on the private network, like the toolbox routing hop; the request
+and response MACs give integrity and freshness, not confidentiality. The whole mechanism is
+an egress proxy enforcing hostnames and address ranges per sandbox.</p>
+<h3 id="egress-in-jobs-mode-and-multi-node">Egress in jobs mode and multi-node<a class="anchor" href="#egress-in-jobs-mode-and-multi-node" aria-label="Link to section: Egress in jobs mode and multi-node">#</a></h3>
+<p>Jobs mode accepts allowlisted creates (<code>docs/egress-v2-design.md</code> section 7). The api stores the
+sandbox without proxy variables, and the node that owns it mints the egress token before it
+creates the container, with its own proxy address and secret. The proxy URL therefore always
+names the proxy of the owning node, and nodes may have different <code>sf-egress-net</code> subnets. A node
+with no egress settings fails the job with error code <code>egress_unavailable</code>, and no container is
+created.</p>
+<p>Placement is egress-aware. Each node reports <code>egress_ready</code> in its heartbeat, true when the
+process that heartbeats has <code>SANDFORT_EGRESS_PROXY_ADDRESS</code>, <code>SANDFORT_EGRESS_SECRET</code> and
+<code>SANDFORT_EGRESS_POLICY_URL</code> in its own environment. The proxy reads the policy URL, but the
+heartbeating process needs the same variable too, or its node reports not ready. An
+allowlisted create is placed only on an active, fresh node below capacity that reports
+<code>egress_ready</code>. It never falls back to the local node unless the local node qualifies. When no
+node qualifies, the create gets 409 <code>conflict</code> with &quot;no node can run egress-allowlisted
+sandboxes&quot;. This also holds for an empty node registry, and for <code>egress_allowlist: []</code>, which is
+stored as block-all. A node that stops heartbeating goes stale and stops qualifying. Migration
+<code>0028</code> adds the <code>nodes.egress_ready</code> column with default false, so every node reports not ready
+until its next heartbeat writes the flag, and a node that lacks the settings above keeps
+reporting false. Creates without an allowlist ignore the flag.</p>
+<p>Requirements for every node that should run allowlisted sandboxes, on top of the multi-node list
+at the top of this runbook (&quot;Supported topology&quot;):</p>
+<ul>
+<li>The same <code>SANDFORT_EGRESS_SECRET</code> on every api and proxy process.</li>
+<li>A proxy, the DNS sink, <code>deploy/host-setup.sh</code> (including the sink exception, see &quot;Controlled
+DNS: the sink&quot;) and <code>SANDFORT_EGRESS_POLICY_URL</code> reachable over the private network, on every
+node.</li>
+<li>Synchronized clocks. Policy requests and responses carry a 30-second window.</li>
+</ul>
+<p>Limit: sandbox reset is unavailable in jobs mode, so neither the egress epoch nor the token can
+be refreshed there. An allowlisted jobs-mode sandbox that outlives <code>SANDFORT_EGRESS_TOKEN_TTL_S</code>
+(default 7 days, or its auto-delete horizon plus one day) loses egress. Changing the
+allowlist with <code>PATCH</code> still works in jobs mode, because it makes no driver call. The volume
+refusal in jobs mode is unchanged.</p>
 <h3 id="egress-proxy-limits">Egress proxy limits<a class="anchor" href="#egress-proxy-limits" aria-label="Link to section: Egress proxy limits">#</a></h3>
 <p>The proxy process and the api read the same variables (<code>egress_limits_from</code> in
 <code>src/sandfort/config.py</code>). An unset variable takes the default; an invalid value stops the
 process at startup.</p>
-<div class="tbl-wrap" role="region" aria-label="Table: Egress proxy limits" tabindex="0"><table><thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">What it limits</th></tr></thead><tbody><tr><td><code>SANDFORT_EGRESS_DENIED_CIDRS</code></td><td><code>127.0.0.0/8</code>, <code>::1/128</code>, <code>169.254.0.0/16</code>, <code>fe80::/10</code>, <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>, <code>fc00::/7</code></td><td>Comma-separated networks the proxy refuses after it resolves a name (403). The node&#x27;s own interface addresses are always added.</td></tr><tr><td><code>SANDFORT_EGRESS_ALLOWED_PORTS</code></td><td><code>443,80</code></td><td>CONNECT target ports; any other port is refused (403).</td></tr><tr><td><code>SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX</code></td><td><code>64</code> (1 to 100000)</td><td>Concurrent tunnels one sandbox may hold; the next one gets 429.</td></tr><tr><td><code>SANDFORT_EGRESS_IDLE_TIMEOUT_S</code></td><td><code>300</code> (1 to 86400)</td><td>An idle tunnel is closed after this many seconds.</td></tr><tr><td><code>SANDFORT_EGRESS_TOKEN_TTL_S</code></td><td><code>604800</code>, 7 days (60 to 34560000)</td><td>Lifetime of the egress token minted for a sandbox. The proxy refuses a longer-lived token, except tokens that earlier releases minted for up to 400 days: those are accepted until they expire.</td></tr></tbody></table></div>
+<div class="tbl-wrap" role="region" aria-label="Table: Egress proxy limits" tabindex="0"><table><thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">What it limits</th></tr></thead><tbody><tr><td><code>SANDFORT_EGRESS_DENIED_CIDRS</code></td><td><code>127.0.0.0/8</code>, <code>::1/128</code>, <code>169.254.0.0/16</code>, <code>fe80::/10</code>, <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>, <code>fc00::/7</code></td><td>Comma-separated networks the proxy refuses after it resolves a name (403). The node&#x27;s own interface addresses are always added.</td></tr><tr><td><code>SANDFORT_EGRESS_ALLOWED_PORTS</code></td><td><code>443,80</code></td><td>CONNECT target ports; any other port is refused (403).</td></tr><tr><td><code>SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX</code></td><td><code>64</code> (1 to 100000)</td><td>Concurrent tunnels one sandbox may hold; the next one gets 429.</td></tr><tr><td><code>SANDFORT_EGRESS_IDLE_TIMEOUT_S</code></td><td><code>300</code> (1 to 86400)</td><td>An idle tunnel is closed after this many seconds.</td></tr><tr><td><code>SANDFORT_EGRESS_TOKEN_TTL_S</code></td><td><code>604800</code>, 7 days (60 to 34560000)</td><td>Lifetime of the egress token minted for a sandbox. The proxy refuses a longer-lived token, except tokens that earlier releases minted for up to 400 days: those are accepted until they expire. An inline-mode reset mints a fresh token (and revokes the previous one through the credential epoch); jobs mode has no reset, see &quot;Egress in jobs mode and multi-node&quot;.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_URL</code></td><td>unset</td><td>Base URL of an api instance on the private network. Unset: v2 tokens get 503, v1 tokens follow their claims with no lookup and no revocation, and the proxy logs a startup warning.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_CACHE_S</code></td><td><code>5</code> (2 to 60)</td><td>How long a fetched policy is used, counted from when the request was sent; also the sweep interval.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_TIMEOUT_S</code></td><td><code>2</code> (1 to 10, and less than the cache setting)</td><td>Timeout of one policy lookup.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_MAX_STALE_S</code></td><td><code>60</code> (at least the cache setting)</td><td>Open tunnels of a sandbox whose policy cannot be refreshed are closed after this long.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_PIN_S</code></td><td><code>30</code> (0 to 300)</td><td>How long the proxy reuses the addresses it resolved for a name, per sandbox and name, so a CONNECT inside the window dials the same set without a new query. <code>0</code> resolves on every CONNECT. At most 256 pins per sandbox and 65536 per proxy. A failed, empty or unreachable answer is never pinned, and a pin is dropped when the sandbox&#x27;s policy no longer admits the name.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_SINK_LISTEN</code></td><td>unset</td><td>Proxy only. The IPv4 address the proxy binds the DNS sink to, udp and tcp port 53 (below). <code>addr</code> or <code>addr:53</code>; any other port, IPv6, a hostname or a list is refused at startup. Unset: no sink.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_SINK_ADDRESS</code></td><td>unset</td><td>Api and driver. The sink address given as the only DNS server to sandboxes on <code>sf-egress-net</code> (below). Same accepted forms as the listen setting. It must name the address the proxy listens on.</td></tr></tbody></table></div>
 <p>This release has no setting for a process-wide ceiling on proxy connections and none for a limit
 on connections that have not authenticated yet. The only configurable cap is the per-sandbox one
 above. The request-read timeout (15 s) and the upstream connect timeout (10 s) are constants in
 <code>src/sandfort/egress/proxy.py</code>. Bound the proxy from outside, with the host firewall or the
 process&#x27;s file-descriptor limit.</p>
+<h3 id="controlled-dns-the-sink">Controlled DNS: the sink<a class="anchor" href="#controlled-dns-the-sink" aria-label="Link to section: Controlled DNS: the sink">#</a></h3>
+<p>A sandbox on <code>sf-egress-net</code> that shares the host&#x27;s network stack gets its names from Docker&#x27;s
+embedded resolver, which forwards to the host&#x27;s upstream servers, so a name can carry data out
+even though the proxy refuses the connection. With <code>SANDFORT_EGRESS_DNS_SINK_ADDRESS</code> set, the api
+creates those containers with <code>dns=[&lt;sink address&gt;]</code>, and the proxy serves the sink on
+<code>SANDFORT_EGRESS_DNS_SINK_LISTEN</code>, udp and tcp port 53. The rule fails closed: every container on
+the egress network gets the sink unless its runtime brings its own network stack, which means a
+runtime name that starts with <code>runsc</code> (gVisor) or contains <code>kata</code>. <code>crun</code>, <code>nvidia</code>, a custom
+alias and any name the api does not recognise all get the sink. The sink answers every query
+REFUSED and forwards nothing, so only the proxy resolves names (<code>docs/egress-v2-design.md</code>
+section 6). It logs, once a minute, how many queries each source
+address sent, and never a queried name. gVisor and Kata containers and sandboxes on the open
+network get no <code>dns</code> option, so the setting changes nothing for them.</p>
+<ul>
+<li><strong>Port 53 is privileged.</strong> Run the proxy as root or with <code>CAP_NET_BIND_SERVICE</code>. If the sink
+cannot bind, the proxy logs that and stops; nothing falls back to another port.</li>
+<li><strong>The address must be reachable from <code>sf-egress-net</code></strong>, normally the network&#x27;s gateway. The
+api (<code>..._ADDRESS</code>) and the proxy (<code>..._LISTEN</code>) must name the same address.</li>
+<li><strong>Unset keeps the old behavior.</strong> Sandboxes keep the daemon&#x27;s resolvers, and the api logs a
+startup warning when an egress proxy is configured without a sink.</li>
+<li><strong>Existing sandboxes keep their resolvers.</strong> A <code>container</code>-tier sandbox on the egress network
+that was created before the sink was first configured keeps the daemon&#x27;s resolvers across stop
+and start, so reset or recreate it after you set the sink; otherwise it keeps the embedded
+resolver&#x27;s upstreams.</li>
+<li><strong>Host rules.</strong> When <code>SANDFORT_EGRESS_DNS_SINK_ADDRESS</code> is in the environment or in the env
+file, <code>deploy/host-setup.sh</code> adds one exception to <code>SANDFORT-HOST-GUARD-PROXY</code>: udp and tcp port
+53 to that address. Nothing else is opened on port 53. The script reads the exception from
+<code>deploy/egress-dns-sink.sh</code>, so ship that file next to it; without it the script warns and
+skips the exception.</li>
+<li><strong><code>prod</code> probe.</strong> With a sink set, the start gate runs a runc canary on <code>sf-egress-net</code> and
+reports a finding if it resolves a public name, which refuses the start unless
+<code>SANDFORT_EGRESS_ACKNOWLEDGED=true</code> overrides it. The egress network must stay IPv4-only, and the
+driver removes a freshly created <code>sf-egress-net</code> that came up with IPv6 enabled and refuses to
+adopt an existing one that has it. <code>deploy/host-setup.sh</code> creates the network with
+<code>--ipv6=false</code>.</li>
+</ul>
+<p><code>examples/gate11.py</code> checks the pin window (two fetches, one lookup) and the sink&#x27;s REFUSED
+replies. The container resolution check needs a Linux Docker host and
+<code>GATE11_DNS_SINK_ADDRESS</code>, and the gate reports it as skipped otherwise.</p>
 <h3 id="egress-rules-on-the-host-host-setupsh">Egress rules on the host: <code>host-setup.sh</code><a class="anchor" href="#egress-rules-on-the-host-host-setupsh" aria-label="Link to section: Egress rules on the host: host-setup.sh">#</a></h3>
 <p><code>deploy/host-setup.sh</code> (run as root on each Docker host, again after every reboot or iptables
 flush) rebuilds its own chains from scratch, so re-running is safe.</p>

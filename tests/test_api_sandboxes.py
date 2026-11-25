@@ -488,6 +488,19 @@ def test_response_env_hides_injected_proxy_variables() -> None:
     assert "egress-token" not in response.model_dump_json()
 
 
+def test_response_env_hides_an_sfe2_token_in_the_proxy_userinfo() -> None:
+    token_url = "http://sbx_env:sfe2_payload.signature@proxy.internal:3128"
+    env = {"MY_VAR": "kept"}
+    env.update(dict.fromkeys(PROXY_VARIABLES, token_url))
+    env.update(dict.fromkeys(NO_PROXY_VARIABLES, "localhost,127.0.0.1"))
+
+    response = sandbox_response(stored_sandbox(env))
+
+    assert response.env == {"MY_VAR": "***"}
+    assert not set(PROXY_VARIABLES) & set(response.env)
+    assert "sfe2_payload.signature" not in response.model_dump_json()
+
+
 def test_response_env_keeps_every_key_with_a_masked_value() -> None:
     env = {"MY_VAR": "kept", "OTHER": "also kept"}
 

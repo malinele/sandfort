@@ -764,7 +764,7 @@ async def test_verify_head_with_the_given_key_accepts_a_signed_line(
     result = await check(head_audit, line, public_text(private_key))
 
     expected = HeadVerification(
-        True, HEAD_ROW_ID, HEAD_HASH, public_text(private_key), None, SIGNED_AT_VALUE
+        True, HEAD_ROW_ID, HEAD_HASH, public_text(private_key), None, SIGNED_AT_VALUE, "org_1"
     )
     assert result == expected
 
@@ -926,7 +926,9 @@ async def test_unsigned_line_is_reported_as_unsigned(
 
     result = await check(head_audit, head_line(unsigned_head()), key)
 
-    assert result == HeadVerification(False, HEAD_ROW_ID, HEAD_HASH, key, "unsigned", None)
+    assert result == HeadVerification(
+        False, HEAD_ROW_ID, HEAD_HASH, key, "unsigned", None, "org_1"
+    )
 
 
 @pytest.mark.parametrize(
@@ -971,7 +973,7 @@ async def test_malformed_key_argument_raises_value_error(
 def test_head_verification_has_no_anchored_field() -> None:
     names = [field.name for field in dataclasses.fields(HeadVerification)]
 
-    assert names == ["ok", "row_id", "entry_hash", "public_key", "reason", "signed_at"]
+    assert names == ["ok", "row_id", "entry_hash", "public_key", "reason", "signed_at", "org_id"]
 
 
 async def test_public_key_is_the_trusted_key_on_every_outcome(
@@ -1001,7 +1003,7 @@ async def test_signed_head_without_signed_at_verifies_but_is_undated(
 
     result = await check(head_audit, head_line(legacy_head(private_key)), key)
 
-    expected = HeadVerification(False, HEAD_ROW_ID, HEAD_HASH, key, "undated", None)
+    expected = HeadVerification(False, HEAD_ROW_ID, HEAD_HASH, key, "undated", None, "org_1")
     assert result == expected
 
 
@@ -1145,7 +1147,7 @@ async def test_status_key_is_fetched_from_the_status_route_and_anchors_the_check
     result = await check(audit, head_line(signed_head(private_key)), "status")
 
     expected = HeadVerification(
-        True, HEAD_ROW_ID, HEAD_HASH, public_text(private_key), None, SIGNED_AT_VALUE
+        True, HEAD_ROW_ID, HEAD_HASH, public_text(private_key), None, SIGNED_AT_VALUE, "org_1"
     )
     assert result == expected
     assert [r.url.path for r in server.requests] == [STATUS_PATH]

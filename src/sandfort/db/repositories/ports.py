@@ -137,6 +137,10 @@ class SandboxRepository(Protocol):
         """System path only: all non-destroyed sandboxes across orgs."""
         ...
 
+    async def list_for_egress_policy(self, sandbox_ids: Sequence[str]) -> Sequence[Sandbox]:
+        """System path for the internal egress policy route: sandboxes by id across all orgs."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class StandbyClaim:

@@ -94,3 +94,12 @@ class SandboxRow(TimestampMixin, VersionMixin, Base):
     snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Why the sandbox stopped (domain STOP_CAUSES, never "unknown"); NULL when not stopped.
     stop_cause: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 0: no allowlist, or a legacy v1 token. 1 at a v2 create, plus 1 per effective PATCH.
+    egress_policy_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Raised by 1 each time a reset re-mints the token; the token carries it, and a mismatch
+    # revokes the token.
+    egress_credential_epoch: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )

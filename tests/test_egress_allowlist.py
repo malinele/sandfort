@@ -36,7 +36,7 @@ from sandfort.domain.sandbox import (
 )
 from sandfort.drivers.fake import FakeDriver
 from sandfort.egress.env import NO_PROXY_VARIABLES, PROXY_VARIABLES
-from sandfort.egress.tokens import verify_egress_token
+from sandfort.egress.tokens_v2 import EGRESS_V2_PREFIX, verify_egress_token_v2
 from sandfort.errors import InvalidState, Unprocessable
 from sandfort.ids import new_api_key_id, new_org_id
 from sandfort.services.sandboxes import CreateSandboxCommand, SandboxService
@@ -440,9 +440,11 @@ async def test_an_allowlisted_create_gets_the_proxy_environment_with_a_valid_tok
         assert proxy.port == 3128
         assert proxy.username == created.id
         assert proxy.password is not None
-        claims = verify_egress_token(EGRESS_SECRET, unquote(proxy.password), datetime.now(UTC))
+        token = unquote(proxy.password)
+        assert token.startswith(EGRESS_V2_PREFIX)
+        claims = verify_egress_token_v2(EGRESS_SECRET, token, datetime.now(UTC))
         assert claims.sandbox_id == created.id
-        assert claims.allowlist == allowlist
+        assert claims.epoch == 0
     for name in NO_PROXY_VARIABLES:
         assert created.env[name] == "localhost,127.0.0.1"
 

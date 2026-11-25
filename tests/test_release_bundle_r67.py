@@ -43,6 +43,7 @@ EXPECTED_PATHS = {
     "BUNDLE-SHA256SUMS.sig",
     "INSTALL.md",
     "deploy/host-setup.sh",
+    "deploy/egress-dns-sink.sh",
     "deploy/node-setup.sh",
     "deploy/seccomp.json",
     "deploy/selfhost/Dockerfile",
@@ -190,6 +191,7 @@ def test_shipped_files_match_the_checkout_and_keep_exec_bits(bundle: dict[str, P
     tree = bundle["tree"]
     for rel in (
         "deploy/host-setup.sh",
+        "deploy/egress-dns-sink.sh",
         "deploy/node-setup.sh",
         "deploy/seccomp.json",
         "deploy/selfhost/Dockerfile",

@@ -13,6 +13,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from sandfort.domain.egress_entries import cidr_problem, is_cidr_candidate
 from sandfort.domain.node import DEFAULT_NODE_ID
 from sandfort.domain.resources import ResourceSpec
 
@@ -54,6 +55,8 @@ _NUMERIC_LABEL = re.compile(r"[0-9]+|0x[0-9a-f]*")
 # * ``container_exited``: the reconciler found the container exited; the sandbox is
 #   ``stopped`` and can be started again (a successful start clears the code).
 # * ``node_lost``: the node that owns the sandbox is gone (reserved: no path sets it yet).
+# * ``egress_unavailable``: the node that ran the create job has no egress proxy settings, so an
+#   allowlisted sandbox was not created (nothing runs on any network).
 # * ``internal``: anything else.
 ERROR_IMAGE_NOT_FOUND = "image_not_found"
 ERROR_REGISTRY_UNREACHABLE = "registry_unreachable"
@@ -66,6 +69,7 @@ ERROR_RESET_FAILED = "reset_failed"
 ERROR_CONTAINER_MISSING = "container_missing"
 ERROR_CONTAINER_EXITED = "container_exited"
 ERROR_NODE_LOST = "node_lost"
+ERROR_EGRESS_UNAVAILABLE = "egress_unavailable"
 ERROR_INTERNAL = "internal"
 # The codes the SDK's ``ErrorCode`` Literal mirrors one for one (a parity test pins the two).
 ERROR_CODES: tuple[str, ...] = (
@@ -80,6 +84,7 @@ ERROR_CODES: tuple[str, ...] = (
     ERROR_CONTAINER_MISSING,
     ERROR_CONTAINER_EXITED,
     ERROR_NODE_LOST,
+    ERROR_EGRESS_UNAVAILABLE,
     ERROR_INTERNAL,
 )
 # The image pull failures (round 35): a subset of ``ERROR_CODES``, kept for callers that
@@ -169,7 +174,12 @@ class Sandbox(BaseModel):
     standby: bool = False  # a pre-built warm-pool member that no user has claimed yet
     spec_hash: str | None = None  # warm-pool key of the spec this sandbox was built from
     node_id: str = DEFAULT_NODE_ID  # the node whose worker and docker daemon own this sandbox
-    egress_allowlist: tuple[str, ...] | None = None  # fixed at create; None = today's egress
+    # replaced by PATCH while the generation is at least 1; None = today's egress
+    egress_allowlist: tuple[str, ...] | None = None
+    # 0: no allowlist or a legacy v1 token; see r0027
+    egress_policy_generation: int = Field(default=0, ge=0)
+    # raised by 1 per reset; a token carries it
+    egress_credential_epoch: int = Field(default=0, ge=0)
     snapshot: str | None = None  # snapshot id or image reference it was created from
     stop_cause: str | None = None  # one of STOP_CAUSES (never unknown); set with the stop
 
@@ -194,13 +204,17 @@ def check_egress_allowlist(
     network: NetworkPolicy,
     max_entries: int,
     error: Callable[[str], Exception] = ValueError,
+    *,
+    denied: tuple[str, ...] = (),
 ) -> None:
     """Raise ``error(message)`` unless ``entries`` is a valid allowlist; ``None`` always passes.
 
     Every entry is a lowercase ASCII hostname (internationalized names in their IDNA ``xn--``
-    form), optionally prefixed with ``DOMAIN_MARKER``. Nothing is normalized: an entry not
-    already in that form (uppercase, a trailing dot, surrounding space) is refused. An empty
-    tuple is valid (nothing is reachable), so it may be combined with ``block_all``.
+    form), optionally prefixed with ``DOMAIN_MARKER``, or a canonical CIDR range (see
+    ``sandfort.domain.egress_entries``; it must not overlap a ``denied`` network). Nothing is
+    normalized: an entry not already in that form (uppercase, a trailing dot, surrounding
+    space) is refused. An empty tuple is valid (nothing is reachable), so it may be combined
+    with ``block_all``.
     """
     if entries is None:
         return
@@ -209,7 +223,10 @@ def check_egress_allowlist(
     if entries and network.block_all:
         raise error("egress_allowlist contradicts network.block_all; send only one of them")
     for entry in entries:
-        problem = _hostname_problem(entry)
+        if is_cidr_candidate(entry):
+            problem = cidr_problem(entry, denied)
+        else:
+            problem = _hostname_problem(entry)
         if problem is not None:
             raise error(f"egress_allowlist entry {entry!r} {problem}")
 

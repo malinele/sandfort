@@ -19,6 +19,7 @@ tier map decides the ``runtime`` kwarg and the gVisor mode flag.
 """
 
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +30,7 @@ from sandfort.config import (
     DEFAULT_USERNS_HOST_TIERS,
     PROD_ENVIRONMENT,
     Settings,
+    brings_own_network_stack,
     parse_nameservers,
 )
 from sandfort.domain.isolation import DEFAULT_TIER
@@ -65,6 +67,13 @@ CAPS_ADDED = (
 GVISOR_RUNTIME = "runsc"
 USERNS_MODE_HOST = "host"  # per-container opt-out from daemon-wide userns remapping
 GVISOR_TMP_PATH = "/tmp"  # must not be empty when runsc starts (see containers.py)
+SINK_UNSET_WARNING = (
+    "SANDFORT_EGRESS_DNS_SINK_ADDRESS is unset: container-tier sandboxes on the egress network"
+    " can still resolve names through the host's resolvers, which leaks queried names;"
+    " set it to the sink address (docs/egress-v2-design.md 6.2)"
+)
+logger = logging.getLogger(__name__)
+_sink_warned = False  # the warning is once per process, not once per driver
 # What a default ``Settings`` yields, so ``options_from_settings(Settings())`` stays the default.
 DEFAULT_GVISOR_NAMESERVERS = parse_nameservers(DEFAULT_GVISOR_DNS)
 
@@ -103,6 +112,15 @@ def load_seccomp_profile(path: str) -> str:
     return json.dumps(profile, separators=(",", ":"), sort_keys=True)
 
 
+def _warn_if_sink_unset(settings: Settings) -> None:
+    """One startup warning when egress is on (a proxy address is set) but no DNS sink is."""
+    global _sink_warned
+    if _sink_warned or settings.egress_dns_sink_address or not settings.egress_proxy_address:
+        return
+    _sink_warned = True
+    logger.warning(SINK_UNSET_WARNING)
+
+
 def options_from_settings(settings: Settings) -> HardeningOptions:
     """Deployment knobs from settings; dev defaults give exactly ``HardeningOptions()``.
 
@@ -116,6 +134,7 @@ def options_from_settings(settings: Settings) -> HardeningOptions:
     if settings.default_isolation not in tiers:  # from_env rejects this; direct builds may not
         raise ValueError(f"default isolation {settings.default_isolation!r} is not configured")
     runtime = tiers[settings.default_isolation].strip() or None
+    _warn_if_sink_unset(settings)
     path = settings.seccomp_profile_path.strip()
     return HardeningOptions(
         cgroup_parent=settings.cgroup_parent.strip() or None,
@@ -154,6 +173,24 @@ def _security_opt(options: HardeningOptions) -> list[str]:
     return [NO_NEW_PRIVILEGES, f"{SECCOMP_OPT_PREFIX}{options.seccomp_profile}"]
 
 
+def _dns_sink(network_mode: str, runtime: str | None, settings: Settings) -> list[str] | None:
+    """``dns`` for a container that shares the host network stack (Docker's embedded resolver).
+
+    Fail closed: every container on the egress net gets the sink unless its runtime brings its
+    own network stack (runsc or kata, the families ``check_tier_families`` ties to the gvisor
+    and microvm tiers). A runtime name that is not recognised, crun and custom aliases
+    included, gets the sink. gVisor and Kata resolve nothing on the egress net (fail-fast
+    ``resolv.conf``, host chain), and the open net keeps the daemon's resolvers. No sink
+    configured keeps v1 behaviour.
+    """
+    sink = settings.egress_dns_sink_address
+    if not sink or network_mode != EGRESS_NETWORK_NAME:
+        return None
+    if runtime and brings_own_network_stack(runtime):
+        return None
+    return [sink]
+
+
 def _network_mode(spec: SandboxSpec) -> str:
     """No network when blocked (always wins), the egress bridge when allowlisted, else main."""
     if spec.network.block_all:
@@ -168,10 +205,9 @@ def build_host_config(
 ) -> dict[str, Any]:
     """Map a ``SandboxSpec`` onto hardened docker-py create kwargs.
 
-    ``settings`` is accepted so deployment-wide overrides can land here without a
-    signature change; nothing in it relaxes the hardening today.
+    Nothing in ``settings`` relaxes the hardening; its DNS sink address sets ``dns`` for containers
+    on the egress network that share the host network stack.
     """
-    del settings
     chosen = options or HardeningOptions()
     resources = spec.resources
     memory_bytes = resources.memory_mib * BYTES_PER_MIB
@@ -201,6 +237,9 @@ def build_host_config(
     runtime, _ = _runtime_for(spec, chosen)
     if runtime is not None:
         kwargs["runtime"] = runtime
+    dns = _dns_sink(kwargs["network_mode"], runtime, settings)
+    if dns is not None:
+        kwargs["dns"] = dns
     if (spec.isolation or chosen.default_tier) in chosen.userns_host_tiers:
         kwargs["userns_mode"] = USERNS_MODE_HOST
     if chosen.enforce_disk_quota:

@@ -37,6 +37,7 @@ describe("verifyExport against an export written by the server", () => {
         previousRows: null,
         newRows: null,
         rowId: "evt_2",
+        orgId: "org_1",
       });
     }
   });
@@ -308,5 +309,105 @@ describe("verifyExport with previous", () => {
     const result = await verifyExport(text(lines, trailer), signer.publicKey, { previous: "" });
 
     expect(result).toMatchObject({ ok: true, previousRows: 0, newRows: 2 });
+  });
+});
+
+describe("verifyExport org binding", () => {
+  /** A genuinely signed, content-bound export of `org`. */
+  function exportOf(org: string, fields: Record<string, unknown> = {}) {
+    const signer = newSigner();
+    const lines: string[] = [];
+    let prev: string | null = null;
+    for (let n = 1; n <= 3; n += 1) {
+      const made = row(n, prev, { org_id: org });
+      lines.push(made.line);
+      prev = made.hash;
+    }
+    return { signer, lines, trailer: head(lines, signer, { org_id: org, ...fields }) };
+  }
+
+  it("exposes the head's org_id, on the golden export too", async () => {
+    const { signer, lines, trailer } = exportOf(ORG);
+
+    expect((await verifyExport(text(lines, trailer), signer.publicKey)).orgId).toBe(ORG);
+    expect((await verifyExport(goldenBody, GOLDEN.publicKey)).orgId).toBe("org_1");
+  });
+
+  it("accepts the expected org", async () => {
+    const { signer, lines, trailer } = exportOf(ORG);
+
+    const result = await verifyExport(text(lines, trailer), signer.publicKey, { expectedOrgId: ORG });
+
+    expect(result).toMatchObject({ ok: true, reason: null, orgId: ORG });
+  });
+
+  it("refuses a genuine export of org_b presented as org_a, without file checks", async () => {
+    const { signer, lines, trailer } = exportOf("org_b");
+
+    const result = await verifyExport(text(lines, trailer), signer.publicKey, { expectedOrgId: "org_a" });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("expected_org_mismatch");
+    expect(result.orgId).toBe("org_b");
+    expect(result.badLine).toBeNull();
+  });
+
+  it("the head's reason wins over file problems when the expected org is wrong", async () => {
+    const { signer, lines, trailer } = exportOf("org_b");
+
+    const result = await verifyExport(text(lines.slice(1), trailer), signer.publicKey, { expectedOrgId: "org_a" });
+
+    expect(result.reason).toBe("expected_org_mismatch");
+  });
+
+  it("a head without org_id fails closed with an expected org", async () => {
+    const { signer, lines, trailer } = exportOf(ORG, { org_id: undefined });
+
+    const plain = await verifyExport(text(lines, trailer), signer.publicKey);
+    const expected = await verifyExport(text(lines, trailer), signer.publicKey, { expectedOrgId: ORG });
+
+    expect(plain.orgId).toBeNull();
+    expect(expected).toMatchObject({ ok: false, reason: "expected_org_mismatch", orgId: null });
+  });
+
+  it("throws ValidationError for an empty expectedOrgId", async () => {
+    const { signer, lines, trailer } = exportOf(ORG);
+
+    await expect(verifyExport(text(lines, trailer), signer.publicKey, { expectedOrgId: "" })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
+  it("an unsigned head keeps reason unsigned with an expected org", async () => {
+    const signer = newSigner();
+    const { lines } = chain(3);
+    const trailer = head(lines, signer, { org_id: "org_b" }, { sign: false });
+
+    const result = await verifyExport(text(lines, trailer), signer.publicKey, { expectedOrgId: "org_a" });
+
+    expect(result).toMatchObject({ ok: false, reason: "unsigned", orgId: "org_b" });
+  });
+
+  it("an export without a trailer has no org id", async () => {
+    const signer = newSigner();
+
+    const result = await verifyExport(chain(2).lines.join(""), signer.publicKey);
+
+    expect(result).toMatchObject({ ok: false, reason: "no_trailer", orgId: null });
+  });
+
+  it("the row-level org_mismatch reason is unchanged, with and without a matching expected org", async () => {
+    const signer = newSigner();
+    const first = row(1, null);
+    const second = row(2, first.hash, { org_id: "org_x" });
+    const third = row(3, second.hash);
+    const lines = [first.line, second.line, third.line];
+    const trailer = head(lines, signer);
+
+    for (const options of [{}, { expectedOrgId: ORG }]) {
+      const result = await verifyExport(text(lines, trailer), signer.publicKey, options);
+
+      expect(result).toMatchObject({ ok: false, reason: "org_mismatch", badLine: 2, orgId: ORG });
+    }
   });
 });

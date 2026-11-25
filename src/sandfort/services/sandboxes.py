@@ -52,7 +52,6 @@ from sandfort.domain.sandbox import (
     Sandbox,
     SandboxState,
     check_egress_allowlist,
-    egress_spec_labels,
     take_egress_allowlist,
 )
 from sandfort.domain.snapshot import SnapshotState
@@ -88,6 +87,12 @@ from sandfort.services.admission import (
     audit_key_cap_refusal,
 )
 from sandfort.services.audit import AuditRecorder
+from sandfort.services.egress_provision import needs_egress_stack, without_proxy_variables
+from sandfort.services.egress_update import (
+    NETWORK_POLICY_MESSAGE,
+    EgressUpdate,
+    plan_egress_update,
+)
 from sandfort.services.events import EventPublisher, OutboxEventPublisher, with_sandbox_events
 from sandfort.services.image_policy import check_user_image_reference
 from sandfort.services.label_scope import (
@@ -131,7 +136,6 @@ from sandfort.workers.jobs import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_IMAGE = "python:3.12-slim"
-NETWORK_POLICY_MESSAGE = "network egress is disabled by operator policy"
 MAX_WAIT_S = 60.0
 POLL_INTERVAL_S = 0.1
 MIN_AUTO_MINUTES = -1  # -1 disables the timer
@@ -281,7 +285,6 @@ class MountingLifecycle(Lifecycle):
     @staticmethod
     def spec(sandbox: Sandbox) -> SandboxSpec:
         base = Lifecycle.spec(sandbox)
-        base = dataclasses.replace(base, labels={**base.labels, **egress_spec_labels(sandbox)})
         mounts = decode_mounts(sandbox.labels)
         if not mounts:
             return base
@@ -501,7 +504,7 @@ class SandboxService:
             if scope is not None and cap is not None:
                 await self._require_under_key_cap(uow, org_id, scope, cap)
             await uow.sandboxes.add(sandbox)
-            node_id = await self._place(uow)
+            node_id = await self._place(uow, command)
             await stamp_sandbox(uow, sandbox.id, node_id)
             if self._quota is not None:  # checked and recorded with the intent, before any driver
                 await self._quota.reserve(uow, org_id, sandbox.id, command.resources)
@@ -598,6 +601,7 @@ class SandboxService:
         auto_stop_minutes: int | None = None,
         auto_delete_minutes: int | None = None,
         public: bool | None = None,
+        egress_allowlist: tuple[str, ...] | None = None,
     ) -> Sandbox:
         self._validate_minutes(auto_stop_minutes, auto_delete_minutes)
         self._validate_labels(labels)
@@ -616,6 +620,13 @@ class SandboxService:
                     f"sandbox is {current.state.value}", details={"state": current.state.value}
                 )
             note = AuditNote(actor_id, "sandbox.update", dict(changes))
+            # the egress change, when the request carries an effective one
+            plan: EgressUpdate | None = None
+            if egress_allowlist is not None:  # None: the field was absent
+                plan = plan_egress_update(current, egress_allowlist, actor_id, self._settings)
+            if plan is not None:
+                changes["egress_allowlist"] = plan.allowlist
+                changes["egress_policy_generation"] = plan.generation
             if labels is not None:  # replacing user labels keeps the platform's reserved ones
                 reserved = {k: v for k, v in current.labels.items() if is_reserved_label(k)}
                 changes["labels"] = {**changes["labels"], **reserved}
@@ -623,7 +634,10 @@ class SandboxService:
             saved = await uow.sandboxes.update(
                 org_id, current.model_copy(update=changes), expected_version=current.version
             )
-            await self._core.record(uow, org_id, sandbox_id, note)
+            if plan is None or note.details:  # an egress-only change has no update row
+                await self._core.record(uow, org_id, sandbox_id, note)
+            if plan is not None:
+                await self._core.record(uow, org_id, sandbox_id, plan.note)
             await uow.commit()
         return saved
 
@@ -950,10 +964,18 @@ class SandboxService:
     async def _load(self, org_id: str, sandbox_id: str) -> Sandbox:
         return await self._core.load(org_id, sandbox_id)
 
-    async def _place(self, uow: UnitOfWorkPort) -> str:
-        """Jobs run on any node; an inline create drives this process's own daemon."""
+    async def _place(self, uow: UnitOfWorkPort, command: CreateSandboxCommand) -> str:
+        """Jobs run on any node; an inline create drives this process's own daemon.
+
+        An allowlisted create in jobs mode only lands on a node that reported ``egress_ready``
+        (409 when none did); the node that runs the job mints the token (design 7.2, 7.3). An
+        empty allowlist forces ``block_all`` before placement and needs no egress node.
+        """
         local = self._settings.node_id
-        return await pick_node(uow, self._clock, local) if self._use_jobs else local
+        if not self._use_jobs:
+            return local
+        needs_egress = needs_egress_stack(command.egress_allowlist, command.network.block_all)
+        return await pick_node(uow, self._clock, local, require_egress=needs_egress)
 
     async def _enqueue(self, uow: UnitOfWorkPort, job: SandboxJob, node_id: str) -> None:
         queued = await enqueue_job(uow, self._clock, job.org_id, job.kind, job.payload())
@@ -1083,6 +1105,7 @@ class SandboxService:
             standby=command.standby,
             spec_hash=command.spec_hash,
             egress_allowlist=command.egress_allowlist,
+            egress_policy_generation=0 if command.egress_allowlist is None else 1,
             snapshot=command.snapshot,
         )
 
@@ -1125,32 +1148,35 @@ class SandboxService:
                 "volume mounts are not supported when sandboxes are created by jobs"
             )
         limit = self._settings.egress_allowlist_max_entries
-        check_egress_allowlist(command.egress_allowlist, command.network, limit, Unprocessable)
+        check_egress_allowlist(
+            command.egress_allowlist,
+            command.network,
+            limit,
+            Unprocessable,
+            denied=self._settings.egress_denied_cidrs,
+        )
         configured = self._settings.egress_proxy_address and self._settings.egress_secret
         if command.egress_allowlist and not configured:
             raise InvalidState("egress proxy address and secret are not configured")
-        if command.egress_allowlist and self._use_jobs:
-            # The job handlers build their driver spec without the egress marker: refuse
-            # rather than create a sandbox on the open network.
-            raise Unprocessable(
-                "egress_allowlist is not supported when sandboxes are created by jobs"
-            )
 
     def _sandbox_env(
         self, sandbox_id: str, command: CreateSandboxCommand, now: datetime
     ) -> dict[str, str]:
         env = dict(command.env)
+        if command.egress_allowlist and self._use_jobs:
+            # The node that runs the create job mints (``egress_provision``); a user variable
+            # must not pass for a minted one there.
+            return without_proxy_variables(env)
         if command.egress_allowlist:
             address, secret = self._settings.egress_proxy_address, self._settings.egress_secret
-            allowlist = command.egress_allowlist
             proxy_env = compose_proxy_env(
                 address,
                 secret,
                 sandbox_id,
-                allowlist,
                 now,
                 ttl_s=self._settings.egress_token_ttl_s,
                 auto_delete_minutes=command.auto_delete_minutes,
+                epoch=0,
             )
             env.update(proxy_env)
         return env

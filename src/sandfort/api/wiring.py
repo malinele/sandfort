@@ -1,5 +1,6 @@
 """Builds the object graph (engine, driver, services, auth) and attaches it to ``app.state``."""
 
+import os
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Annotated, Any, cast
 
@@ -35,6 +36,7 @@ from sandfort.domain.sandbox import Sandbox
 from sandfort.drivers.base import SandboxDriver
 from sandfort.drivers.docker.events import ContainerExitWatcher
 from sandfort.drivers.registry import ALL_CAPABILITIES, resolve_driver
+from sandfort.egress.proxy_limits import ENV_POLICY_URL
 from sandfort.errors import InternalError, ValidationFailed
 from sandfort.observability.metrics import with_delivery_metrics
 from sandfort.observability.tracing import (
@@ -144,6 +146,15 @@ class WatchedReconciler(Reconciler):
 
     def _on_container_exit(self, event: Mapping[str, Any]) -> None:
         self.kick_with_rechecks()
+
+
+def node_egress_ready(settings: Settings, environ: Mapping[str, str]) -> bool:
+    """True when this node has a proxy address, a secret and a policy URL; its heartbeat says so.
+
+    The policy URL is read from the same variable the proxy process uses (``environ``).
+    """
+    policy_url = environ.get(ENV_POLICY_URL, "").strip()
+    return bool(settings.egress_proxy_address and settings.egress_secret and policy_url)
 
 
 def docker_client_of(driver: object) -> Any | None:
@@ -488,6 +499,7 @@ def install_services(app: FastAPI, settings: Settings) -> AsyncEngine:
         max_sandboxes=settings.node_max_sandboxes,
         interval_s=settings.node_heartbeat_interval_s,
         internal_url=settings.node_internal_url,
+        egress_ready=node_egress_ready(settings, os.environ),
     )
     auth = AuthContext(
         pepper=settings.api_key_pepper,

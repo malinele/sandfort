@@ -38,6 +38,8 @@ REASON_SIGNATURE = "signature"
 REASON_KEY_MISMATCH = "key_mismatch"
 REASON_UNDATED = "undated"
 REASON_FUTURE = "future_signed_at"
+REASON_EXPECTED_ORG_MISMATCH = "expected_org_mismatch"
+EXPECTED_ORG_EMPTY = "expected_org_id must be a non-empty text"
 BINDING_FIELDS = ("row_count", "first_row_id", "export_sha256")
 SHA256_HEX_CHARS = 64
 STANDARD_TO_URLSAFE = str.maketrans("+/", "-_")
@@ -62,7 +64,10 @@ class HeadVerification:
     ``signed_at``: absent, without a UTC offset or before 1970-01-02) or ``"future_signed_at"``
     (``signed_at`` is more than 5 minutes ahead of this machine's clock). ``signed_at`` is the
     head's timestamp: RFC 3339 with a UTC offset, covered by the signature. It is always set
-    when ``ok`` is true, and ``None`` when the head carries no valid one.
+    when ``ok`` is true, and ``None`` when the head carries no valid one. ``org_id`` is the
+    head's ``org_id`` when it is a non-empty text, else ``None``; like ``row_id`` it is what the
+    head claims, whether or not the signature holds, so trust it only when ``ok`` is true. Pass
+    ``expected_org_id`` to :func:`verify_head` to have a head of another org refused.
 
     Removed in this release: the ``anchored`` field. The trusted key always comes from the caller
     or the status route (``public_key`` is required), so the field was always true and carried no
@@ -76,6 +81,7 @@ class HeadVerification:
     public_key: str
     reason: str | None
     signed_at: datetime | None = None
+    org_id: str | None = None
 
 
 def _b64decode(text: str) -> bytes:
@@ -233,7 +239,18 @@ def _names_other_key(record: Mapping[str, Any], trusted: str) -> bool:
         return True
 
 
-def verify_head(head_line: str | Mapping[str, Any], public_key: str | bytes) -> HeadVerification:
+def _head_org(record: Mapping[str, Any]) -> str | None:
+    """The head's ``org_id`` when it is a non-empty text, else ``None``."""
+    value = record.get("org_id")
+    return value if isinstance(value, str) and value else None
+
+
+def verify_head(
+    head_line: str | Mapping[str, Any],
+    public_key: str | bytes,
+    *,
+    expected_org_id: str | None = None,
+) -> HeadVerification:
     """Check the Ed25519 signature of a head against ``public_key``, the trust anchor.
 
     ``public_key`` is required (urlsafe base64 text or the 32 raw bytes) and must come from the
@@ -249,15 +266,25 @@ def verify_head(head_line: str | Mapping[str, Any], public_key: str | bytes) -> 
     from beta.60 to beta.64 carry no ``signed_at`` and fall in that class, as does a
     ``signed_at`` before 1970-01-02. A ``signed_at`` more than 5 minutes ahead of the local clock
     gives reason ``"future_signed_at"``: a head cannot be dated in the future.
+
+    With ``expected_org_id`` the signed head must name that org: another ``org_id``, or none
+    (or a non-text one), gives ``ok=False`` with reason ``"expected_org_mismatch"``, so a
+    genuinely signed head of org B is not accepted as org A's. It is checked after the signature
+    (an unsigned or tampered head keeps its own reason) and before ``signed_at``. An empty
+    ``expected_org_id`` raises ``ValueError``. Not to be confused with ``"org_mismatch"`` of
+    :func:`~sandfort_sdk.audit_export.verify_export`, where a row's org differs from the head's.
     """
+    if expected_org_id is not None and not expected_org_id:
+        raise ValueError(EXPECTED_ORG_EMPTY)
     record = parse_head(head_line)
     trusted = trusted_key_text(public_key)
     signed_at = _signed_at(record)
 
     row_id, entry_hash = record["row_id"], record["hash"]
+    org_id = _head_org(record)
 
     def outcome(ok: bool, reason: str | None) -> HeadVerification:
-        return HeadVerification(ok, row_id, entry_hash, trusted, reason, signed_at)
+        return HeadVerification(ok, row_id, entry_hash, trusted, reason, signed_at, org_id)
 
     signature, alg = record.get("signature"), record.get("alg")
     if _absent(signature) or _absent(alg):
@@ -268,6 +295,8 @@ def verify_head(head_line: str | Mapping[str, Any], public_key: str | bytes) -> 
         return outcome(False, REASON_KEY_MISMATCH)
     if not _signature_holds(trusted, record, signature):
         return outcome(False, REASON_SIGNATURE)
+    if expected_org_id is not None and org_id != expected_org_id:
+        return outcome(False, REASON_EXPECTED_ORG_MISMATCH)
     if signed_at is None:
         return outcome(False, REASON_UNDATED)
     if signed_at > datetime.now(UTC) + MAX_FUTURE_SKEW:

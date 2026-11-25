@@ -94,6 +94,8 @@ def _to_entity(row: SandboxRow) -> Sandbox:
         egress_allowlist=None if row.egress_allowlist is None else tuple(row.egress_allowlist),
         snapshot=row.snapshot,
         stop_cause=row.stop_cause,
+        egress_policy_generation=row.egress_policy_generation,
+        egress_credential_epoch=row.egress_credential_epoch,
     )
 
 
@@ -145,6 +147,11 @@ def _mutable_values(sandbox: Sandbox) -> dict[str, Any]:
         "deleted_at": opt_utc(sandbox.deleted_at),
         "standby": sandbox.standby,
         "spec_hash": sandbox.spec_hash,
+        "egress_allowlist": (
+            None if sandbox.egress_allowlist is None else list(sandbox.egress_allowlist)
+        ),
+        "egress_policy_generation": sandbox.egress_policy_generation,
+        "egress_credential_epoch": sandbox.egress_credential_epoch,
     }
 
 
@@ -153,7 +160,6 @@ class SqlSandboxRepository:
         self._session = session
 
     async def add(self, sandbox: Sandbox) -> None:
-        allowlist = sandbox.egress_allowlist
         self._session.add(
             SandboxRow(
                 id=sandbox.id,
@@ -161,9 +167,7 @@ class SqlSandboxRepository:
                 created_at=as_utc(sandbox.created_at),
                 updated_at=as_utc(sandbox.updated_at),
                 version=sandbox.version,
-                # Fixed at create like identity: ``update`` never rewrites a sandbox's egress.
-                egress_allowlist=None if allowlist is None else list(allowlist),
-                snapshot=sandbox.snapshot,  # fixed at create, like the allowlist
+                snapshot=sandbox.snapshot,  # fixed at create
                 **_mutable_values(sandbox),
             )
         )
@@ -324,6 +328,16 @@ class SqlSandboxRepository:
             select(SandboxRow)
             .where(SandboxRow.state != SandboxState.DESTROYED.value)
             .order_by(SandboxRow.id)
+            .execution_options(populate_existing=True)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_to_entity(row) for row in rows]
+
+    async def list_for_egress_policy(self, sandbox_ids: Sequence[str]) -> Sequence[Sandbox]:
+        """System path for the internal policy route: sandboxes by id across all orgs."""
+        stmt = (
+            select(SandboxRow)
+            .where(SandboxRow.id.in_(list(sandbox_ids)))
             .execution_options(populate_existing=True)
         )
         rows = (await self._session.execute(stmt)).scalars().all()

@@ -71,9 +71,14 @@ def age_text(moment: datetime | None) -> str:
     return f"{seconds}s"
 
 
-def proof_line(result: HeadVerification) -> str:
-    """One line on success: what the check proved (with the age of ``signed_at``) and what not."""
+def proof_line(result: HeadVerification, expected_org: str | None = None) -> str:
+    """One line on success: what the check proved (with the age of ``signed_at``) and what not.
+
+    With ``expected_org`` the line also says that the signed head names that org.
+    """
     signed = f"the Ed25519 signature (signed {age_text(result.signed_at)} ago)"
+    if expected_org is not None:
+        signed += f" and the signed head's org ({result.org_id})"
     if not isinstance(result, ExportVerification):
         return f"verified: {signed} only (--head-only); {NOT_PROVEN}"
     parts = [signed]

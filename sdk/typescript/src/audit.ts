@@ -13,10 +13,12 @@ import {
 import {
   NO_STATUS_KEY,
   STATUS_KEY,
+  checkExpectedOrg,
   parseHead,
   verifyHead,
   type HeadRecord,
   type HeadVerification,
+  type VerifyHeadOptions,
 } from "./audit-head.js";
 import { scanExport } from "./audit-scan.js";
 import {
@@ -173,16 +175,18 @@ export class Audit {
    * Check the Ed25519 signature of an export's `audit_head` trailer line (see `verifyHead`).
    * `publicKey` is the trust anchor, or `"status"` to read it from `GET /v1/status` (one request,
    * made only for that value, and only after the line parsed). Throws `ValidationError` when the
-   * server publishes no key.
+   * server publishes no key. `expectedOrgId` makes a signed head of another org fail with
+   * `"expected_org_mismatch"`; an empty one throws `ValidationError` before any request.
    */
   async verifyHead(
     headLine: string | HeadRecord,
     publicKey: TrustedKey,
-    call: CallOptions = {},
+    options: VerifyHeadOptions & CallOptions = {},
   ): Promise<HeadVerification> {
-    if (publicKey !== STATUS_KEY) return verifyHead(headLine, publicKey);
+    if (publicKey !== STATUS_KEY) return verifyHead(headLine, publicKey, options);
     parseHead(headLine); // a bad line fails before any request
-    return verifyHead(headLine, await this.#statusKey(call));
+    checkExpectedOrg(options.expectedOrgId); // before the status request
+    return verifyHead(headLine, await this.#statusKey(options), options);
   }
 
   /**
@@ -195,9 +199,10 @@ export class Audit {
     publicKey: TrustedKey,
     options: VerifyExportOptions & CallOptions = {},
   ): Promise<ExportVerification> {
+    checkExpectedOrg(options.expectedOrgId);
     const scan = await scanExport(lines, options.previous ?? null);
     const key = publicKey === STATUS_KEY ? await this.#statusKey(options) : publicKey;
-    return exportResult(scan, key, options.allowUnchained ?? false);
+    return exportResult(scan, key, options.allowUnchained ?? false, options.expectedOrgId);
   }
 
   async #statusKey(call: CallOptions): Promise<string> {

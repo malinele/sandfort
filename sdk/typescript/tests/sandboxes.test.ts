@@ -115,7 +115,9 @@ describe("createSandbox", () => {
       autoStopMinutes: 30,
       autoDeleteMinutes: 60,
       errorReason: null,
+      errorCode: null,
       jobId: "job_1",
+      egressPolicyGeneration: 0,
     });
   });
 

@@ -35,7 +35,8 @@ from sandfort.config import Settings
 from sandfort.db.repositories.ports import SortOrder
 from sandfort.domain.org import Scope
 from sandfort.domain.sandbox import SandboxState
-from sandfort.errors import NotFound
+from sandfort.errors import NotFound, Unprocessable
+from sandfort.services.egress_update import NULL_REFUSED_MESSAGE
 from sandfort.services.sandboxes import CreateSandboxCommand, SandboxService
 from sandfort.services.volumes import MountRequest, mount_scopes
 
@@ -300,6 +301,9 @@ async def update_sandbox(
     service: Service,
     settings: Config,
 ) -> Envelope[SandboxResponse]:
+    egress = None if body.egress_allowlist is None else tuple(body.egress_allowlist)
+    if "egress_allowlist" in body.model_fields_set and egress is None:
+        raise Unprocessable(NULL_REFUSED_MESSAGE)
     sandbox = await service.update(
         principal.org_id,
         principal.key_id,
@@ -308,6 +312,7 @@ async def update_sandbox(
         auto_stop_minutes=body.auto_stop_minutes,
         auto_delete_minutes=body.auto_delete_minutes,
         public=body.public,
+        egress_allowlist=egress,
     )
     return ok(sandbox_response(sandbox, settings.default_isolation))
 

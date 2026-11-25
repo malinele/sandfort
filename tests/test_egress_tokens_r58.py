@@ -28,6 +28,7 @@ from sandfort.egress.tokens import (
     token_lifetime_s,
     verify_egress_token,
 )
+from sandfort.egress.tokens_v2 import verify_egress_token_v2
 from sandfort.services.sandbox_jobs import EgressReminting, Lifecycle
 
 SECRET = "test-egress-secret-r58-tokens"
@@ -50,7 +51,7 @@ def _mint(now: datetime, ttl_s: int, sandbox_id: str = SANDBOX) -> str:
 
 
 def _lifetime(token: str, now: datetime) -> timedelta:
-    claims = verify_egress_token(SECRET, token, now)
+    claims = verify_egress_token_v2(SECRET, token, now)
     return claims.expires_at - claims.issued_at
 
 
@@ -61,7 +62,7 @@ def _token_of(env: dict[str, str]) -> str:
 
 
 def _proxy_env(now: datetime, ttl_s: int) -> dict[str, str]:
-    return compose_proxy_env(ADDRESS, SECRET, SANDBOX, [ALLOWED], now, ttl_s=ttl_s)
+    return compose_proxy_env(ADDRESS, SECRET, SANDBOX, now, epoch=0, ttl_s=ttl_s)
 
 
 # ---- 1. legacy tokens and the cut-over ------------------------------------------------------
@@ -171,7 +172,7 @@ def test_composer_mints_for_the_auto_delete_horizon() -> None:
     now = datetime(2026, 11, 12, tzinfo=UTC)
 
     env = compose_proxy_env(
-        ADDRESS, SECRET, SANDBOX, [ALLOWED], now, ttl_s=WEEK_S, auto_delete_minutes=120
+        ADDRESS, SECRET, SANDBOX, now, epoch=0, ttl_s=WEEK_S, auto_delete_minutes=120
     )
 
     assert _lifetime(_token_of(env), now) == timedelta(hours=2, days=1)
@@ -289,7 +290,7 @@ async def test_reset_remints_the_token_and_rewrites_the_env() -> None:
     assert env["KEEP"] == "1"
     assert _token_of(env) != _token_of(old_env)
     assert _lifetime(_token_of(env), now) == timedelta(hours=1, days=1)
-    verify_egress_token(SECRET, _token_of(env), now, WEEK_S, legacy_before=LEGACY_TOKEN_CUTOVER)
+    verify_egress_token_v2(SECRET, _token_of(env), now, WEEK_S)
     assert env["no_proxy"] == old_env["no_proxy"]
 
 

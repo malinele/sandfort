@@ -10,6 +10,8 @@ The canary first checks that ``nc`` and ``timeout`` exist and prints ``READY``, 
 to a listener it started on loopback and prints ``LOOPBACK OK`` (positive controls): a missing
 marker or a non-zero exit means the probe could not run, never a pass.
 Any failure of the probe, whatever its type, is a "could not run" finding (fail closed).
+With a DNS sink configured, one more canary on the allowlist network mirrors a runc sandbox
+and must not resolve a public name (``egress_probe_dns``; design 6.2).
 
 The canary uses the configured probe image and the daemon's default runtime, carries no
 sandbox labels (only ``CANARY_LABEL``) and is removed afterwards; canaries an interrupted
@@ -26,6 +28,13 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from sandfort.drivers.docker.client import clean_message, docker_errors, run_blocking
+from sandfort.drivers.docker.egress_probe_dns import (
+    DNS_CANARY_SCRIPT,
+    DNS_FINDING,
+    DnsCanaryError,
+    dns_check_enabled,
+    parse_dns_canary,
+)
 from sandfort.drivers.docker.networks import EGRESS_NETWORK_NAME, NETWORK_NAME, ensure_network
 
 logger = logging.getLogger(__name__)
@@ -101,15 +110,21 @@ class NetworkFinding:
 @dataclass(frozen=True, slots=True)
 class EgressProbeReport:
     networks: tuple[NetworkFinding, ...]
+    dns_resolved: bool = False  # the runc DNS canary got an answer (only checked with a sink)
 
     def findings(self) -> list[str]:
-        """One line per network that had a reachable target; empty when all were refused."""
-        return [
+        """One line per network with a reachable target, and one if DNS resolved; else empty."""
+        lines = [
             f"{PROBE_FINDING_PREFIX}: network {found.network} reached"
             f" {', '.join(found.reachable)} (expected refused or unreachable)"
             for found in self.networks
             if found.reachable
         ]
+        if self.dns_resolved:
+            lines.append(
+                DNS_FINDING.format(prefix=PROBE_FINDING_PREFIX, network=EGRESS_NETWORK_NAME)
+            )
+        return lines
 
 
 def describe(exc: BaseException) -> str:
@@ -145,7 +160,19 @@ async def probe_networks(runner: CanaryRunner, image: str) -> EgressProbeReport:
     except Exception as exc:
         raise EgressProbeError(f"stale canaries: {describe(exc)}") from exc
     results = [await _probe_one(runner, network, image) for network in PROBED_NETWORKS]
-    return EgressProbeReport(tuple(results))
+    return EgressProbeReport(tuple(results), await _dns_resolved(runner, image))
+
+
+async def _dns_resolved(runner: object, image: str) -> bool:
+    """Whether the runc DNS canary resolved a public name; False when there is no sink."""
+    if not dns_check_enabled(runner):
+        return False
+    try:
+        return await runner.resolves(EGRESS_NETWORK_NAME, image)
+    except EgressProbeError:
+        raise
+    except Exception as exc:  # a fake client or a docker-py surprise: still fail closed
+        raise EgressProbeError(f"dns canary: {describe(exc)}") from exc
 
 
 async def probe_findings(runner: CanaryRunner, image: str) -> list[str]:
@@ -232,8 +259,9 @@ def _is_stale(container: Any, now: float) -> bool:
 class DockerCanaryRunner:
     """Runs the canary through a docker-py client."""
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, dns_sink: str = "") -> None:
         self._client = client
+        self.dns_sink = dns_sink  # "" = no sink configured: the DNS canary is skipped
 
     async def prune(self) -> None:
         try:
@@ -268,14 +296,17 @@ class DockerCanaryRunner:
             logger.info("pulling the egress probe image %s", image)
             await run_blocking(self._client.images.pull, image)
 
-    async def _run(self, network: str, image: str, targets: Sequence[str]) -> frozenset[str]:
+    async def _run(
+        self, network: str, image: str, script: str, args: Sequence[str], **create: Any
+    ) -> tuple[str, int]:
+        """Run one canary container; its stdout and exit status. ``create`` adds create kwargs."""
         container: Any = None
         try:
             await self._ensure_image(image)
             container = await run_blocking(
                 self._client.containers.create,
                 image,
-                ["sh", "-c", CANARY_SCRIPT, "canary", *targets],
+                ["sh", "-c", script, "canary", *args],
                 network=network,
                 labels={
                     CANARY_LABEL: CANARY_LABEL_VALUE,
@@ -285,6 +316,7 @@ class DockerCanaryRunner:
                 security_opt=["no-new-privileges"],
                 mem_limit=CANARY_MEMORY,
                 pids_limit=CANARY_PIDS_LIMIT,
+                **create,
             )
             await run_blocking(container.start)
             status = _exit_status(await run_blocking(container.wait, timeout=CANARY_DEADLINE_S))
@@ -293,15 +325,28 @@ class DockerCanaryRunner:
         finally:
             if container is not None:
                 await self._remove(container)
-        return parse_canary(output, status, targets)
+        return output, status
 
     async def reachable(self, network: str, image: str, targets: Sequence[str]) -> frozenset[str]:
         try:
-            return await self._run(network, image, targets)
+            output, status = await self._run(network, image, CANARY_SCRIPT, targets)
+            return parse_canary(output, status, targets)
         except EgressProbeError as exc:
             raise EgressProbeError(f"canary on {network}: {exc}") from exc
         except Exception as exc:
             raise EgressProbeError(f"canary on {network}: {describe(exc)}") from exc
+
+    async def resolves(self, network: str, image: str) -> bool:
+        """Does a runc canary on ``network``, resolving through the sink, get a public answer?"""
+        try:
+            output, status = await self._run(
+                network, image, DNS_CANARY_SCRIPT, (), dns=[self.dns_sink]
+            )
+            return parse_dns_canary(output, status)
+        except DnsCanaryError as exc:
+            raise EgressProbeError(f"dns canary on {network}: {exc}") from exc
+        except Exception as exc:
+            raise EgressProbeError(f"dns canary on {network}: {describe(exc)}") from exc
 
     @staticmethod
     async def _remove(container: Any) -> None:
@@ -314,4 +359,7 @@ class DockerCanaryRunner:
 def canary_runner_for(driver: object) -> CanaryRunner | None:
     """A runner over the docker driver's client; ``None`` for a driver without one."""
     client = getattr(driver, "_client", None)
-    return None if client is None else DockerCanaryRunner(client)
+    if client is None:
+        return None
+    settings = getattr(driver, "_settings", None)
+    return DockerCanaryRunner(client, getattr(settings, "egress_dns_sink_address", ""))

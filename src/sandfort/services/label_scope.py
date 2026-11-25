@@ -254,6 +254,9 @@ class LabelScopedSandboxRepository:
     async def list_for_reconciler(self) -> Sequence[Sandbox]:
         return await self._inner.list_for_reconciler()
 
+    async def list_for_egress_policy(self, sandbox_ids: Sequence[str]) -> Sequence[Sandbox]:
+        return await self._inner.list_for_egress_policy(sandbox_ids)
+
     async def count_in_scope(self, org_id: str, labels: Mapping[str, str]) -> int:
         """The cap count: the caller passes the scope itself, so it is delegated unchanged."""
         return await count_through(self._inner, org_id, labels)

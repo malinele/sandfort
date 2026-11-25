@@ -10,8 +10,9 @@
 # dist/<tag>-bundle. Output: sandfort-selfhost-<tag>.tar.gz (one top directory of the same
 # name) and a copy of its BUNDLE-SHA256SUMS and BUNDLE-SHA256SUMS.sig beside it.
 #
-# The bundle holds the wheels and their signature files, deploy/host-setup.sh,
-# deploy/node-setup.sh, deploy/seccomp.json, deploy/selfhost/{Dockerfile,compose.yml,
+# The bundle holds the wheels and their signature files, deploy/host-setup.sh (with its
+# sourced sibling deploy/egress-dns-sink.sh), deploy/node-setup.sh, deploy/seccomp.json,
+# deploy/selfhost/{Dockerfile,compose.yml,
 # sandfort.env.example}, INSTALL.md, and RELEASE.txt. BUNDLE-SHA256SUMS covers every other
 # file and is signed with the same key and namespace as the wheels, so a partner checks one
 # signature for the whole bundle. See docs/release.md.
@@ -52,6 +53,7 @@ WHEELS_DIR="$(cd "$WHEELS_DIR" && pwd)"
 # Files that ship from this checkout, as published path -> source path.
 DEPLOY_FILES=(
     deploy/host-setup.sh
+    deploy/egress-dns-sink.sh
     deploy/node-setup.sh
     deploy/seccomp.json
     deploy/selfhost/Dockerfile

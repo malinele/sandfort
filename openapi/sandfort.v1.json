@@ -1710,7 +1710,7 @@
                 "type": "null"
               }
             ],
-            "description": "Host names the sandbox may reach through the egress proxy. An empty list means no network at all (block-all). Omitting the field keeps the operator default.",
+            "description": "Host names, leading-dot domains or CIDR ranges the sandbox may reach through the egress proxy. An empty list means no network at all (block-all). Omitting the field keeps the operator default.",
             "title": "Egress Allowlist"
           },
           "env": {
@@ -6335,8 +6335,20 @@
                 "type": "null"
               }
             ],
-            "description": "Host names the sandbox may reach through the egress proxy; null means the network policy default.",
+            "description": "Host names, leading-dot domains or CIDR ranges the sandbox may reach through the egress proxy; null means the network policy default.",
             "title": "Egress Allowlist"
+          },
+          "egress_policy_generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version of the egress allowlist: 1 at create, plus 1 per PATCH that changes it. Null when egress_allowlist is null; 0 for a sandbox that predates egress v2 (reset it to upgrade its egress credential).",
+            "title": "Egress Policy Generation"
           },
           "env": {
             "additionalProperties": {
@@ -6354,7 +6366,7 @@
                 "type": "null"
               }
             ],
-            "description": "Machine-readable code set with error_reason, null when there is none: image_not_found, registry_unreachable (retryable: the registry did not answer, throttled the pull or failed on its side), registry_tls_error (not retryable: the registry's TLS certificate failed validation), image_access_denied (not retryable: the registry refused the pull), invalid_image_reference (not retryable: the reference cannot be parsed), start_failed, timeout, reset_failed, container_missing, container_exited, node_lost or internal. Branch on this, not on the reason text.",
+            "description": "Machine-readable code set with error_reason, null when there is none: image_not_found, registry_unreachable (retryable: the registry did not answer, throttled the pull or failed on its side), registry_tls_error (not retryable: the registry's TLS certificate failed validation), image_access_denied (not retryable: the registry refused the pull), invalid_image_reference (not retryable: the reference cannot be parsed), start_failed, timeout, reset_failed, container_missing, container_exited, node_lost, egress_unavailable (the node that ran the create job has no egress proxy settings, so no container was created) or internal. Branch on this, not on the reason text.",
             "title": "Error Code"
           },
           "error_reason": {
@@ -7109,6 +7121,21 @@
               }
             ],
             "title": "Auto Stop Minutes"
+          },
+          "egress_allowlist": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces the egress allowlist of a sandbox created with a non-empty one, and raises its egress_policy_generation by 1. Omitting the field keeps egress as it is, a list replaces the stored one, `[]` refuses every connection, and null is refused with 422: an allowlist cannot be removed. Only the database changes, so the proxy applies the new list within its cache window.",
+            "title": "Egress Allowlist"
           },
           "labels": {
             "anyOf": [

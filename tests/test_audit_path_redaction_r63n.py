@@ -125,4 +125,4 @@ async def test_a_key_pasted_into_the_path_is_not_stored_in_the_audit_row(app: Fa
     async with app.state.engine.connect() as connection:
         stored = (await connection.execute(text("SELECT details FROM audit_events"))).all()
     assert key not in "".join(str(value) for value in stored)
-    assert key.split("_")[-1] not in listed.text
+    assert key.removeprefix("sf_") not in listed.text

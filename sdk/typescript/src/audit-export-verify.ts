@@ -18,6 +18,7 @@
 
 import type { LineSource } from "./audit-continuation.js";
 import {
+  checkExpectedOrg,
   headBinding,
   headIsFiltered,
   trustedKeyText,
@@ -97,6 +98,13 @@ export interface VerifyExportOptions {
   allowUnchained?: boolean;
   /** An earlier export of the same org: its event lines must be an exact byte prefix of this one's. */
   previous?: LineSource;
+  /**
+   * The org the signed head must name, else the reason is `"expected_org_mismatch"` (head-level,
+   * no `badLine`; the file checks do not run). Without it a genuinely signed export of another
+   * org verifies: `orgId` of the result tells whose it is. Not to be confused with
+   * `"org_mismatch"`, where a row's org differs from the head's. Empty: `ValidationError`.
+   */
+  expectedOrgId?: string;
 }
 
 function contentReason(scan: ExportScan, head: HeadRecord): ExportReason | null {
@@ -142,6 +150,7 @@ function noTrailerResult(scan: ExportScan, publicKey: string | Uint8Array): Expo
     publicKey: trustedKeyText(publicKey),
     reason: "no_trailer",
     signedAt: null,
+    orgId: null,
     rows: scan.rows,
     firstBreak: null,
     lastRowId: scan.lastRowId,
@@ -178,10 +187,12 @@ export function exportResult(
   scan: ExportScan,
   publicKey: string | Uint8Array,
   allowUnchained = false,
+  expectedOrgId?: string,
 ): ExportVerification {
+  checkExpectedOrg(expectedOrgId);
   const record = scan.head;
   if (record === null) return noTrailerResult(scan, publicKey);
-  const head = verifyHead(record, publicKey);
+  const head = verifyHead(record, publicKey, expectedOrgId === undefined ? {} : { expectedOrgId });
   let reason: ExportReason | null = head.reason;
   if (head.ok) reason = contentReason(scan, record) ?? fileReason(scan, head, record, allowUnchained);
   const filtered = headIsFiltered(record);
@@ -193,6 +204,7 @@ export function exportResult(
     publicKey: head.publicKey,
     reason,
     signedAt: head.signedAt,
+    orgId: head.orgId,
     rows: scan.rows,
     firstBreak: filtered ? null : scan.firstBreak,
     lastRowId: scan.lastRowId,
@@ -233,5 +245,5 @@ export async function verifyExport(
   options: VerifyExportOptions = {},
 ): Promise<ExportVerification> {
   const scan = await scanExport(lines, options.previous ?? null);
-  return exportResult(scan, publicKey, options.allowUnchained ?? false);
+  return exportResult(scan, publicKey, options.allowUnchained ?? false, options.expectedOrgId);
 }

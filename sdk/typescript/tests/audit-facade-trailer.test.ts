@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ValidationError } from "../src/index.js";
-import { GOLDEN } from "./audit-trailer-helpers.js";
+import { GOLDEN, chain, head, newSigner } from "./audit-trailer-helpers.js";
 import { at, clientFor, ok } from "./helpers.js";
 
 const STATUS = {
@@ -84,6 +84,53 @@ describe("client.audit.verifyHead", () => {
     const { client } = clientFor([ok({ ...STATUS, audit_public_key: other })]);
 
     expect((await client.audit.verifyHead(GOLDEN.head, "status")).reason).toBe("key_mismatch");
+  });
+});
+
+describe("client.audit org binding", () => {
+  const signer = newSigner();
+  const { lines } = chain(2);
+  const trailer = head(lines, signer, { org_id: "org_b" });
+  const body = `${lines.join("")}${trailer}\n`;
+
+  it("verifyHead passes expectedOrgId through, with an explicit key and with \"status\"", async () => {
+    const { client } = clientFor([ok({ ...STATUS, audit_public_key: signer.publicKey })]);
+
+    const mismatch = await client.audit.verifyHead(trailer, signer.publicKey, { expectedOrgId: "org_a" });
+    const match = await client.audit.verifyHead(trailer, signer.publicKey, { expectedOrgId: "org_b" });
+    const viaStatus = await client.audit.verifyHead(trailer, "status", { expectedOrgId: "org_a" });
+
+    expect(mismatch).toMatchObject({ ok: false, reason: "expected_org_mismatch", orgId: "org_b" });
+    expect(match).toMatchObject({ ok: true, orgId: "org_b" });
+    expect(viaStatus.reason).toBe("expected_org_mismatch");
+  });
+
+  it("verifyHead still takes call options in the same object", async () => {
+    const { client } = clientFor([ok({ ...STATUS, audit_public_key: signer.publicKey })]);
+
+    const result = await client.audit.verifyHead(trailer, "status", { expectedOrgId: "org_b", timeoutMs: 5_000 });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("verifyHead rejects an empty expectedOrgId before any request", async () => {
+    const { client, requests } = clientFor([]);
+
+    await expect(client.audit.verifyHead(trailer, "status", { expectedOrgId: "" })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    expect(requests).toHaveLength(0);
+  });
+
+  it("verifyExport passes expectedOrgId through and exposes orgId", async () => {
+    const { client } = clientFor([ok({ ...STATUS, audit_public_key: signer.publicKey })]);
+
+    const mismatch = await client.audit.verifyExport(body, signer.publicKey, { expectedOrgId: "org_a" });
+    const match = await client.audit.verifyExport(body, "status", { expectedOrgId: "org_b" });
+
+    expect(mismatch).toMatchObject({ ok: false, reason: "expected_org_mismatch", orgId: "org_b" });
+    expect(match).toMatchObject({ ok: false, orgId: "org_b" });
+    expect(match.reason).not.toBe("expected_org_mismatch");
   });
 });
 

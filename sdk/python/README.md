@@ -118,7 +118,8 @@ client.delete(sbx.id)
   `SandboxInfo.error_code` is the machine-readable code next to `error_reason`: one of
   `image_not_found`, `registry_unreachable`, `registry_tls_error`, `image_access_denied`,
   `invalid_image_reference`, `start_failed`, `timeout`, `reset_failed`, `container_missing`, `container_exited`,
-  `node_lost` (reserved, no path sets it yet) or `internal`; `None` when there is no error or
+  `node_lost` (reserved, no path sets it yet), `egress_unavailable` (the node that ran the create
+  job has no egress proxy settings) or `internal`; `None` when there is no error or
   the server does not report it. Branch on the code, not on the `error_reason` text. The handle
   has the same value as `sbx.error_code` (`sbx.info.error_code` reads the same field).
   `SandboxInfo.stop_cause` says why the sandbox stopped: `requested` (a user or API key asked),

@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - older typer builds on the installed cl
     from click import core as click_core  # type: ignore[no-redef]
     from click import exceptions as click_exceptions  # type: ignore[no-redef]
 
-from sandfort_cli import build_info, resize_cmd, shell_cmd  # noqa: F401
+from sandfort_cli import build_info, egress_cmd, resize_cmd, shell_cmd  # noqa: F401
 from sandfort_cli.audit import audit_app
 from sandfort_cli.cmd_cmd import cmd_app, preview_command
 from sandfort_cli.cp_cmd import cp_command

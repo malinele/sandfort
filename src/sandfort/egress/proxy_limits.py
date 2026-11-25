@@ -33,7 +33,9 @@ from sandfort.config import (
     DEFAULT_EGRESS_MAX_CONNECTIONS,
     DEFAULT_EGRESS_TOKEN_TTL_S,
     egress_limits_from,
+    parse_dns_sink_address,
 )
+from sandfort.egress.rules import EgressRules
 from sandfort.webhooks.ssrf import IpAddress
 
 ENV_SECRET = "SANDFORT_EGRESS_SECRET"
@@ -46,6 +48,19 @@ DEFAULT_LISTEN_PORT = 3128
 DEFAULT_MAX_TOTAL_CONNECTIONS = 2048
 DEFAULT_MAX_PREAUTH_PER_SOURCE = 16
 MAX_CONNECTION_LIMIT = 1_000_000
+ENV_POLICY_URL = "SANDFORT_EGRESS_POLICY_URL"
+ENV_POLICY_CACHE_S = "SANDFORT_EGRESS_POLICY_CACHE_S"
+ENV_POLICY_TIMEOUT_S = "SANDFORT_EGRESS_POLICY_TIMEOUT_S"
+ENV_POLICY_MAX_STALE_S = "SANDFORT_EGRESS_POLICY_MAX_STALE_S"
+DEFAULT_POLICY_CACHE_S = 5
+DEFAULT_POLICY_TIMEOUT_S = 2
+DEFAULT_POLICY_MAX_STALE_S = 60
+POLICY_CACHE_RANGE_S = (2, 60)
+POLICY_TIMEOUT_RANGE_S = (1, 10)
+ENV_DNS_PIN_S = "SANDFORT_EGRESS_DNS_PIN_S"
+DEFAULT_DNS_PIN_S = 30
+DNS_PIN_RANGE_S = (0, 300)  # 0 = no pinning, one resolution per CONNECT
+ENV_DNS_SINK_LISTEN = "SANDFORT_EGRESS_DNS_SINK_LISTEN"  # IPv4 to bind the sink to; "" = off
 
 PROBE_V4 = "192.0.2.1"  # TEST-NET-1: connecting a UDP socket sends nothing, it only picks a route
 PROBE_V6 = "2001:db8::1"
@@ -63,14 +78,35 @@ type AddressSource = Callable[[], Iterable[str]]
 _log = logging.getLogger("sandfort.egress")
 
 
-def _limit(environ: Mapping[str, str], name: str, default: int) -> int:
+def _ranged(environ: Mapping[str, str], name: str, default: int, low: int, high: int) -> int:
     raw = environ.get(name)
     if raw is None:
         return default
     text = raw.strip()
-    if not (text.isascii() and text.isdigit()) or not 1 <= int(text) <= MAX_CONNECTION_LIMIT:
-        raise ValueError(f"{name} must be an integer 1..{MAX_CONNECTION_LIMIT}")
+    if not (text.isascii() and text.isdigit()) or not low <= int(text) <= high:
+        raise ValueError(f"{name} must be an integer {low}..{high}")
     return int(text)
+
+
+def _limit(environ: Mapping[str, str], name: str, default: int) -> int:
+    return _ranged(environ, name, default, 1, MAX_CONNECTION_LIMIT)
+
+
+def _policy_settings(environ: Mapping[str, str]) -> tuple[str, int, int, int]:
+    """``(url, cache_s, timeout_s, max_stale_s)``; the timeout must stay under the cache time."""
+    url = environ.get(ENV_POLICY_URL, "").strip()
+    if url and not url.startswith(("http://", "https://")):
+        raise ValueError(f"{ENV_POLICY_URL} must be an http or https URL")
+    cache_s = _ranged(environ, ENV_POLICY_CACHE_S, DEFAULT_POLICY_CACHE_S, *POLICY_CACHE_RANGE_S)
+    timeout_s = _ranged(
+        environ, ENV_POLICY_TIMEOUT_S, DEFAULT_POLICY_TIMEOUT_S, *POLICY_TIMEOUT_RANGE_S
+    )
+    max_stale_s = _limit(environ, ENV_POLICY_MAX_STALE_S, DEFAULT_POLICY_MAX_STALE_S)
+    if timeout_s >= cache_s:
+        raise ValueError(f"{ENV_POLICY_TIMEOUT_S} must be less than {ENV_POLICY_CACHE_S}")
+    if max_stale_s < cache_s:
+        raise ValueError(f"{ENV_POLICY_MAX_STALE_S} must be at least {ENV_POLICY_CACHE_S}")
+    return url, cache_s, timeout_s, max_stale_s
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +121,12 @@ class ProxyConfig:
     token_ttl_s: int = DEFAULT_EGRESS_TOKEN_TTL_S
     max_total_connections: int = DEFAULT_MAX_TOTAL_CONNECTIONS
     max_preauth_per_source: int = DEFAULT_MAX_PREAUTH_PER_SOURCE
+    policy_url: str = ""  # "" = the policy channel is off
+    policy_cache_s: int = DEFAULT_POLICY_CACHE_S
+    policy_timeout_s: int = DEFAULT_POLICY_TIMEOUT_S
+    policy_max_stale_s: int = DEFAULT_POLICY_MAX_STALE_S
+    dns_pin_s: int = DEFAULT_DNS_PIN_S  # DNS pin window per sandbox and name (0 = off)
+    dns_sink_address: str = ""  # serve the DNS sink here, udp and tcp 53; "" = no sink
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str]) -> Self:
@@ -97,6 +139,7 @@ class ProxyConfig:
             raise ValueError(f"{ENV_LISTEN_PORT} must be a port number")
         host = environ.get(ENV_LISTEN_HOST, DEFAULT_LISTEN_HOST)
         limits = egress_limits_from(environ)
+        policy_url, policy_cache_s, policy_timeout_s, policy_max_stale_s = _policy_settings(environ)
         return cls(
             host=host or DEFAULT_LISTEN_HOST,
             port=int(port_text),
@@ -112,6 +155,14 @@ class ProxyConfig:
             max_preauth_per_source=_limit(
                 environ, ENV_MAX_PREAUTH_PER_SOURCE, DEFAULT_MAX_PREAUTH_PER_SOURCE
             ),
+            policy_url=policy_url,
+            policy_cache_s=policy_cache_s,
+            policy_timeout_s=policy_timeout_s,
+            policy_max_stale_s=policy_max_stale_s,
+            dns_pin_s=_ranged(environ, ENV_DNS_PIN_S, DEFAULT_DNS_PIN_S, *DNS_PIN_RANGE_S),
+            dns_sink_address=parse_dns_sink_address(
+                environ.get(ENV_DNS_SINK_LISTEN, ""), ENV_DNS_SINK_LISTEN
+            ),
         )
 
 
@@ -125,19 +176,9 @@ def host_allowed(host: str, allowlist: Iterable[str]) -> bool:
     """True when ``host`` equals an entry, or falls under a leading-dot entry.
 
     ``.example.com`` admits ``example.com`` and every subdomain of it; ``example.com`` admits
-    that name only.
+    that name only. CIDR entries never admit a name (``EgressRules.admits_name``).
     """
-    name = host.lower().rstrip(".")
-    if not name:
-        return False
-    for entry in allowlist:
-        if entry.startswith("."):
-            domain = entry[1:]
-            if domain and (name == domain or name.endswith(entry)):
-                return True
-        elif name == entry:
-            return True
-    return False
+    return EgressRules.from_entries(allowlist).admits_name(host)
 
 
 class SlotTable:

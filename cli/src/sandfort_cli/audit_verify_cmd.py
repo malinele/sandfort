@@ -35,6 +35,7 @@ from sandfort_sdk.audit_export import (
     scan_export,
 )
 from sandfort_sdk.audit_head import (
+    REASON_EXPECTED_ORG_MISMATCH,
     REASON_FUTURE,
     HeadVerification,
     verify_head,
@@ -72,6 +73,7 @@ REASONS = {
     "undated": "the signature verifies, but the head has no valid signed_at "
     "(absent, without a UTC offset, or before 1970-01-02)",
     REASON_FUTURE: "the signature verifies, but signed_at is more than 5 minutes in the future",
+    REASON_EXPECTED_ORG_MISMATCH: "the signed head names a different org_id than --expect-org",
     REASON_TRUNCATED: "the last row of the file is not the row the signed head names "
     "(rows were cut, or the trailer is from a different (earlier or later) export)",
     REASON_HEAD_MISMATCH: "the last row is the head's row, but its hash differs from the head's",
@@ -311,6 +313,7 @@ def head_payload(result: HeadVerification) -> dict[str, Any]:
         "reason": result.reason,
         "fingerprint": None if key is None else key_fingerprint(key),
         "signed_at": None if result.signed_at is None else result.signed_at.isoformat(),
+        "org_id": result.org_id,
     }
     if isinstance(result, ExportVerification):
         payload["rows_checked"] = result.rows
@@ -360,7 +363,10 @@ def unchained_note(count: int) -> str:
 
 
 def render_head(
-    state: AppState, result: HeadVerification, line_format: LineFormat | None = None
+    state: AppState,
+    result: HeadVerification,
+    line_format: LineFormat | None = None,
+    expected_org: str | None = None,
 ) -> None:
     hint = format_hint(result, line_format)
     if state.json_output:
@@ -378,7 +384,7 @@ def render_head(
     if isinstance(result, ExportVerification) and result.ok and result.filtered:
         typer.echo(FILTERED_NOTE, err=True)
     if result.ok and not state.json_output:
-        typer.echo(proof_line(result), err=True)
+        typer.echo(proof_line(result, expected_org), err=True)
     if not result.ok and not state.json_output:
         typer.echo(failure_line(result), err=True)
         if hint is not None:
@@ -419,6 +425,15 @@ def verify_head_command(
             "of this file's (not_a_continuation otherwise); the new rows are counted.",
         ),
     ] = None,
+    expect_org: Annotated[
+        str | None,
+        typer.Option(
+            "--expect-org",
+            metavar="<org_id>",
+            help="The org the signed head must name (expected_org_mismatch otherwise, also "
+            "when the head names none).",
+        ),
+    ] = None,
 ) -> None:
     """Verify an export file against its signed audit_head trailer line.
 
@@ -429,7 +444,9 @@ def verify_head_command(
     head's org_id, that the last row is the row the head names with the head's hash, that every
     row's prev_hash is the hash of the row before it, and that every row carries a hash
     (--head-only checks the signature alone). With --previous, the earlier export's event
-    lines must be an exact prefix of this file's, and the new rows are counted.
+    lines must be an exact prefix of this file's, and the new rows are counted. With
+    --expect-org <org_id>, the signed head must name that org (expected_org_mismatch otherwise);
+    without it a genuine export of another org verifies, and org_id in the output says whose.
 
     A head marked filtered (an export cut by request_id or outcome) binds the content but its
     rows are not a contiguous run, so the linkage between neighbouring rows is not checked and
@@ -454,7 +471,10 @@ def verify_head_command(
     trusted on its own: the key comes from --public-key or from the server status.
     """
     state = app_state(ctx)
+    expected_org = None if expect_org is None else expect_org.strip()
     with cli_errors(EXIT_USAGE):
+        if expected_org == "":
+            raise CliError("--expect-org must not be empty", client=True)
         if head_only and previous is not None:
             raise CliError(
                 "--previous needs the rows: do not combine it with --head-only", client=True
@@ -471,12 +491,16 @@ def verify_head_command(
                     name = NO_TRAILER.format(name=shown(str(file), caller_key()))
                     detail = shown(scan.trailer_error or "", caller_key())
                     raise CliError(f"{name} ({detail})", client=True)
-                result: HeadVerification = verify_head(scan.head, key)
+                result: HeadVerification = verify_head(
+                    scan.head, key, expected_org_id=expected_org
+                )
             else:
-                result = export_result(scan, key, allow_unchained=allow_unchained)
+                result = export_result(
+                    scan, key, allow_unchained=allow_unchained, expected_org_id=expected_org
+                )
         except ValueError as exc:
             raise CliError(shown(str(exc), caller_key()), client=True) from None
-    render_head(state, result, line_format)
+    render_head(state, result, line_format, expected_org)
     if not result.ok:
         raise typer.Exit(EXIT_BROKEN_CHAIN)
 

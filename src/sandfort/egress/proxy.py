@@ -1,55 +1,62 @@
 """CONNECT-method forward proxy that enforces a per-sandbox egress allowlist.
 
-Credentials arrive as ``Proxy-Authorization: Basic base64(<sandbox_id>:<egress token>)``. The
-token (see ``sandfort.egress.tokens``) carries the sandbox's allowlist, so no lookup is needed.
+Credentials arrive as ``Proxy-Authorization: Basic base64(<sandbox_id>:<egress token>)``
+(``sandfort.egress.auth``). A v1 token (``sandfort.egress.tokens``) carries the sandbox's
+allowlist; a v2 token (``sandfort.egress.tokens_v2``) names the sandbox and a credential epoch,
+and the policy is looked up through ``sandfort.egress.policy_client`` when
+``SANDFORT_EGRESS_POLICY_URL`` is set (then v1 tokens are looked up too and the stored row
+decides; ``sandfort.egress.admission`` has the decision table, ``sandfort.egress.tunnels``
+closes open tunnels a changed policy no longer admits).
 For ``CONNECT host:port`` the proxy verifies the token, matches ``host`` against the allowlist
-(exact name, or the domain and its subdomains under a leading-dot entry), refuses ports
-outside the allowed-ports setting, resolves the name itself and vets every resolved address
-with ``sandfort.webhooks.ssrf.check_address`` and against the denied CIDRs (loopback,
-link-local, RFC 1918 and the node's own interface addresses by default), so a tenant that
-controls DNS for an allowlisted name cannot make the proxy dial the host itself. It then
-connects to a vetted address, so a second DNS answer cannot redirect the connection, and
-relays bytes both ways (``sandfort.egress.relay``) until either side closes or the tunnel is
-idle for too long. One sandbox may hold only a bounded number of tunnels at once; the whole
-proxy holds a bounded number of connections, and one source address a bounded number of
-connections that have not yet authenticated.
+(``sandfort.egress.rules``), refuses ports outside the allowed-ports setting, resolves the name
+itself and vets every resolved address with ``sandfort.webhooks.ssrf.check_address`` and the
+denied CIDRs (loopback, link-local, RFC 1918, the node's own addresses by default), so a tenant
+that controls DNS for an allowlisted name cannot make the proxy dial the host itself. It
+connects to a vetted address and keeps that set pinned for the sandbox and name for
+``dns_pin_s`` seconds (``sandfort.egress.pinning``), so a second DNS answer cannot redirect a
+later connection, then relays bytes both ways (``sandfort.egress.relay``) until either side
+closes or the tunnel is idle for too long. Tunnels per sandbox, connections in total and
+unauthenticated connections per source are all bounded.
 
 The proxy fails closed: a bad or missing credential (407), a name outside the allowlist or a
 blocked address or port (403), too many tunnels or unauthenticated connections (429), the
-global ceiling (503), an unresolvable name or unreachable upstream (502) and any method other
-than CONNECT (405) are answered with an error and the connection is closed. Decisions are
-logged to stderr with the sandbox id and target host, never the credential.
+global ceiling or an unavailable policy (503), an unresolvable name or unreachable upstream
+(502) and any method other than CONNECT (405) are answered with an error and the connection is
+closed. Decisions are logged to stderr with the sandbox id, target host and policy generation
+(``gen=``), never the credential. A name the policy refused is logged as its length and a keyed
+digest only (``sandfort.egress.logname``). Reading the request is bounded by
+``REQUEST_TIMEOUT_S``; everything after it by ``admission_cap_s``.
 
-Configuration comes from the environment: ``SANDFORT_EGRESS_SECRET`` (required),
-``SANDFORT_EGRESS_LISTEN_HOST`` (default ``127.0.0.1``), ``SANDFORT_EGRESS_LISTEN_PORT``
-(default ``3128``), ``SANDFORT_EGRESS_DENIED_CIDRS`` (comma-separated; the node's own
-addresses are always added), ``SANDFORT_EGRESS_ALLOWED_PORTS`` (default ``443,80``),
-``SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX`` (default 64), ``SANDFORT_EGRESS_IDLE_TIMEOUT_S``
-(default 300), ``SANDFORT_EGRESS_MAX_TOTAL_CONNECTIONS`` (default 2048),
-``SANDFORT_EGRESS_MAX_PREAUTH_PER_SOURCE`` (default 16) and ``SANDFORT_EGRESS_TOKEN_TTL_S``
-(default 7 days; longer-lived tokens are refused, except tokens issued before
-``LEGACY_TOKEN_CUTOVER``, which earlier releases minted for up to 400 days: those are accepted
-until they expire and logged once per sandbox). ``ProxyConfig`` lives in
-``sandfort.egress.proxy_limits`` and is re-exported here.
-
-``EgressProxy`` itself is permissive until told otherwise (no denied networks, any port, no
-caps); ``ProxyConfig`` and ``EgressProxy.from_config`` carry the restrictive defaults.
+Configuration comes from the environment (``SANDFORT_EGRESS_SECRET`` is required; the other
+``SANDFORT_EGRESS_*`` settings are in ``sandfort.egress.proxy_limits`` and docs/operations.md).
+``EgressProxy`` itself is permissive until told otherwise; ``ProxyConfig`` (re-exported here)
+and ``EgressProxy.from_config`` carry the restrictive defaults.
 """
 
 import asyncio
-import base64
-import binascii
-import hmac
 import ipaddress
 import logging
 import os
 import sys
-from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
-from contextlib import suppress
-from dataclasses import dataclass
+import time
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from contextlib import aclosing, suppress
 from datetime import UTC, datetime
 from typing import Self
 
+from sandfort.egress.admission import (
+    NO_POLICY_WARNING,
+    Seen,
+    admission_cap_s,
+    admit_target,
+    policy_client_from,
+    wire_policy,
+)
+from sandfort.egress.auth import EgressCredential, authenticate, note_legacy
+from sandfort.egress.dns_sink import serving_dns_sink
+from sandfort.egress.logname import redacted_name
+from sandfort.egress.pinning import PinStore
+from sandfort.egress.policy_client import PolicyClient, PolicyEntry
 from sandfort.egress.proxy_limits import (
     DEFAULT_LISTEN_HOST,
     DEFAULT_LISTEN_PORT,
@@ -60,10 +67,8 @@ from sandfort.egress.proxy_limits import (
     PROBE_V6,
     IpNetwork,
     ProxyConfig,
-    SlotTable,
     discover_local_addresses,
     host_allowed,
-    in_network,
 )
 from sandfort.egress.relay import (
     MAX_HEADER_LINES,
@@ -71,24 +76,28 @@ from sandfort.egress.relay import (
     RELAY_CHUNK_BYTES,
     Connection,
     Deny,
-    auth_required,
+    Request,
     close_writer,
-    parse_address,
     parse_target,
     read_request,
     relay,
     send_error,
-    source_of,
 )
-from sandfort.egress.tokens import (
-    LEGACY_TOKEN_CUTOVER,
-    EgressClaims,
-    InvalidEgressToken,
-    exceeds_lifetime,
-    is_legacy,
-    verify_egress_token,
+from sandfort.egress.rules import target_address
+from sandfort.egress.slots import ConnectionSlots
+from sandfort.egress.tokens import LEGACY_TOKEN_CUTOVER
+from sandfort.egress.tunnels import TunnelRegistry, stop_sweeper, sweep_while_serving
+from sandfort.egress.upstream import (
+    CONNECT_TIMEOUT_S as CONNECT_TIMEOUT_S,  # re-export: proxy.CONNECT_TIMEOUT_S still resolves
 )
-from sandfort.webhooks.ssrf import IpAddress, UrlRejected, check_address, resolve_host
+from sandfort.egress.upstream import (
+    AddressCheck,
+    Resolver,
+    open_pinned,
+    open_tunnel,
+    vet_address,
+)
+from sandfort.webhooks.ssrf import IpAddress, check_address, resolve_host
 
 __all__ = [
     "DEFAULT_LISTEN_HOST",
@@ -112,25 +121,9 @@ __all__ = [
     "relay",
 ]
 
-REQUEST_TIMEOUT_S = 15.0
-CONNECT_TIMEOUT_S = 10.0
-ALL_CONNECTIONS = ""  # the single key of the global slot table
-
-type Resolver = Callable[[str], Awaitable[list[str]]]
-type AddressCheck = Callable[[IpAddress], None]
+REQUEST_TIMEOUT_S = 15.0  # bounds reading the request line and headers only
 
 _log = logging.getLogger("sandfort.egress")
-
-
-@dataclass(slots=True)
-class _Seen:
-    """What the log line may say and which slots this connection holds."""
-
-    sandbox_id: str = "-"
-    host: str = "-"
-    slot_held: bool = False
-    admitted: bool = False  # holds a global slot
-    preauth_source: str | None = None  # holds a pre-authentication slot for this source
 
 
 class EgressProxy:
@@ -141,7 +134,7 @@ class EgressProxy:
     ``idle_timeout_s`` and ``max_token_lifetime_s`` default to no restriction here;
     ``from_config`` applies the configured, restrictive values. ``legacy_cutover`` (``None``
     here, ``LEGACY_TOKEN_CUTOVER`` from ``from_config``) exempts tokens issued before it from
-    the lifetime limit.
+    the lifetime limit. ``policy_client`` (``None`` = policy channel off) is the policy lookup.
     """
 
     def __init__(
@@ -158,6 +151,8 @@ class EgressProxy:
         idle_timeout_s: float | None = None,
         max_token_lifetime_s: int | None = None,
         legacy_cutover: datetime | None = None,
+        policy_client: PolicyClient | None = None,
+        dns_pin_s: float = 0,
     ) -> None:
         self._secret = secret
         self._resolver = resolver
@@ -168,9 +163,16 @@ class EgressProxy:
         self._max_token_lifetime_s = max_token_lifetime_s
         self._legacy_cutover = legacy_cutover
         self._legacy_noted: set[str] = set()  # sandboxes already logged for a legacy token
-        self._per_sandbox = SlotTable(max_connections)
-        self._total = SlotTable(max_total_connections)
-        self._preauth = SlotTable(max_preauth_per_source)
+        self._slots = ConnectionSlots(
+            max_connections, max_total_connections, max_preauth_per_source
+        )
+        self._policy = policy_client
+        self._tunnels, lookup_s = wire_policy(policy_client)
+        self._pins = PinStore(dns_pin_s, policy_client.clock if policy_client else time.monotonic)
+        if policy_client is not None:  # one change callback: the registry and the pins both hear it
+            policy_client.set_on_change(self._policy_changed)
+        self._sweeper: asyncio.Task[None] | None = None
+        self._admission_cap_s = admission_cap_s(lookup_s)
 
     @classmethod
     def from_config(
@@ -196,6 +198,8 @@ class EgressProxy:
             idle_timeout_s=config.idle_timeout_s,
             max_token_lifetime_s=config.token_ttl_s,
             legacy_cutover=LEGACY_TOKEN_CUTOVER,
+            policy_client=policy_client_from(config),
+            dns_pin_s=config.dns_pin_s,
         )
 
     @property
@@ -210,155 +214,143 @@ class EgressProxy:
     @property
     def open_connections(self) -> int:
         """Client connections currently holding a global slot."""
-        return self._total.total
+        return self._slots.open_connections
+
+    @property
+    def tunnels(self) -> TunnelRegistry:
+        """The registry of admitted, still open tunnels."""
+        return self._tunnels
+
+    def _policy_changed(self, sandbox_id: str, entry: PolicyEntry) -> None:
+        self._tunnels.recheck_sandbox(sandbox_id, entry)
+        self._pins.recheck_sandbox(sandbox_id, entry)  # also when the sandbox holds no tunnel
 
     def unauthenticated_from(self, source: str) -> int:
         """Connections from ``source`` that have not authenticated yet."""
-        return self._preauth.held(source)
+        return self._slots.unauthenticated_from(source)
+
+    async def sweep_once(self) -> None:
+        """Refresh the policy of every sandbox with tunnels and close what it no longer admits."""
+        if self._policy is not None:
+            await self._tunnels.sweep_once(self._policy)
 
     async def start(self, host: str, port: int) -> asyncio.Server:
-        return await asyncio.start_server(self.handle, host, port, limit=MAX_LINE_BYTES)
+        server = await asyncio.start_server(self.handle, host, port, limit=MAX_LINE_BYTES)
+        if self._policy is not None:
+            sweep = sweep_while_serving(self._tunnels, self._policy, server.is_serving)
+            self._sweeper = asyncio.create_task(sweep)
+        return server
+
+    async def aclose(self) -> None:
+        await stop_sweeper(self._sweeper, self._policy)
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        seen = _Seen()
-        upstream: Connection | None = None
+        seen = Seen()
         try:
-            self._enter(writer, seen)
-            upstream = await asyncio.wait_for(self._admit(reader, seen), REQUEST_TIMEOUT_S)
-            _log.info("allow sandbox=%s host=%r", seen.sandbox_id, seen.host)
+            self._slots.enter(writer, seen)
+            request = await asyncio.wait_for(read_request(reader), REQUEST_TIMEOUT_S)
+            upstream = await asyncio.wait_for(self._admit(request, seen), self._admission_cap_s)
+            _log.info("allow sandbox=%s host=%r gen=%s", seen.sandbox_id, seen.host, seen.gen)
             writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             await writer.drain()
             await relay((reader, writer), upstream, self._idle_timeout_s)
         except Deny as deny:
             _log.warning(
-                "deny sandbox=%s host=%r status=%d reason=%s",
+                "deny sandbox=%s host=%s status=%d reason=%s gen=%s",
                 seen.sandbox_id,
-                seen.host,
+                self._logged_host(seen),
                 deny.status,
                 deny.detail,
+                seen.gen,
             )
             await send_error(writer, deny)
         except (OSError, TimeoutError):
-            _log.info("drop sandbox=%s host=%r reason=connection error", seen.sandbox_id, seen.host)
+            _log.info(
+                "drop sandbox=%s host=%s reason=connection error",
+                seen.sandbox_id,
+                self._logged_host(seen),
+            )
         finally:
             self._leave(seen)
-            if upstream is not None:
-                await close_writer(upstream[1])
+            if seen.upstream is not None:
+                await close_writer(seen.upstream[1])
             await close_writer(writer)
 
-    def _enter(self, writer: asyncio.StreamWriter, seen: _Seen) -> None:
-        """Take a global slot and a pre-authentication slot for the source, or refuse."""
-        if not self._total.try_acquire(ALL_CONNECTIONS):
-            raise Deny(503, "Service Unavailable", "global connection ceiling reached")
-        seen.admitted = True
-        source = source_of(writer)
-        if not self._preauth.try_acquire(source):
-            raise Deny(429, "Too Many Requests", "too many unauthenticated connections")
-        seen.preauth_source = source
+    def _logged_host(self, seen: Seen) -> str:
+        """The raw name once it matched a rule (a slot is held), else only its length and digest."""
+        if seen.slot_held or seen.host == "-":
+            return repr(seen.host)
+        return redacted_name(self._secret, seen.host)
 
-    def _end_preauth(self, seen: _Seen) -> None:
-        if seen.preauth_source is not None:
-            self._preauth.release(seen.preauth_source)
-            seen.preauth_source = None
-
-    def _leave(self, seen: _Seen) -> None:
+    def _leave(self, seen: Seen) -> None:
         """Release every slot this connection still holds; runs on every exit path."""
-        self._end_preauth(seen)
-        if seen.slot_held:
-            self._per_sandbox.release(seen.sandbox_id)
-            seen.slot_held = False
-        if seen.admitted:
-            self._total.release(ALL_CONNECTIONS)
-            seen.admitted = False
+        if seen.tunnel is not None:
+            self._tunnels.unregister(seen.tunnel)
+            seen.tunnel = None
+        self._slots.leave(seen)
 
-    async def _admit(self, reader: asyncio.StreamReader, seen: _Seen) -> Connection:
-        request = await read_request(reader)
+    async def _admit(self, request: Request, seen: Seen) -> Connection:
+        """Steps 2 to 12 of docs/egress-v2-design.md section 4.1 (the request is read)."""
         if request.method != "CONNECT":
             raise Deny(405, "Method Not Allowed", "method is not CONNECT", {"Allow": "CONNECT"})
-        sandbox_id, allowlist = self._authenticate(request.proxy_authorization)
-        seen.sandbox_id = sandbox_id
-        self._end_preauth(seen)
+        credential = self._authenticate(request.proxy_authorization)
+        sandbox_id = seen.sandbox_id = credential.sandbox_id
+        self._slots.end_preauth(seen)
         host, port = parse_target(request.target)
         seen.host = host.lower().rstrip(".")
+        address = target_address(host)  # a zone id is a 400 here, before the port check
         if self._ports is not None and port not in self._ports:
             raise Deny(403, "Forbidden", f"port {port} is not allowed")
-        if not host_allowed(host, allowlist):
-            raise Deny(403, "Forbidden", "host is not in the allowlist")
-        if not self._per_sandbox.try_acquire(sandbox_id):
-            raise Deny(429, "Too Many Requests", "too many concurrent connections for sandbox")
-        seen.slot_held = True
-        addresses = await self._vet(host)
-        return await self._open(addresses, port)
+        return await admit_target(
+            credential,
+            seen,
+            policy=self._policy,
+            tunnels=self._tunnels,
+            host=host,
+            address=address,
+            port=port,
+            take_slot=lambda: self._slots.take(sandbox_id),
+            dial=lambda: self._dial(sandbox_id, host, address, port),
+        )
 
-    def _authenticate(self, header: str | None) -> tuple[str, tuple[str, ...]]:
-        if header is None:
-            raise auth_required("no credential")
-        scheme, _, encoded = header.partition(" ")
-        if scheme.lower() != "basic":
-            raise auth_required("credential is not basic")
-        try:
-            decoded = base64.b64decode(encoded.strip(), validate=True).decode("utf-8")
-        except (binascii.Error, ValueError):
-            raise auth_required("credential is not decodable") from None
-        username, sep, token = decoded.partition(":")
-        if not sep:
-            raise auth_required("credential has no password")
+    async def _dial(
+        self, sandbox_id: str, host: str, address: IpAddress | None, port: int
+    ) -> tuple[Connection, list[IpAddress]]:
+        """Steps 8 to 10: vet or resolve (through the sandbox's DNS pin) and connect."""
+        if address is None:
+            return await open_pinned(
+                sandbox_id,
+                host,
+                port,
+                pins=self._pins,
+                resolver=self._resolver,
+                checker=self._checker,
+                denied=self._denied,
+                opener=self._open,
+            )
+        vet_address(address, checker=self._checker, denied=self._denied)
+        return await self._open([address], port), [address]
+
+    def _authenticate(self, header: str | None) -> EgressCredential:
         now = datetime.now(UTC)
-        try:
-            claims = verify_egress_token(
-                self._secret,
-                token,
-                now,
-                self._max_token_lifetime_s,
-                legacy_before=self._legacy_cutover,
-            )
-        except InvalidEgressToken:
-            raise auth_required("invalid token") from None
-        if not hmac.compare_digest(username.encode(), claims.sandbox_id.encode()):
-            raise auth_required("username does not match the token")
-        self._note_legacy(claims, now)
-        return claims.sandbox_id, claims.allowlist
-
-    def _note_legacy(self, claims: EgressClaims, now: datetime) -> None:
-        """Log, once per sandbox, a token accepted only because it predates the cut-over."""
-        limit, cutover = self._max_token_lifetime_s, self._legacy_cutover
-        if limit is None or cutover is None or claims.sandbox_id in self._legacy_noted:
-            return
-        if is_legacy(claims, cutover) and exceeds_lifetime(claims, limit, now):
-            self._legacy_noted.add(claims.sandbox_id)
-            _log.warning(
-                "accepted legacy egress token sandbox=%s issued_at=%s expires_at=%s",
-                claims.sandbox_id,
-                claims.issued_at.isoformat(),
-                claims.expires_at.isoformat(),
-            )
-
-    async def _vet(self, host: str) -> list[IpAddress]:
-        try:
-            texts = await self._resolver(host)
-        except OSError:
-            raise Deny(502, "Bad Gateway", "host does not resolve") from None
-        if not texts:
-            raise Deny(502, "Bad Gateway", "host does not resolve")
-        addresses = [parse_address(text) for text in texts]
-        for address in addresses:  # every answer must pass, not just the one we connect to
-            if any(in_network(address, network) for network in self._denied):
-                raise Deny(403, "Forbidden", "blocked address: in a denied network")
-            try:
-                self._checker(address)
-            except UrlRejected as exc:
-                raise Deny(403, "Forbidden", f"blocked address: {exc}") from None
-        return addresses
+        credential = authenticate(
+            self._secret,
+            header,
+            now=now,
+            max_lifetime_s=self._max_token_lifetime_s,
+            legacy_before=self._legacy_cutover,
+        )
+        note_legacy(
+            self._legacy_noted,
+            credential,
+            now,
+            max_lifetime_s=self._max_token_lifetime_s,
+            cutover=self._legacy_cutover,
+        )
+        return credential
 
     async def _open(self, addresses: list[IpAddress], port: int) -> Connection:
-        for address in addresses:
-            try:
-                return await asyncio.wait_for(
-                    asyncio.open_connection(str(address), port), CONNECT_TIMEOUT_S
-                )
-            except (OSError, TimeoutError):
-                continue
-        raise Deny(502, "Bad Gateway", "upstream connection failed")
+        return await open_tunnel(addresses, port)
 
 
 def build_proxy(
@@ -371,6 +363,8 @@ def build_proxy(
     denied = ", ".join(str(network) for network in proxy.denied_networks)
     _log.info("egress denied networks: %s", denied or "(none)")
     _log.info("egress allowed ports: %s", ",".join(str(port) for port in config.allowed_ports))
+    if not config.policy_url:
+        _log.warning(NO_POLICY_WARNING)
     return proxy
 
 
@@ -378,7 +372,7 @@ async def _serve(config: ProxyConfig) -> None:
     proxy = build_proxy(config)
     server = await proxy.start(config.host, config.port)
     _log.info("egress proxy listening on %s:%d", config.host, config.port)
-    async with server:
+    async with server, aclosing(proxy), serving_dns_sink(config.dns_sink_address):
         await server.serve_forever()
 
 

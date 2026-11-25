@@ -17,6 +17,7 @@ SHA256SUMS, SHA256SUMS.sig      checksums and signature of the three wheels
 BUNDLE-SHA256SUMS, .sig         checksums and signature of every file in the bundle
 release-allowed-signers         the public signing key
 deploy/host-setup.sh            egress rules for sandboxes (run as root, on every boot)
+deploy/egress-dns-sink.sh       DNS sink rule, sourced by host-setup.sh (keep it beside it)
 deploy/node-setup.sh            prepares Docker: overlay2, XFS quota, gVisor, optional Kata
 deploy/seccomp.json             the seccomp profile for sandboxes
 deploy/selfhost/Dockerfile      image from the server wheel

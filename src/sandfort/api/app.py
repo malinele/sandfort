@@ -33,6 +33,7 @@ from sandfort.api.routes import (
     api_keys,
     audit,
     console,
+    egress_policy,
     health,
     image_builds,
     jobs,
@@ -437,6 +438,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_keys.router)
     app.include_router(users.router)
     app.include_router(sso.router)  # the login: no authentication dependency
+    if resolved.egress_policy_route_enabled and resolved.egress_secret:
+        app.include_router(egress_policy.router)  # internal, MAC-authenticated, out of the spec
     if resolved.scim_enabled:  # off by default: no SCIM or SCIM token route is mounted at all
         app.include_router(scim_tokens.router)
         app.include_router(scim.router)  # /scim/v2, SCIM bearer token only, out of the spec

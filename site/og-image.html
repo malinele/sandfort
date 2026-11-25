@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Source of site/og-image.png (1200x630). Not deployed; regenerate with:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+       --screenshot=site/og-image.png --window-size=1200,630 --hide-scrollbars \
+       site/og-image.html
+     Tokens mirror site/index.html (:root). -->
+<html lang="en"><head><meta charset="utf-8">
+<style>
+  :root{
+    --bg:#0b0d11; --text:#e9ebef; --muted:#8c94a3; --line:#222834;
+    --accent:#e0a458; --accent-wash:rgba(224,164,88,.08); --ok:#8fc18a;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{width:1200px;height:630px;background:var(--bg);color:var(--text);
+    font-family:var(--sans);overflow:hidden;position:relative;
+    display:flex;flex-direction:column;justify-content:space-between;padding:64px 72px 52px}
+  body::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(900px 420px at 85% -10%, var(--accent-wash), transparent 70%)}
+  .mark{display:flex;align-items:center;gap:18px}
+  .glyph{width:56px;height:56px;border-radius:12px;background:#07090c;border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:32px;font-weight:700;color:var(--accent)}
+  .name{font-size:34px;font-weight:650;letter-spacing:.2px}
+  h1{font-size:55px;line-height:1.16;font-weight:650;margin-top:8px}
+  h1 em{font-style:normal;color:var(--accent)}
+  .term{border:1px solid var(--line);border-radius:10px;background:#0e1116;
+    font-family:var(--mono);font-size:21.5px;line-height:1.75;padding:22px 28px;
+    width:fit-content;min-width:760px;margin-top:10px}
+  .term .bar{display:flex;gap:8px;margin-bottom:12px}
+  .term .bar i{width:11px;height:11px;border-radius:50%;background:#222834;display:block}
+  .k{color:var(--accent)} .s{color:var(--ok)} .c{color:var(--muted)}
+  .foot{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:21px;color:var(--muted)}
+  .foot b{color:var(--text);font-weight:600}
+</style></head><body>
+  <div class="mark">
+    <div class="glyph">$</div>
+    <div class="name">Sandfort</div>
+  </div>
+  <h1>Sandboxes for AI&#8209;generated code,<br>on infrastructure <em>you</em> control.</h1>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i></div>
+    <div>sbx <span class="k">=</span> client.create_sandbox(image<span class="k">=</span><span class="s">"python:3.12"</span>)</div>
+    <div>run <span class="k">=</span> sbx.process_exec(<span class="s">"python -c 'print(6*7)'"</span>)</div>
+    <div>print(run.exit_code, run.stdout)  <span class="c"># 0 42</span></div>
+  </div>
+  <div class="foot">
+    <span><b>sandfort.dev</b></span>
+    <span>exec &middot; files &middot; git &middot; PTY &middot; snapshots &middot; self&#8209;hosted</span>
+  </div>
+</body></html>

@@ -30,6 +30,7 @@ ErrorCode = Literal[
     "container_missing",
     "container_exited",
     "node_lost",
+    "egress_unavailable",
     "internal",
 ]
 
@@ -49,6 +50,9 @@ ERROR_CODE_CONTAINER_MISSING: Final = "container_missing"
 # again (a successful start clears the code).
 ERROR_CODE_CONTAINER_EXITED: Final = "container_exited"
 ERROR_CODE_NODE_LOST: Final = "node_lost"  # the owning node is gone (reserved by the server)
+# Not retryable on that node: the node that ran the create job has no egress proxy settings, so
+# the allowlisted sandbox was not created and nothing runs on any network.
+ERROR_CODE_EGRESS_UNAVAILABLE: Final = "egress_unavailable"
 ERROR_CODE_INTERNAL: Final = "internal"  # anything else
 
 KNOWN_ERROR_CODES: Final[frozenset[str]] = frozenset(get_args(ErrorCode))

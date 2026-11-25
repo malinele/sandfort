@@ -63,8 +63,9 @@ volume-label bounds), `getSnapshot`,
 `listSnapshots` / `listSnapshotsAll`, `deleteSnapshot`, `exportSnapshotStream` /
 `exportSnapshotBytes` (the `docker save` tar of a `ready` snapshot); the image builder
 (`Image`, `buildSnapshot`, `followBuildLogs`; see "Image builder"); `createVolume`, `getVolume`,
-`listVolumes` / `listVolumesAll`, `deleteVolume`; `status()`; `updateSandbox`, `resetSandbox`,
-`resizeSandbox`, `listIsolation`, `mintPreviewToken`, `statPath`, `followCommandLogs` (see
+`listVolumes` / `listVolumesAll`, `deleteVolume`; `status()`; `updateSandbox` (labels, timers,
+`public` and a runtime replacement of the egress allowlist), `resetSandbox`, `resizeSandbox`,
+`listIsolation`, `mintPreviewToken`, `statPath`, `followCommandLogs` (see
 "Sandbox operations"); the interactive PTY (`connectPty`, `createPty`, `listPtys`, `getPty`,
 `resizePty`, `deletePty`; `connectPty` needs a WebSocket — the global one of Node 22+ or the
 `webSocket` client option); and the facades `client.webhooks`, `client.apiKeys`,
@@ -103,7 +104,7 @@ const sbx = await client.createSandbox({
   env: { MODE: "ci" },
   labels: { team: "agents" },
   blockNetwork: false,
-  egressAllowlist: ["pypi.org"],                          // [] means no network
+  egressAllowlist: ["pypi.org"],                          // host names, .domains, CIDRs; [] means no network
   inheritResources: true,                                 // fill unset resource fields from the snapshot's record
   volumes: [
     { volumeId: vol.id, mountPath: "/data" },             // up to 16 mounts
@@ -392,12 +393,13 @@ verifyHead(trailerLine, publicKey); // the signature alone, no file, no network
 head without `signature` and `hmac`, as compact JSON with sorted keys and ASCII only. The key
 you pass is the trust anchor: the `public_key` named in the line is only compared with it (a
 different one is `key_mismatch`), so a head forged under the forger's own key is refused.
-It returns `{ ok, rowId, entryHash, publicKey, reason, signedAt }`; `reason` is `null` or one of
-`unsigned`, `signature`, `key_mismatch`, `undated` (no valid `signed_at`) and
-`future_signed_at` (more than 5 minutes ahead of the local clock). It throws `ValidationError`
-for a malformed line or key and never throws for a bad signature.
+It returns `{ ok, rowId, entryHash, publicKey, reason, signedAt, orgId }`; `reason` is `null` or one of
+`unsigned`, `signature`, `key_mismatch`, `undated` (no valid `signed_at`),
+`future_signed_at` (more than 5 minutes ahead of the local clock) and `expected_org_mismatch`
+(see below). It throws `ValidationError` for a malformed line or key and never throws for a bad
+signature.
 
-`verifyExport(lines, publicKey, { allowUnchained?, previous? })` takes the whole text, an
+`verifyExport(lines, publicKey, { allowUnchained?, previous?, expectedOrgId? })` takes the whole text, an
 iterable of lines or an async iterable such as `exportLines()`. After the head it checks that
 the file matches it: with a head that carries `signed_at` and `export_sha256` (and `row_count`, `first_row_id`) the row count, the SHA-256 over
 the exact bytes of every event line and the first row id (`count_mismatch`, `content_mismatch`,
@@ -407,6 +409,16 @@ the exact bytes of every event line and the first row id (`count_mismatch`, `con
 byte prefix (`not_a_continuation`). It also reports `malformed_row`, `misplaced_trailer`,
 `org_mismatch` and `no_trailer`, with `badLine` naming the line. It throws `ValidationError`
 for an empty file, a last `export_summary` line (an unsigned export) or a bad key.
+
+Org binding (0.2.1). `orgId` is the head's `org_id` when it is a non-empty text, else `null`, on
+every result of `verifyHead` and `verifyExport`. Without more, a genuinely signed export of org B
+verifies as ok when it is presented as org A's, so pass the org you expect:
+`verifyHead(line, key, { expectedOrgId })` and `verifyExport(lines, key, { expectedOrgId })`
+(also on `client.audit.verifyHead` and `client.audit.verifyExport`). A signed head that names
+another org, or none, fails with `expected_org_mismatch`, checked after the signature (an
+unsigned or tampered head keeps `unsigned` or `signature`) and before `signed_at`; the file
+checks of `verifyExport` do not run then. An empty `expectedOrgId` throws `ValidationError`.
+This is not the row-level `org_mismatch`, where a row's `org_id` differs from the head's.
 
 What a client cannot prove: the row hashes are keyed with the server's chain key, and the
 `hmac` of the head needs it too, so neither is recomputed here. A server that signs a
@@ -459,6 +471,12 @@ sandbox return a new `Sandbox` handle with the fresh record (handles are immutab
 // PATCH: labels (replaces all; null removes them all), auto timers in minutes (-1 = off), public.
 const tagged = await sbx.update({ labels: { team: "infra" }, autoStopMinutes: 30 });
 
+// Replace the egress allowlist (host names, leading-dot domains, CIDR ranges) of a sandbox
+// created with a non-empty one; [] refuses every connection. The new `egressPolicyGeneration`
+// is on the returned handle when the list changed (an equal list is a server-side no-op).
+const narrowed = await sbx.update({ egressAllowlist: ["pypi.org"] });
+console.log(narrowed.egressPolicyGeneration, narrowed.egressAllowlist);
+
 // Replace the container with a fresh one; id, labels, volumes and timers are kept.
 const fresh = await sbx.reset();
 
@@ -483,8 +501,19 @@ for await (const event of sbx.followCommandLogs(session.id, cmd.id)) {
 ```
 
 The API does not rename a sandbox, so `update` has no `name`. Arguments are checked before any
-request (`ValidationError`): `update` and `resize` need at least one field. `followCommandLogs`
-sends one event per line. Each event has `offset` (where its line starts) and `nextOffset` (the
+request (`ValidationError`): `update` and `resize` need at least one field. `egressAllowlist`
+entries (host names, leading-dot domains and CIDR ranges) are not checked client-side. The server
+answers 422 `UNPROCESSABLE` for most invalid entries (uppercase, a scheme, a port, a wildcard, a bad
+or denied CIDR, too many entries) and 422 `VALIDATION_ERROR` for whitespace or control characters
+and malformed requests; both are `ValidationFailed`. `[]` is sent as an empty list, and `null` is
+rejected, since an allowlist cannot be removed. The generation rises by 1 only when the list
+actually changes: a list equal to the stored one is a no-op (200, nothing changes). The server
+answers 409 `INVALID_STATE` (`InvalidState`, a `Conflict`) when the sandbox has no allowlist to
+replace, was created with an empty one while `blockNetwork` was on, or predates egress v2, and 403
+`FORBIDDEN` when operator policy forbids the change; the proxy applies the new list within its
+cache window. Generation 0 with a non-null `egressAllowlist` means a legacy v1 credential: `reset`
+to upgrade. With `egressAllowlist: null` the sandbox was created without an allowlist, and no
+update or reset will enable one (reset would only discard the container's filesystem). `followCommandLogs` sends one event per line. Each event has `offset` (where its line starts) and `nextOffset` (the
 resume point after it, from the SSE `id`; `null` if the server sent none). To resume, pass the
 `nextOffset` of the last event you saw as `offset`: the stream continues with the following
 line, none repeated and none missing. A stream that ends without `exit` throws
@@ -581,7 +610,14 @@ await pipeline(Readable.from(client.exportSnapshotStream(id)), createWriteStream
 
 `SandboxInfo` also reports `createdAt`, `updatedAt`, `stoppedAt`, `stopCause`, `isolation`,
 `volumes` (`VolumeMountInfo[]`) and `egressAllowlist`. They are `undefined` when the server
-omits them, and `null` where the API sends null.
+omits them, and `null` where the API sends null. `errorCode` (`SandboxErrorCode`, from the exported
+`SANDBOX_ERROR_CODES`) says why a sandbox settled in `error`, for example `egress_unavailable`; it
+is `null` when the server sends none, and a code this SDK does not know comes through as the plain
+string, like `state`. `egressPolicyGeneration` is always a number: the version of the egress
+allowlist, 0 when the server sends none (or null) or the sandbox predates egress v2; any other
+non-integer value raises `InvalidResponseError`. Read 0 together with `egressAllowlist`: with a
+non-null list it is a legacy v1 credential (`reset` upgrades it); with `egressAllowlist: null` no
+allowlist was ever set and neither `update` nor `reset` will enable one.
 
 ## License
 

@@ -38,6 +38,8 @@ export {
 } from "./resilience.js";
 export type { CallOptions, ResilienceOptions, SleepFn } from "./resilience.js";
 export type { FetchLike } from "./transport.js";
+export { SANDBOX_ERROR_CODES } from "./error-codes.js";
+export type { SandboxErrorCode } from "./error-codes.js";
 export type {
   DeleteResult,
   DirListing,
@@ -162,6 +164,7 @@ export type {
   HeadReason,
   HeadRecord,
   HeadVerification,
+  VerifyHeadOptions,
 } from "./audit-head.js";
 export { verifyExport } from "./audit-export-verify.js";
 export type {

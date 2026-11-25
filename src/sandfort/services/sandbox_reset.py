@@ -161,13 +161,13 @@ class SandboxReset:
         ref is saved before the start; a driver failure past the removal is recorded, then raised.
         """
         await self._refuse_if_busy(sandbox.org_id, sandbox.id)  # a snapshot may have begun since
-        if sandbox.driver_ref is not None:
-            try:
-                await self._driver.destroy(sandbox.driver_ref)
-            except DriverNotFound:
-                pass  # already gone; the outcome is the one we want
         created_ref: str | None = None
         try:
+            if sandbox.driver_ref is not None:
+                try:
+                    await self._driver.destroy(sandbox.driver_ref)
+                except DriverNotFound:
+                    pass  # already gone; the outcome is the one we want
             created_ref = (await self._driver.create(self._core.spec(sandbox))).ref
             await self._record_ref(sandbox.org_id, sandbox.id, created_ref, sandbox.state)
             if sandbox.state is _S.STARTED:

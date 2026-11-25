@@ -26,6 +26,7 @@ from sandfort.domain.isolation import ISOLATION_LABEL
 from sandfort.domain.lifecycle import IllegalTransition, assert_transition, can_transition
 from sandfort.domain.node import DEFAULT_NODE_ID
 from sandfort.domain.sandbox import (
+    ERROR_EGRESS_UNAVAILABLE,
     ERROR_IMAGE_ACCESS_DENIED,
     ERROR_IMAGE_NOT_FOUND,
     ERROR_INTERNAL,
@@ -36,6 +37,7 @@ from sandfort.domain.sandbox import (
     ERROR_TIMEOUT,
     Sandbox,
     SandboxState,
+    egress_spec_labels,
 )
 from sandfort.drivers.base import SandboxDriver, SandboxSpec
 from sandfort.drivers.errors import (
@@ -50,6 +52,7 @@ from sandfort.drivers.errors import (
 from sandfort.egress.env import EgressReminting, reminted_proxy_env
 from sandfort.errors import InvalidState, NotFound
 from sandfort.services.audit import AuditRecorder
+from sandfort.services.egress_provision import EgressUnavailable, provision_egress_env
 from sandfort.services.node_registry import stamp_job
 from sandfort.services.usage import MeteredUnitOfWorkFactory
 from sandfort.services.volumes import user_labels
@@ -156,6 +159,19 @@ class Lifecycle:
             sandbox = await self.transition(org_id, sandbox_id, _S.CREATING)
         if sandbox.state is not _S.CREATING:
             return sandbox  # a previous attempt already finished (or the sandbox moved on)
+        try:  # the owning node mints its own token, committed before any driver call
+            sandbox = await provision_egress_env(
+                self._uow_factory, self._egress, self._clock, sandbox
+            )
+        except EgressUnavailable as exc:
+            return await self.record_failure(
+                org_id,
+                sandbox_id,
+                exc,
+                code=ERROR_EGRESS_UNAVAILABLE,
+                phase=PHASE_CREATE,
+                actor_id=actor_id,
+            )
         ref: str | None = None
         try:
             info = await self._driver.create(self.spec(sandbox))  # adopts an existing container
@@ -278,21 +294,35 @@ class Lifecycle:
 
         For a reset, which recreates the container from the stored env. A start must not call
         it: the container it starts keeps the env it was created with. A no-op without
-        ``egress`` or for a sandbox with no (or an empty) allowlist.
+        ``egress``, for a sandbox with no allowlist, and for a blocked one (created with an empty
+        list: ``block_all``, no proxy environment, no token to revoke). A sandbox whose list was
+        PATCHed to ``[]`` still holds a token, so its epoch rises like any other. The credential
+        epoch rises by 1 (the previous container's token is revoked through the proxy's lookup)
+        and the policy generation becomes at least 1, so a legacy sandbox upgrades to a v2 token.
         """
         async with self._uow_factory() as uow:
             current = await self.require(uow, org_id, sandbox_id)
-            if self._egress is None or not current.egress_allowlist:
+            if self._egress is None or current.egress_allowlist is None:
                 return current
+            if not current.egress_allowlist and current.network.block_all:
+                return current  # created blocked: no proxy environment, nothing to revoke
+            epoch = current.egress_credential_epoch + 1
             env = reminted_proxy_env(
                 current.env,
                 self._egress,
                 current.id,
-                current.egress_allowlist,
                 self._clock.now(),
                 current.auto_delete_minutes,
+                epoch=epoch,
             )
-            updated = current.model_copy(update={"env": env, "updated_at": self._clock.now()})
+            updated = current.model_copy(
+                update={
+                    "env": env,
+                    "egress_credential_epoch": epoch,
+                    "egress_policy_generation": max(1, current.egress_policy_generation),
+                    "updated_at": self._clock.now(),
+                }
+            )
             saved = await uow.sandboxes.update(org_id, updated, expected_version=current.version)
             await uow.commit()
         return saved
@@ -458,6 +488,7 @@ class Lifecycle:
             env=sandbox.env,
             network=sandbox.network,
             isolation=sandbox.labels.get(ISOLATION_LABEL),  # absent: the deployment default
+            labels=egress_spec_labels(sandbox),
         )
 
 

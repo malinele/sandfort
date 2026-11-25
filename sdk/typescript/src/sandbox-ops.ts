@@ -63,6 +63,24 @@ export interface UpdateSandboxOptions extends CallOptions {
   autoDeleteMinutes?: number;
   /** Whether preview URLs need no token. */
   public?: boolean;
+  /**
+   * Replaces the egress allowlist (host names, leading-dot domains and CIDR ranges) of a
+   * sandbox created with a non-empty one; omit it to keep the list. `[]` is sent as given and
+   * refuses every connection; there is no way to remove an allowlist, so `null` is rejected.
+   * The `egressPolicyGeneration` on the returned handle rises by 1 only when the list actually
+   * changes: a list equal to the stored one is a no-op on the server (200, nothing changes, no
+   * audit row). Entries are not checked here, the server validates them: most invalid entries
+   * (uppercase, a scheme, a port, a wildcard, a bad or denied CIDR, too many entries) come back
+   * as 422 `UNPROCESSABLE`, whitespace or control characters and a malformed request as 422
+   * `VALIDATION_ERROR`; the SDK maps both to `ValidationFailed`. The server refuses with 409
+   * `INVALID_STATE` (`InvalidState`, a `Conflict`) when the sandbox has no allowlist to
+   * replace, was created with an empty list while `blockNetwork` was on, or predates egress v2
+   * (`egressPolicyGeneration` 0 with a non-null `egressAllowlist` is a legacy v1 credential:
+   * `reset` it to upgrade; with `egressAllowlist: null` the sandbox was created without an
+   * allowlist and no update or reset will enable one), and with 403 `FORBIDDEN` when operator
+   * policy forbids the change. The proxy applies the new list within its cache window.
+   */
+  egressAllowlist?: readonly string[];
 }
 
 /** New resources of a stopped sandbox; fields left out keep their value. */
@@ -138,8 +156,11 @@ function requireLabels(labels: Readonly<Record<string, string>>): void {
 }
 
 export function updateBody(options: UpdateSandboxOptions): Record<string, unknown> {
-  const { labels, autoStopMinutes, autoDeleteMinutes } = options;
+  const { labels, autoStopMinutes, autoDeleteMinutes, egressAllowlist } = options;
   if (labels !== undefined && labels !== null) requireLabels(labels);
+  if (egressAllowlist !== undefined && !Array.isArray(egressAllowlist)) {
+    fail("egressAllowlist must be an array of host names, domains or CIDR ranges");
+  }
   if (autoStopMinutes !== undefined) requireMinutes(autoStopMinutes, "autoStopMinutes");
   if (autoDeleteMinutes !== undefined) requireMinutes(autoDeleteMinutes, "autoDeleteMinutes");
   if (options.public !== undefined && typeof options.public !== "boolean") {
@@ -150,9 +171,12 @@ export function updateBody(options: UpdateSandboxOptions): Record<string, unknow
     auto_stop_minutes: autoStopMinutes,
     auto_delete_minutes: autoDeleteMinutes,
     public: options.public,
+    egress_allowlist: egressAllowlist === undefined ? undefined : [...egressAllowlist],
   });
   if (Object.keys(body).length === 0) {
-    fail("updateSandbox needs at least one of labels, autoStopMinutes, autoDeleteMinutes, public");
+    fail(
+      "updateSandbox needs at least one of labels, autoStopMinutes, autoDeleteMinutes, public, egressAllowlist",
+    );
   }
   return body;
 }

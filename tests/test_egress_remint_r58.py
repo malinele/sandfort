@@ -16,7 +16,7 @@ from sandfort.clock import FrozenClock
 from sandfort.config import Settings
 from sandfort.domain.sandbox import Sandbox, SandboxState
 from sandfort.egress.env import EgressReminting, compose_proxy_env
-from sandfort.egress.tokens import verify_egress_token
+from sandfort.egress.tokens_v2 import verify_egress_token_v2
 from sandfort.services.sandbox_jobs import (
     Lifecycle,
     handle_start,
@@ -90,7 +90,7 @@ def _settings(**changes: Any) -> Settings:
 
 
 def _stored() -> Sandbox:
-    env = {"KEEP": "1", **compose_proxy_env(ADDRESS, SECRET, SANDBOX, [ALLOWED], ISSUED)}
+    env = {"KEEP": "1", **compose_proxy_env(ADDRESS, SECRET, SANDBOX, ISSUED, epoch=0)}
     return Sandbox(
         id=SANDBOX,
         org_id=ORG,
@@ -153,8 +153,9 @@ async def test_wired_job_lifecycle_remints_on_reset() -> None:
     env = rows.rows[SANDBOX].env
     assert env["KEEP"] == "1"
     assert _token_of(env) != _token_of(old_env)
-    claims = verify_egress_token(SECRET, _token_of(env), LATER, WEEK_S)
+    claims = verify_egress_token_v2(SECRET, _token_of(env), LATER, WEEK_S)
     assert claims.issued_at == LATER
+    assert claims.epoch == 1
     assert claims.expires_at - claims.issued_at == timedelta(hours=1, days=1)
 
 

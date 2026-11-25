@@ -49,7 +49,205 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 89 (after tag v0.1.0-beta.81; TypeScript SDK 0.2.2: runtime egress allowlist)
+- **feat(ts-sdk): updateSandbox egressAllowlist, egressPolicyGeneration and errorCode
+  (2026-11-24).** `@sandfort/sdk` 0.2.2: `updateSandbox` gains `egressAllowlist` — the list
+  is sent as given and validated by the server, an explicit `[]` blocks every connection,
+  an omitted option is not sent, and null cannot be produced; the 409 refusals (no
+  allowlist to replace, created empty while the network blocks all, legacy generation)
+  carry code `INVALID_STATE` and map to `InvalidState`, 422 is `UNPROCESSABLE` for most
+  invalid entries and `VALIDATION_ERROR` for whitespace and request-shape failures, and
+  the generation rises only when the list actually changes. `SandboxInfo` gains
+  `egressPolicyGeneration` (0 only for a missing or null field, other wrong types raise
+  `InvalidResponseError`; 0 with a null `egressAllowlist` means the sandbox was created
+  without one — no update or reset enables it, while 0 with a non-null list is a legacy v1
+  credential that a reset upgrades) and `errorCode` (`SandboxErrorCode` open-enum literal;
+  `SANDBOX_ERROR_CODES` matches the server's `ERROR_CODES` including `egress_unavailable`,
+  enforced by `tests/test_ts_error_codes_parity.py`). (`sdk/typescript/src/sandbox-ops.ts`,
+  `models.ts`, `sandbox.ts`, `error-codes.ts`, `index.ts`, `version.ts`, `README.md`,
+  `tests/egress-update.test.ts`, `tests/error-code.test.ts`,
+  `tests/test_ts_error_codes_parity.py`; this commit)
+
+#### Round 88 (after tag v0.1.0-beta.81; egress v2 round 5: jobs mode)
+- **feat(egress): jobs-mode egress — egress_ready placement, node-side minting, one spec
+  builder (2026-11-24).** Jobs mode no longer refuses egress-allowlisted creates. Migration
+  r0028 adds `nodes.egress_ready` (default false) and `nodes.egress_ready_at`: a node's
+  heartbeat reports ready exactly when it has a proxy address, the egress secret and a
+  policy URL, and placement (`pick_node(require_egress=True)`) counts only nodes whose
+  latest beat itself reported readiness — a stale flag left by a rollback to older worker
+  code fails closed, and with no qualifying node the create answers 409 "no node can run
+  egress-allowlisted sandboxes" with no local fallback. The owning node mints the `sfe2_`
+  token (`services/egress_provision.py`) in its own unit of work strictly before
+  `driver.create`; a node without egress settings records the new error code
+  `egress_unavailable` and never creates a container; a retried job finds the stored env
+  and does not mint again. A sandbox needs the egress stack exactly when its allowlist is
+  not null and the network does not block all hosts, so a create with `[]` (block_all)
+  needs no egress node, while a PATCH to `[]` before the job runs still mints, and the
+  credential serves a later re-widen. `Lifecycle.spec` builds egress labels for both the
+  inline and job paths and the `MountingLifecycle` egress merge is gone. Volume refusal
+  (422) and the reset refusal stay in jobs mode, so a jobs-mode token is never refreshed —
+  an allowlisted jobs sandbox that outlives its token TTL loses egress
+  (`docs/operations.md`). The SDK `ErrorCode` literal gains `egress_unavailable`.
+  (`src/sandfort/migrations/versions/r0028_node_egress_ready.py`,
+  `src/sandfort/services/egress_provision.py`, `node_registry.py`, `sandbox_jobs.py`,
+  `sandboxes.py`, `src/sandfort/domain/node.py`, `sandbox.py`, `db/models/nodes.py`,
+  `db/repositories/nodes.py`, `api/wiring.py`, `api/schemas/sandboxes.py`,
+  `sdk/python/src/sandfort_sdk/error_codes.py`, `openapi/sandfort.v1.json`,
+  `docs/operations.md`, `tests/test_egress_jobs_v2.py`, `test_placement_egress_v2.py`;
+  this commit)
+
+#### Round 87 (after tag v0.1.0-beta.81; egress v2 round 4: controlled DNS)
+- **feat(egress): DNS pinning, DNS sink for the container tier, driver dns config and host
+  rules (2026-11-24).** The proxy pins a name's vetted address set per (sandbox, name) for
+  `SANDFORT_EGRESS_DNS_PIN_S` seconds (default 30, 0 restores one resolution per CONNECT):
+  inside the window CONNECTs reuse the pinned set, a set is pinned only after a connection
+  succeeded, a pin is dropped when the policy no longer admits the name (also for sandboxes
+  with no open tunnel), and when every pinned address fails the pin is dropped and the name
+  re-resolved once within the existing budgets. Caps: 256 pins per sandbox, 65536 total,
+  LRU. The proxy serves a DNS sink (`SANDFORT_EGRESS_DNS_SINK_LISTEN`, udp and tcp 53):
+  every query is answered REFUSED, nothing is forwarded, per-source counts are logged once
+  a minute and queried names are never logged; binding port 53 needs `CAP_NET_BIND_SERVICE`
+  or root. With `SANDFORT_EGRESS_DNS_SINK_ADDRESS` set on the api, `container`-tier
+  sandboxes on `sf-egress-net` get `dns=[sink]` — fail closed: every runtime except the
+  runsc and kata families counts as the container tier; unset keeps v1 behavior with one
+  startup warning, and sandboxes created before the sink keep their old resolvers until
+  reset. `ensure_network` refuses an `sf-egress-net` with `EnableIPv6`, at adoption and now
+  also right after create; `host-setup.sh` creates it with `--ipv6=false` and sources
+  `deploy/egress-dns-sink.sh`, which opens udp and tcp 53 to the sink address only. The
+  prod probe gains a DNS canary (resolving a public name is a finding). Denied CONNECT
+  names are logged as length plus keyed digest, never raw. `examples/gate11.py` checks P1,
+  D1 and D3 end to end; D3/D4 (`tests/test_docker_egress_dns_v2.py`, docker-marked) and
+  gate 11 run on the Linux beta VM, and until they pass the `container`-tier DNS side
+  channel wording in `docs/isolation-tiers.md` stays. (`src/sandfort/egress/pinning.py`,
+  `dns_sink.py`, `upstream.py`, `proxy.py`, `slots.py`, `logname.py`, `proxy_limits.py`,
+  `src/sandfort/config.py`, `src/sandfort/drivers/docker/hardening.py`, `networks.py`,
+  `egress_probe_dns.py`, `egress_probe.py`, `deploy/egress-dns-sink.sh`, `host-setup.sh`,
+  `release-bundle.sh`, `examples/gate11.py`, `docs/operations.md`, ten new test files;
+  this commit)
+
+#### Round 86b (after tag v0.1.0-beta.81; egress v2 round 3: SDK and CLI clients)
+- **feat(sdk,cli): set_egress_allowlist and sandbox egress set/show (2026-11-24).** The
+  Python SDK gains `set_egress_allowlist(sandbox_id, entries)` on `Client` and
+  `AsyncClient`: one PATCH to `/v1/sandboxes/{id}`, entries sent as given and validated by
+  the server, `[]` blocks every connection, and a bare string or `None` raises `TypeError`
+  before any request. `SandboxInfo` carries `egress_policy_generation` (0 when an older
+  server omits the field or sends null; any other wrong type raises `InvalidResponseError`)
+  and `egress_allowlist`; unknown response fields are ignored (case K4). The 409 refusals
+  (no allowlist, blocked create, legacy credential) surface as `InvalidState`, matching the
+  server's `INVALID_STATE` code. The CLI gains `sandfort sandbox egress set <id>
+  (--allow ENTRY ... | --deny-all)` and `sandfort sandbox egress show <id>`, honoring the
+  global `--json`; exactly one of `--allow` and `--deny-all` is required. The TypeScript
+  SDK's `updateSandbox({egressAllowlist})` stays a separate follow-up.
+  (`sdk/python/src/sandfort_sdk/egress.py`, `client.py`, `async_client.py`, `models.py`,
+  `cli/src/sandfort_cli/egress_cmd.py`, `main.py`, `tests/test_sdk_egress_r86b.py`,
+  `tests/test_cli_egress_r86b.py`; this commit)
+
+#### Round 86a (after tag v0.1.0-beta.81; egress v2 round 3: server side of the policy channel)
+- **feat(egress): r0027 migration, internal policy route, PATCH egress_allowlist and v2
+  token minting (2026-11-24).** The api now answers `POST /internal/egress/v1/policies` (out
+  of the public spec), mounted only when `SANDFORT_EGRESS_POLICY_ROUTE_ENABLED` is set and
+  the egress secret is configured; a deployment whose proxy sets the policy URL must enable
+  it on the api instances that URL points at. Requests follow the HMAC scheme of round 2
+  with two review amendments: the client draws a fresh nonce into each request body, and the
+  response MAC covers the request body hash, so a captured 200 answers no later request even
+  for the same ids inside the 30 second window; the body's `issued_at` is checked against
+  the signature timestamp, and a stale or malformed auth header is refused before the body
+  is read. Sandboxes carry a policy generation and a credential epoch (migration r0027,
+  defaults 0, no backfill). PATCH can replace a non-empty allowlist (generation + 1,
+  `sandbox.egress_updated` audit row in the same transaction), set it to `[]` to refuse
+  every connection, and never remove it. Create mints `sfe2_` v2 tokens with generation 1
+  and reset raises the credential epoch, so the previous container's token is revoked
+  through the proxy's lookup, also for a sandbox whose allowlist was PATCHed to `[]`; a
+  driver failure while the reset removes the old container records the sandbox as a failed
+  reset instead of leaving a started container with a revoked token unreported. Legacy
+  sandboxes answer 409 with a reset hint. The SDK and CLI
+  client surface follows in its own round. (`src/sandfort/migrations/versions/r0027_egress_v2.py`,
+  `src/sandfort/db/models/sandboxes.py`, `db/repositories/sandboxes.py`,
+  `src/sandfort/domain/sandbox.py`, `src/sandfort/egress/env.py`, `policy_wire.py`,
+  `policy_client.py`, `src/sandfort/services/egress_update.py`, `egress_policy.py`,
+  `sandboxes.py`, `sandbox_reset.py`, `src/sandfort/api/routes/egress_policy.py`,
+  `api/app.py`, `api/routes/sandboxes.py`, `api/schemas/sandboxes.py`, `config.py`,
+  `openapi/sandfort.v1.json`, `tests/test_egress_migration_v2.py`,
+  `test_egress_patch_v2.py`, `test_egress_policy_route_v2.py`, `test_egress_mint_v2.py`;
+  this commit)
+
+#### Round 85 (after tag v0.1.0-beta.81; egress v2 round 2: proxy side of the policy channel)
+- **feat(egress): signed sfe2_ tokens, policy lookup client and admission re-check in the
+  proxy (2026-11-24).** The proxy can now fetch per-sandbox egress policies from an internal
+  api route over HMAC-signed requests and responses (keys derived from
+  `SANDFORT_EGRESS_SECRET`, 30 second freshness window, any unverified response is treated
+  as unavailable and fails closed with 503). `sfe2_` v2 tokens carry only the sandbox id and
+  a credential epoch and are verified under a derived key. With
+  `SANDFORT_EGRESS_POLICY_URL` set, v1 tokens are looked up too and decided by the stored
+  row, never the claims, so delete and reset revoke them. A cached policy lives
+  `SANDFORT_EGRESS_POLICY_CACHE_S` seconds, open tunnels are re-checked by a sweep and on
+  every policy change and closed after `SANDFORT_EGRESS_POLICY_MAX_STALE_S` when lookups
+  fail. The single 15 second admission deadline is replaced by per-phase budgets (request
+  read 15 s, lookup 2 s, resolve 5 s, connect 10 s per address and 12 s per round, 38 s in
+  all), so a slow upstream can hold its slots for up to 38 s without raising any cap.
+  Nothing mints v2 tokens yet and deployments leave the policy URL unset until round 3, so
+  deployed behavior does not change. (`src/sandfort/egress/policy_wire.py`, `tokens_v2.py`,
+  `auth.py`, `policy_client.py`, `admission.py`, `tunnels.py`, `upstream.py`, `proxy.py`,
+  `proxy_limits.py`, `tests/test_egress_tokens_v2.py`, `test_egress_policy_wire_v2.py`,
+  `test_egress_policy_client_v2.py`, `test_egress_tunnels_v2.py`, `test_egress_proxy_v2.py`,
+  `test_egress_admission_v2.py`, `test_egress_legacy_lookup_v2.py`; this commit)
+
+#### Round 84 (after tag v0.1.0-beta.81; egress v2 round 1: CIDR address rules)
+- **feat(egress): CIDR allowlist entries and IP-literal CONNECT targets (2026-11-24).**
+  An `egress_allowlist` entry may now be a canonical CIDR range next to host names and
+  leading-dot domains. A range needs a prefix of at least /8 (IPv4) or /32 (IPv6), must be
+  entirely global (no loopback, link-local, private, shared, multicast, reserved or
+  documentation addresses), must not overlap the server's denied networks
+  (`SANDFORT_EGRESS_DENIED_CIDRS`), must name the network address and must already be written
+  in canonical form; anything else is a 422 that names the entry. The entry cap counts all
+  three forms. The proxy admits an IP-literal target only through a CIDR rule and never
+  through a name rule, and a name that matches no host or domain rule is refused before any
+  resolution, so a CIDR rule never admits a name. An IPv4-mapped IPv6 literal folds to IPv4
+  before rule match and vetting, a zone id in the target is a 400 (also for a `%` in a plain
+  name target, which before was a 403), and the always-refused prefix set covers NAT64, 6to4
+  and Teredo plus, after review, the IPv4-compatible block `::/96` (except `::` and `::1`),
+  the IPv4-translated SIIT block `::ffff:0:0:0/96` and deprecated site-local `fec0::/10`;
+  validation likewise refuses those ranges, `5f00::/16` (SRv6 SIDs) and a zone id inside a
+  CIDR entry. The node's denied list still wins over a
+  tenant rule, and the port check still runs before rule match. Tokens are unchanged: CIDR
+  entries travel in the existing `allow` claim. Resolve, vet and connect moved from
+  `proxy.py` to `upstream.py`, and the rule matcher lives in `rules.py`.
+  (`src/sandfort/domain/egress_entries.py`, `src/sandfort/domain/sandbox.py`,
+  `src/sandfort/egress/rules.py`, `src/sandfort/egress/upstream.py`,
+  `src/sandfort/egress/proxy.py`, `src/sandfort/egress/proxy_limits.py`,
+  `src/sandfort/services/sandboxes.py`, `src/sandfort/api/schemas/sandboxes.py`,
+  `openapi/sandfort.v1.json`, `tests/test_egress_rules_v2.py`,
+  `tests/test_egress_cidr_proxy_v2.py`, `tests/test_egress_cidr_validation_v2.py`; this commit)
+
 #### Round 79 (after tag v0.1.0-beta.81; the Kubernetes kit names the published image)
+- **chore(ts-sdk): `@sandfort/sdk` 0.2.1 published to the public npm registry (2026-11-24).**
+  First public npm release; before this the TypeScript SDK shipped only as signed tarballs.
+  `package.json` gains `publishConfig.access: public`, `homepage` and `keywords`; the tarball
+  carries `dist`, `README.md` and `LICENSE` only (113 files, 124.0 kB packed, shasum
+  `54a85475b07c2edc85fe8cd70b298ecd3d33f943`). Published from this commit's tree with all 807
+  SDK tests passing; no code change. (`sdk/typescript/package.json`; this commit)
+- **feat(sdk,cli): org binding for the verification of the signed audit trailer (2026-11-24,
+  additive).** Before, a genuinely signed export of org B verified as ok when it was presented as
+  the export of org A, because the result did not say which org the head names. In the Python
+  SDK `HeadVerification` and `ExportVerification` now carry `org_id`, the head's `org_id` when it
+  is a non-empty text (else `None`), on every outcome. `verify_head`, `verify_export`,
+  `export_result` and the `Audit` / `AsyncAudit` facade methods take a keyword-only
+  `expected_org_id`: a signed head that names another org, or none, fails with the new reason
+  `expected_org_mismatch`, checked after the signature and before `signed_at`, so an unsigned or
+  tampered head keeps its own reason. An empty `expected_org_id` raises `ValueError`. The row
+  level reason `org_mismatch` (a row's org differs from the head's) is unchanged. In the CLI,
+  `sandfort audit verify-head` gains `--expect-org <org_id>` (an empty value is a usage error,
+  exit 2) and its json document gains `org_id`; a mismatch exits 3. Without `expected_org_id` and
+  `--expect-org` the checks are the same as before. The TypeScript SDK 0.2.1 (additive) has the
+  same semantics: `HeadVerification` and `ExportVerification` carry `orgId` (`string | null`),
+  `verifyHead(headLine, publicKey, { expectedOrgId })` and `verifyExport(lines, publicKey,
+  { expectedOrgId })` (also `client.audit.verifyHead` and `client.audit.verifyExport`) fail with
+  `expected_org_mismatch` at the same place, an empty `expectedOrgId` throws `ValidationError`,
+  and the new type `VerifyHeadOptions` is exported. (`sdk/python/src/sandfort_sdk/audit_head.py`,
+  `audit_export.py`, `audit_verify.py`, `cli/src/sandfort_cli/audit_verify_cmd.py`,
+  `tests/test_sdk_audit_org_r82.py`, `tests/test_cli_audit_org_r82.py`,
+  `sdk/typescript/src/audit-head.ts`, `audit-export-verify.ts`, `audit.ts`,
+  `sdk/typescript/tests/audit-head.test.ts`; this commit)
 - **feat(mcp): package the MCP server as sandfort-mcp (PyPI) with server.json for the MCP
   registry.** `mcp_server/pyproject.toml` builds the single module `sandfort_mcp` with the
   console script `sandfort-mcp`, and `mcp_server/README.md` is the long description. `server.json`

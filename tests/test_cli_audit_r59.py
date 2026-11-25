@@ -1164,7 +1164,9 @@ def test_export_mode_change_failure_closes_the_descriptor(router, monkeypatch, o
 
 STATUS_URL = "/v1/status"
 EXIT_SIGNATURE = 3
-HEAD_FIELDS = {"ok", "row_id", "entry_hash", "public_key", "reason", "fingerprint", "signed_at"}
+HEAD_FIELDS = {
+    "ok", "row_id", "entry_hash", "public_key", "reason", "fingerprint", "signed_at", "org_id",
+}  # fmt: skip
 # verify-head checks the rows too (round 61), so its json also carries the file checks
 FILE_FIELDS = HEAD_FIELDS | {
     "rows_checked", "first_break", "unchained", "content_bound", "filtered",

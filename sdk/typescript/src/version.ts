@@ -1,6 +1,6 @@
 /** SDK identity. `VERSION` is kept equal to `package.json`'s `version` by tests/surface.test.ts. */
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.2";
 export const PACKAGE_NAME = "@sandfort/sdk";
 /** Sent as the `User-Agent` of every request (ignored by browsers). */
 export const USER_AGENT = `sandfort-sdk-typescript/${VERSION}`;

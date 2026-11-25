@@ -21,6 +21,8 @@ def _to_entity(row: NodeRow) -> Node:
         state=NodeState(row.state),
         last_heartbeat_at=as_utc(row.last_heartbeat_at),
         internal_url=row.internal_url,
+        egress_ready=row.egress_ready,
+        egress_ready_at=None if row.egress_ready_at is None else as_utc(row.egress_ready_at),
     )
 
 
@@ -30,6 +32,7 @@ class SqlNodeRepository:
 
     async def upsert_heartbeat(self, node: Node) -> None:
         beat = as_utc(node.last_heartbeat_at)
+        ready_at = beat if node.egress_ready else None  # the same instant as the beat itself
         row = await self._session.get(NodeRow, node.id, populate_existing=True)
         if row is None:
             self._session.add(
@@ -40,6 +43,8 @@ class SqlNodeRepository:
                     state=node.state.value,
                     last_heartbeat_at=beat,
                     internal_url=node.internal_url,
+                    egress_ready=node.egress_ready,
+                    egress_ready_at=ready_at,
                     created_at=beat,
                     updated_at=beat,
                 )
@@ -50,6 +55,8 @@ class SqlNodeRepository:
             row.state = node.state.value
             row.last_heartbeat_at = beat
             row.internal_url = node.internal_url
+            row.egress_ready = node.egress_ready
+            row.egress_ready_at = ready_at
             row.updated_at = beat
         await self._session.flush()
 

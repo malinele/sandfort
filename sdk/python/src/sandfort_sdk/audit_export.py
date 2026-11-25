@@ -22,6 +22,7 @@ from typing import Any
 
 from sandfort_sdk.audit_continuation import HEAD_TYPE, MAX_LINE_CHARS, SUMMARY_TYPE, TRAILER_TYPES
 from sandfort_sdk.audit_head import (
+    EXPECTED_ORG_EMPTY,
     HeadVerification,
     head_binding,
     head_is_filtered,
@@ -172,16 +173,24 @@ def _no_trailer_result(scan: ExportScan, public_key: str | bytes) -> ExportVerif
 
 
 def export_result(
-    scan: ExportScan, public_key: str | bytes, *, allow_unchained: bool = False
+    scan: ExportScan,
+    public_key: str | bytes,
+    *,
+    allow_unchained: bool = False,
+    expected_org_id: str | None = None,
 ) -> ExportVerification:
     """The head signature of ``scan`` checked against ``public_key``, then the file checks.
 
     A scan without a usable trailer fails with ``"no_trailer"`` (the key is still validated);
-    ``ValueError`` for an unusable ``public_key``.
+    ``ValueError`` for an unusable ``public_key`` or an empty ``expected_org_id``. With
+    ``expected_org_id`` a signed head of another org fails with ``"expected_org_mismatch"`` and
+    the file checks do not run.
     """
+    if expected_org_id == "":
+        raise ValueError(EXPECTED_ORG_EMPTY)
     if scan.head is None:
         return _no_trailer_result(scan, public_key)
-    head = verify_head(scan.head, public_key)
+    head = verify_head(scan.head, public_key, expected_org_id=expected_org_id)
     reason = head.reason
     if head.ok:
         reason = _content_reason(scan, scan.head) or _file_reason(
@@ -201,6 +210,7 @@ def export_result(
         public_key=head.public_key,
         reason=reason,
         signed_at=head.signed_at,
+        org_id=head.org_id,
         rows=scan.rows,
         first_break=None if head_is_filtered(scan.head) else scan.first_break,
         last_row_id=scan.last_row_id,
@@ -219,6 +229,7 @@ def verify_export(
     *,
     allow_unchained: bool = False,
     previous: str | Iterable[str] | None = None,
+    expected_org_id: str | None = None,
 ) -> ExportVerification:
     """Check an export file against its signed ``audit_head`` trailer.
 
@@ -255,8 +266,18 @@ def verify_export(
     Only the server-side verification proves the full chain, keyed hashes included:
     ``sandfort audit verify``, or ``audit-verify`` of the admin CLI.
 
+    With ``expected_org_id`` the signed head must name that org, else the reason is
+    ``"expected_org_mismatch"`` (head-level, no ``bad_line``; the file checks do not run). Without
+    it a genuinely signed export of another org verifies: ``org_id`` of the result tells whose it
+    is. Not to be confused with ``"org_mismatch"``, where a row's org differs from the head's.
+
     Raises ``ValueError`` for an unusable file or key: an empty file, a file without any valid
-    event row whose last line is no usable ``audit_head``, or a malformed key (see
-    :func:`scan_export`).
+    event row whose last line is no usable ``audit_head``, a malformed key (see
+    :func:`scan_export`), or an empty ``expected_org_id``.
     """
-    return export_result(scan_export(lines, previous), public_key, allow_unchained=allow_unchained)
+    return export_result(
+        scan_export(lines, previous),
+        public_key,
+        allow_unchained=allow_unchained,
+        expected_org_id=expected_org_id,
+    )

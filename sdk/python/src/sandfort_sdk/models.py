@@ -50,6 +50,15 @@ def _int(value: Any, what: str) -> int:
     raise InvalidResponseError(f"expected an integer for {what}, got {value!r}")
 
 
+def _egress_allowlist(value: Any) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    return tuple(
+        _str(item, "sandbox egress_allowlist entry")
+        for item in _as_list(value, "sandbox egress_allowlist")
+    )
+
+
 def _bool(value: Any, what: str) -> bool:
     if isinstance(value, bool):
         return value
@@ -175,6 +184,12 @@ class SandboxInfo:
     # Paths the image declares as volumes (mounts the image brings); empty when it has none or
     # the server does not report them (older servers).
     image_mounts: tuple[str, ...] = ()
+    # Version of the egress policy; 0 when the server does not report it (older servers, a
+    # sandbox created without an allowlist). Appended last so earlier positions stay stable.
+    egress_policy_generation: int = 0
+    # Allowed egress entries; None when the sandbox has no allowlist or the server does not
+    # report one, () when every connection is blocked.
+    egress_allowlist: tuple[str, ...] | None = None
 
     @classmethod
     def from_payload(cls, data: Any) -> "SandboxInfo":
@@ -211,6 +226,14 @@ class SandboxInfo:
                 _str(item, "sandbox image_mounts entry")
                 for item in _as_list(raw.get("image_mounts") or [], "sandbox image_mounts")
             ),
+            egress_policy_generation=(
+                0
+                if raw.get("egress_policy_generation") is None
+                else _int(
+                    raw.get("egress_policy_generation"), "sandbox egress_policy_generation"
+                )
+            ),
+            egress_allowlist=_egress_allowlist(raw.get("egress_allowlist")),
         )
 
 

@@ -85,6 +85,11 @@
 # silently); the script dies otherwise. With --dry-run the check only warns. The check uses
 # "ip link show".
 #
+# DNS sink. SANDFORT_EGRESS_DNS_SINK_ADDRESS (environment, else SF_ENV_FILE; an IPv4 address,
+# optionally ":53") adds one exception to SANDFORT-HOST-GUARD-PROXY, before the REJECT: udp and
+# tcp port 53 to that address. The rules come from deploy/egress-dns-sink.sh, which this script
+# sources. Unset means nothing is added (the dry run says so).
+#
 # Production. The server cannot observe these rules from inside its process; prod start
 # requires SANDFORT_EGRESS_ACKNOWLEDGED=true after you ran this script on the node.
 
@@ -139,6 +144,31 @@ run() {
     "$@"
 }
 
+# run_quiet CMD...: run, with docker's own stdout (a network id) discarded. A dry run prints the
+# command itself, which a plain "run ... >/dev/null" would swallow.
+run_quiet() {
+    if [ "$DRY_RUN" = "1" ]; then
+        run "$@"
+        return 0
+    fi
+    "$@" >/dev/null
+}
+
+# The DNS sink exception (udp and tcp 53 to the sink address) lives in a sibling file. A copy
+# of this script without it keeps working: the exception is skipped and the output says so.
+if [ -r "$SCRIPT_DIR/egress-dns-sink.sh" ]; then
+    # shellcheck disable=SC1091 # path is computed at run time
+    . "$SCRIPT_DIR/egress-dns-sink.sh"
+else
+    DNS_SINK=""
+    resolve_dns_sink() {
+        say "egress-dns-sink.sh not found next to host-setup.sh: DNS sink exception skipped"
+    }
+    add_dns_sink_exception() {
+        return 0
+    }
+fi
+
 # require_interface IFACE: die unless the interface exists (dry run: warn only).
 require_interface() {
     [ -n "$1" ] || fail "empty interface name"
@@ -179,11 +209,11 @@ egress_gateway() {
     return 0
 }
 
-# env_file_proxy_value: SANDFORT_EGRESS_PROXY_ADDRESS from ENV_FILE. The file is only grepped
-# for a strict KEY=VALUE line (the last one wins), never sourced.
-env_file_proxy_value() {
+# env_file_value KEY: the value of KEY in ENV_FILE. The file is only grepped for a strict
+# KEY=VALUE line (the last one wins), never sourced.
+env_file_value() {
     [ -r "$ENV_FILE" ] || return 0
-    env_value="$(grep '^SANDFORT_EGRESS_PROXY_ADDRESS=' "$ENV_FILE" | tail -n 1 \
+    env_value="$(grep "^$1=" "$ENV_FILE" | tail -n 1 \
         | cut -d= -f2- | tr -d '\r' || true)"
     case "$env_value" in
         \"*\") env_value="${env_value#\"}"; env_value="${env_value%\"}" ;;
@@ -252,7 +282,7 @@ derive_proxy_endpoint() {
     if [ -n "${SF_ENV_FILE:-}" ] && [ ! -r "$ENV_FILE" ]; then
         fail "SF_ENV_FILE $ENV_FILE is not readable"
     fi
-    from_file="$(env_file_proxy_value)"
+    from_file="$(env_file_value SANDFORT_EGRESS_PROXY_ADDRESS)"
     if [ -n "$from_file" ]; then
         parse_endpoint "$from_file" SANDFORT_EGRESS_PROXY_ADDRESS "$DEFAULT_PROXY_PORT"
         PROXY_SOURCE="SANDFORT_EGRESS_PROXY_ADDRESS in $ENV_FILE"
@@ -304,12 +334,24 @@ ensure_network() {
         return 0
     fi
     say "creating network $net on bridge interface $bridge"
-    run docker network create \
+    if [ "$net" = "$EGRESS_NETWORK" ]; then
+        # The egress network stays IPv4-only: the host IPv6 INPUT chain has no guard for it, and
+        # a daemon may default bridges to IPv6 unless told otherwise.
+        run_quiet docker network create \
+            --driver bridge \
+            --ipv6=false \
+            --opt com.docker.network.bridge.enable_icc=false \
+            --opt "com.docker.network.bridge.name=$bridge" \
+            --label "$MANAGED_LABEL=true" \
+            "$net"
+        return 0
+    fi
+    run_quiet docker network create \
         --driver bridge \
         --opt com.docker.network.bridge.enable_icc=false \
         --opt "com.docker.network.bridge.name=$bridge" \
         --label "$MANAGED_LABEL=true" \
-        "$net" >/dev/null
+        "$net"
 }
 
 # ensure_egress_network: ensure_network for the egress network, at most once per run (the
@@ -475,6 +517,7 @@ build_proxy_host_chain() {
     run iptables -A "$PROXY_HOST_CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
     run iptables -A "$PROXY_HOST_CHAIN" -p tcp -d "$EGRESS_PROXY" --dport "$EGRESS_PROXY_PORT" \
         -j RETURN
+    add_dns_sink_exception "$PROXY_HOST_CHAIN"
     run iptables -A "$PROXY_HOST_CHAIN" -j REJECT --reject-with icmp-admin-prohibited
 }
 
@@ -538,6 +581,7 @@ main() {
     done
     require_prerequisites
     resolve_proxy_endpoint
+    resolve_dns_sink
     ensure_network "$NETWORK" "$BRIDGE_IFACE"
     ensure_egress_network
     iface="$(bridge_interface "$NETWORK" "$BRIDGE_IFACE")"
@@ -574,6 +618,9 @@ main() {
         "services; $EGRESS_NETWORK sandboxes are limited to tcp" \
         "$EGRESS_PROXY:$EGRESS_PROXY_PORT on INPUT and FORWARD"
     report_proxy_vs_gateway
+    if [ -n "$DNS_SINK" ]; then
+        say "DNS sink exception: udp and tcp 53 to $DNS_SINK on $PROXY_HOST_CHAIN"
+    fi
     if [ -n "$default_ifaces" ]; then
         say "default bridge $default_ifaces: port 53 allowed to ${BUILD_DNS:-no resolvers}"
     fi

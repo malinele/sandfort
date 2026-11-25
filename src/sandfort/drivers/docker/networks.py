@@ -13,6 +13,7 @@ from sandfort.drivers.docker.client import (
     translate_errors,
 )
 from sandfort.drivers.docker.labels import LABEL_MANAGED
+from sandfort.drivers.errors import DriverUnsupported
 
 NETWORK_NAME = "sf-net"
 # Bridge for sandboxes with an egress allowlist; deploy/host-setup.sh restricts it to the proxy.
@@ -50,6 +51,27 @@ async def _find(client: Any, name: str) -> Any | None:
     return next((network for network in found if network.name == name), None)
 
 
+def _has_ipv6(network: Any, name: str) -> bool:
+    """True for an egress net with IPv6 enabled (the main network is not subject to the rule)."""
+    if name != EGRESS_NETWORK_NAME:
+        return False
+    attrs = getattr(network, "attrs", None) or {}
+    return bool(attrs.get("EnableIPv6"))
+
+
+def _refuse_ipv6(network: Any, name: str) -> None:
+    """The egress net stays IPv4-only (egress v2 design 4.5): adopting one with IPv6 is refused.
+
+    The host IPv6 INPUT chain has no guard and the proxy's denied list is not applied to
+    addresses a sandbox could reach directly, so an IPv6-enabled egress bridge fails closed.
+    """
+    if _has_ipv6(network, name):
+        raise DriverUnsupported(
+            f"network {name} has IPv6 enabled; the egress network must be IPv4-only:"
+            " remove it and let the server recreate it"
+        )
+
+
 def _warn_if_bridge_mismatch(network: Any, name: str) -> None:
     expected = expected_bridge_interface(name)
     if expected is None or name in _warned:
@@ -67,17 +89,29 @@ def _warn_if_bridge_mismatch(network: Any, name: str) -> None:
         )
 
 
+async def _refuse_created_ipv6(created: Any, name: str) -> None:
+    """Fail closed at create: docker-py sends ``EnableIPv6`` only when true, so a daemon that
+    defaults bridges to IPv6 can hand back an IPv6-enabled egress net. Remove it and refuse.
+    """
+    if not _has_ipv6(created, name):
+        return
+    await run_blocking(created.remove)
+    _refuse_ipv6(created, name)
+
+
 async def ensure_network(client: Any, name: str = NETWORK_NAME) -> str:
     """Ensure the bridge network (icc=false, fixed bridge name) exists; return its name."""
     errors = docker_errors()
     with translate_errors(name, "network.ensure"):
         existing = await _find(client, name)
         if existing is not None:
+            _refuse_ipv6(existing, name)
             _warn_if_bridge_mismatch(existing, name)
             return name
         async with _create_lock:
             existing = await _find(client, name)
             if existing is not None:
+                _refuse_ipv6(existing, name)
                 _warn_if_bridge_mismatch(existing, name)
                 return name
             options = {ICC_OPTION: "false"}
@@ -85,14 +119,17 @@ async def ensure_network(client: Any, name: str = NETWORK_NAME) -> str:
             if expected is not None:
                 options[BRIDGE_NAME_OPTION] = expected
             try:
-                await run_blocking(
+                created = await run_blocking(
                     client.networks.create,
                     name,
                     driver="bridge",
+                    enable_ipv6=False,
                     options=options,
                     labels={LABEL_MANAGED: "true"},
                 )
             except errors.APIError as exc:
                 if exc.status_code != HTTP_CONFLICT:  # lost a race with another creator: fine
                     raise
+            else:
+                await _refuse_created_ipv6(created, name)
     return name

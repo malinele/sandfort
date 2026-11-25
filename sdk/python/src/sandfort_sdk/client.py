@@ -34,6 +34,7 @@ from sandfort_sdk._requests import (
 from sandfort_sdk._transport import DEFAULT_TIMEOUT_S, Reply, SyncTransport
 from sandfort_sdk.api_keys import ApiKeyInfo, ApiKeys, CreatedApiKey, RevokedApiKey
 from sandfort_sdk.audit import Audit
+from sandfort_sdk.egress import set_allowlist
 from sandfort_sdk.exceptions import (
     AmbiguousSandboxName,
     InvalidResponseError,
@@ -496,6 +497,18 @@ class Client:
 
     def delete(self, sandbox_id: str) -> Sandbox:
         return self._act("DELETE", sandbox_path(sandbox_id))
+
+    def set_egress_allowlist(self, sandbox_id: str, entries: Sequence[str]) -> Sandbox:
+        """Replace the egress allowlist of a sandbox created with one; ``[]`` blocks all hosts.
+
+        Entries are sent as given and validated by the server. The server stores the list at
+        once and the egress proxy picks it up within its cache window, so the change is not
+        instant. Errors: :class:`Forbidden` (operator policy), :class:`InvalidState` (the
+        sandbox has no allowlist to replace, was created with an empty one while the network
+        blocks all hosts, or needs ``reset`` first), :class:`Unprocessable` or
+        :class:`ValidationFailed` (invalid entries).
+        """
+        return set_allowlist(self._transport, sandbox_id, entries)
 
     def _act(self, method: str, path: str) -> Sandbox:
         reply = self._transport.request(method, path)

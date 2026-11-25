@@ -1,8 +1,20 @@
 {
   "name": "@sandfort/sdk",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "TypeScript SDK for the Sandfort self-hosted sandbox platform.",
   "license": "Apache-2.0",
+  "homepage": "https://sandfort.dev",
+  "keywords": [
+    "sandbox",
+    "ai-agents",
+    "code-execution",
+    "self-hosted",
+    "docker",
+    "sdk"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

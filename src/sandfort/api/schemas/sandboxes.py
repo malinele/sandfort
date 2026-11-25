@@ -181,8 +181,9 @@ class CreateSandboxRequest(BaseModel):
     egress_allowlist: list[str] | None = Field(
         default=None,
         description=(
-            "Host names the sandbox may reach through the egress proxy. An empty list means "
-            "no network at all (block-all). Omitting the field keeps the operator default."
+            "Host names, leading-dot domains or CIDR ranges the sandbox may reach through the "
+            "egress proxy. An empty list means no network at all (block-all). Omitting the "
+            "field keeps the operator default."
         ),
     )
 
@@ -252,6 +253,22 @@ class UpdateSandboxRequest(RequestModel):
         default=None, ge=MIN_AUTO_MINUTES, le=MAX_AUTO_MINUTES
     )
     public: bool | None = None
+    egress_allowlist: list[str] | None = Field(
+        default=None,
+        description=(
+            "Replaces the egress allowlist of a sandbox created with a non-empty one, and "
+            "raises its egress_policy_generation by 1. Omitting the field keeps egress as "
+            "it is, a list replaces the stored one, `[]` refuses every connection, and null "
+            "is refused with 422: an allowlist cannot be removed. Only the database changes, "
+            "so the proxy applies the new list within its cache window."
+        ),
+    )
+
+    @field_validator("egress_allowlist")
+    @classmethod
+    def valid_egress_hosts(cls, value: list[str] | None) -> list[str] | None:
+        """Allowlist hosts without whitespace, controls or invisible characters."""
+        return check_egress_hosts(value)
 
     @field_validator("labels", mode="before")
     @classmethod
@@ -321,7 +338,9 @@ class SandboxResponse(BaseModel):
             "image_access_denied (not retryable: the registry refused the pull), "
             "invalid_image_reference (not retryable: the reference cannot be parsed), "
             "start_failed, timeout, reset_failed, container_missing, "
-            "container_exited, node_lost or internal. Branch on this, not on the reason text."
+            "container_exited, node_lost, egress_unavailable (the node that ran the create job "
+            "has no egress proxy settings, so no container was created) or internal. "
+            "Branch on this, not on the reason text."
         ),
     )
     job_id: str | None = Field(
@@ -343,8 +362,16 @@ class SandboxResponse(BaseModel):
     egress_allowlist: list[str] | None = Field(
         default=None,
         description=(
-            "Host names the sandbox may reach through the egress proxy; "
-            "null means the network policy default."
+            "Host names, leading-dot domains or CIDR ranges the sandbox may reach through the "
+            "egress proxy; null means the network policy default."
+        ),
+    )
+    egress_policy_generation: int | None = Field(
+        default=None,
+        description=(
+            "Version of the egress allowlist: 1 at create, plus 1 per PATCH that changes it. "
+            "Null when egress_allowlist is null; 0 for a sandbox that predates egress v2 "
+            "(reset it to upgrade its egress credential)."
         ),
     )
     snapshot: str | None = Field(
@@ -441,6 +468,7 @@ def sandbox_response(sandbox: Sandbox, default_isolation: str = DEFAULT_TIER) ->
         job_id=None,
         node_id=None if label_scoped else sandbox.node_id,
         egress_allowlist=None if allowlist is None else list(allowlist),
+        egress_policy_generation=None if allowlist is None else sandbox.egress_policy_generation,
         snapshot=None if label_scoped else sandbox.snapshot,
         created_at=sandbox.created_at,
         updated_at=sandbox.updated_at,

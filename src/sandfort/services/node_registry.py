@@ -13,6 +13,7 @@ from datetime import timedelta
 from sandfort.clock import Clock
 from sandfort.db.repositories.ports import UnitOfWorkPort
 from sandfort.domain.node import DEFAULT_NODE_ID, Node, NodeState
+from sandfort.errors import Conflict
 from sandfort.workers.reconciler import PassLoop
 
 HEARTBEAT_STALE_AFTER = timedelta(seconds=90)
@@ -35,13 +36,33 @@ async def stamp_job(uow: UnitOfWorkPort, job_id: str, node_id: str) -> None:
         await uow.nodes.assign_job(job_id, node_id)
 
 
-async def pick_node(uow: UnitOfWorkPort, clock: Clock, local_node_id: str) -> str:
+NO_EGRESS_NODE = "no node can run egress-allowlisted sandboxes"
+
+
+def _egress_ready_now(node: Node) -> bool:
+    """True when the node's latest beat itself reported egress readiness.
+
+    A worker from before the flag existed advances ``last_heartbeat_at`` but never the ready
+    time, so a stale ``egress_ready`` left behind by a rollback does not count.
+    """
+    return (
+        node.egress_ready
+        and node.egress_ready_at is not None
+        and node.egress_ready_at >= node.last_heartbeat_at
+    )
+
+
+async def pick_node(
+    uow: UnitOfWorkPort, clock: Clock, local_node_id: str, *, require_egress: bool = False
+) -> str:
     """The least loaded active, fresh node below capacity; ``local_node_id`` if none qualifies.
 
-    An empty registry or no qualifying node never fails a create: it lands on the local node.
+    An empty registry or no qualifying node never fails a plain create: it lands on the local
+    node. With ``require_egress`` only nodes whose latest heartbeat reported ``egress_ready`` count,
+    the local node is chosen only when it qualifies, and no qualifying node is a 409.
     """
     nodes = await uow.nodes.list_nodes()
-    if not nodes:
+    if not nodes and not require_egress:
         return local_node_id
     counts = await uow.nodes.running_counts()
     now = clock.now()
@@ -51,8 +72,13 @@ async def pick_node(uow: UnitOfWorkPort, clock: Clock, local_node_id: str) -> st
         if node.state is NodeState.ACTIVE
         and now - node.last_heartbeat_at <= HEARTBEAT_STALE_AFTER
         and not (node.max_sandboxes and counts.get(node.id, 0) >= node.max_sandboxes)
+        and (not require_egress or _egress_ready_now(node))
     ]
-    return min(open_nodes)[1] if open_nodes else local_node_id
+    if open_nodes:
+        return min(open_nodes)[1]
+    if require_egress:
+        raise Conflict(NO_EGRESS_NODE)
+    return local_node_id
 
 
 class NodeRegistry:
@@ -65,12 +91,14 @@ class NodeRegistry:
         max_sandboxes: int,
         interval_s: float,
         internal_url: str = "",
+        egress_ready: bool = False,
     ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
         self._node_id = node_id
         self._max_sandboxes = max_sandboxes
         self._internal_url = internal_url
+        self._egress_ready = egress_ready
         self._loop = PassLoop("node-heartbeat", self.heartbeat, interval_s)
 
     @property
@@ -92,6 +120,7 @@ class NodeRegistry:
             state=NodeState.ACTIVE,
             last_heartbeat_at=self._clock.now(),
             internal_url=self._internal_url,
+            egress_ready=self._egress_ready,
         )
         async with self._uow_factory() as uow:
             await uow.nodes.upsert_heartbeat(node)

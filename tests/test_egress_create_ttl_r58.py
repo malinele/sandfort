@@ -24,7 +24,7 @@ from sandfort.db.unit_of_work import UnitOfWork
 from sandfort.domain.org import Org
 from sandfort.drivers.base import ExecRequest
 from sandfort.drivers.fake import FakeDriver
-from sandfort.egress.tokens import EgressClaims, verify_egress_token
+from sandfort.egress.tokens_v2 import EgressClaimsV2, verify_egress_token_v2
 from sandfort.ids import new_org_id
 from sandfort.services.sandboxes import CreateSandboxCommand, SandboxService
 
@@ -85,8 +85,8 @@ def token_of(env: dict[str, str]) -> str:
     return unquote(password)
 
 
-def claims_of(env: dict[str, str], now: datetime) -> EgressClaims:
-    return verify_egress_token(EGRESS_SECRET, token_of(env), now)
+def claims_of(env: dict[str, str], now: datetime) -> EgressClaimsV2:
+    return verify_egress_token_v2(EGRESS_SECRET, token_of(env), now)
 
 
 def lifetime_of(env: dict[str, str], now: datetime) -> timedelta:

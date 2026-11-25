@@ -31,7 +31,9 @@ EXIT_USAGE = 2
 EXIT_FAILED = 3
 SIGNED_AT = "2026-11-11T04:00:00+00:00"
 SEED_PREV = "00" * 32
-HEAD_FIELDS = {"ok", "row_id", "entry_hash", "public_key", "reason", "fingerprint", "signed_at"}
+HEAD_FIELDS = {
+    "ok", "row_id", "entry_hash", "public_key", "reason", "fingerprint", "signed_at", "org_id",
+}  # fmt: skip
 FILE_FIELDS = HEAD_FIELDS | {
     "rows_checked", "first_break", "unchained", "content_bound", "filtered",
 }  # fmt: skip

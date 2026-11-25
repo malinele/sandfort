@@ -13,6 +13,7 @@ import sandfort_sdk  # noqa: E402
 from sandfort_sdk import (  # noqa: E402
     ERROR_CODE_CONTAINER_EXITED,
     ERROR_CODE_CONTAINER_MISSING,
+    ERROR_CODE_EGRESS_UNAVAILABLE,
     ERROR_CODE_IMAGE_NOT_FOUND,
     ERROR_CODE_INTERNAL,
     ERROR_CODE_NODE_LOST,
@@ -53,6 +54,7 @@ CONSTANTS = (
     ERROR_CODE_CONTAINER_MISSING,
     ERROR_CODE_CONTAINER_EXITED,
     ERROR_CODE_NODE_LOST,
+    ERROR_CODE_EGRESS_UNAVAILABLE,
     ERROR_CODE_INTERNAL,
 )
 
@@ -71,6 +73,8 @@ def describe(code: ErrorCode) -> str:
             return "retry"
         case "container_missing" | "container_exited" | "node_lost":
             return "start again"
+        case "egress_unavailable":
+            return "fix the node's egress proxy settings, then create again"
         case "internal":
             return "report"
         case _:
@@ -157,6 +161,8 @@ def handle(code: ErrorCode) -> int:
             return 1
         case "container_missing" | "container_exited" | "node_lost" | "internal":
             return 2
+        case "egress_unavailable":
+            return 3
         case _:
             assert_never(code)
 

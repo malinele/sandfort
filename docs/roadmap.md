@@ -29,7 +29,10 @@ placement at create, node affinity, and cross-node toolbox routing.
 What remains open:
 
 - Multi-node needs jobs mode (`SANDFORT_SANDBOX_JOBS_ENABLED=true`), which refuses creates that
-  mount volumes or use an egress allowlist, and has no sandbox reset.
+  mount volumes and has no sandbox reset. Egress-allowlisted creates work in jobs mode, on
+  nodes that report `egress_ready`; a sandbox there cannot be reset, so its egress token cannot be
+  refreshed and egress ends when the token expires (`docs/operations.md`, "Egress in jobs mode
+  and multi-node").
 - The forwarding hop is plain HTTP, so nodes need a private network.
 - Container logs, the preview proxy and the web terminal page stay node-local.
 - The Kubernetes kit covers one sandbox node; a multi-node deployment needs your own `api` and

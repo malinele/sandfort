@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ValidationError, verifyHead } from "../src/index.js";
-import { GOLDEN, chain, head, newSigner } from "./audit-trailer-helpers.js";
+import { GOLDEN, ORG, chain, head, newSigner } from "./audit-trailer-helpers.js";
 
 const line = (patch: Record<string, unknown>, base: string = GOLDEN.head): string =>
   JSON.stringify({ ...(JSON.parse(base) as object), ...patch });
@@ -16,6 +16,7 @@ describe("verifyHead against a head written by the server", () => {
       publicKey: GOLDEN.publicKey,
       reason: null,
       signedAt: new Date("2026-11-11T04:52:33+00:00"),
+      orgId: "org_1",
     });
   });
 
@@ -207,5 +208,101 @@ describe("verifyHead input errors", () => {
 
   it("throws ValidationError when the key is missing", () => {
     expect(() => verifyHead(GOLDEN.head, undefined as never)).toThrow(/trusted public key is required/);
+  });
+});
+
+describe("verifyHead org binding", () => {
+  const signer = newSigner();
+  const lines = chain(1).lines;
+  const headOf = (fields: Record<string, unknown> = {}, options: { sign?: boolean } = {}): string =>
+    head(lines, signer, fields, options);
+
+  it("exposes the head's org_id on an ok result", () => {
+    const result = verifyHead(headOf(), signer.publicKey);
+
+    expect(result.ok).toBe(true);
+    expect(result.orgId).toBe(ORG);
+  });
+
+  it("accepts the expected org", () => {
+    const result = verifyHead(headOf(), signer.publicKey, { expectedOrgId: ORG });
+
+    expect(result).toMatchObject({ ok: true, reason: null, orgId: ORG });
+  });
+
+  it("refuses a genuinely signed head of another org with expected_org_mismatch", () => {
+    const result = verifyHead(headOf({ org_id: "org_b" }), signer.publicKey, { expectedOrgId: "org_a" });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("expected_org_mismatch");
+    expect(result.orgId).toBe("org_b");
+  });
+
+  it("without an expected org a head of another org still verifies and names its org", () => {
+    const result = verifyHead(headOf({ org_id: "org_b" }), signer.publicKey);
+
+    expect(result.ok).toBe(true);
+    expect(result.orgId).toBe("org_b");
+  });
+
+  it("fails closed for a head without org_id when an org is expected", () => {
+    const noOrg = headOf({ org_id: undefined });
+
+    const plain = verifyHead(noOrg, signer.publicKey);
+    const expected = verifyHead(noOrg, signer.publicKey, { expectedOrgId: ORG });
+
+    expect(plain).toMatchObject({ ok: true, orgId: null });
+    expect(expected).toMatchObject({ ok: false, reason: "expected_org_mismatch", orgId: null });
+  });
+
+  it.each([["an empty text", ""], ["a number", 7], ["null", null], ["an array", [ORG]]])(
+    "treats %s as no org: not exposed, fails closed when an org is expected",
+    (_name, bad) => {
+      const odd = headOf({ org_id: bad });
+
+      expect(verifyHead(odd, signer.publicKey)).toMatchObject({ ok: true, orgId: null });
+      expect(verifyHead(odd, signer.publicKey, { expectedOrgId: ORG })).toMatchObject({
+        ok: false,
+        reason: "expected_org_mismatch",
+        orgId: null,
+      });
+    },
+  );
+
+  it("throws ValidationError for an empty expectedOrgId", () => {
+    expect(() => verifyHead(headOf(), signer.publicKey, { expectedOrgId: "" })).toThrow(ValidationError);
+    expect(() => verifyHead(headOf(), signer.publicKey, { expectedOrgId: "" })).toThrow(/expectedOrgId/);
+  });
+
+  it("an unsigned head keeps reason unsigned and still names its org", () => {
+    const result = verifyHead(headOf({ org_id: "org_b" }, { sign: false }), signer.publicKey, {
+      expectedOrgId: "org_a",
+    });
+
+    expect(result).toMatchObject({ ok: false, reason: "unsigned", orgId: "org_b" });
+  });
+
+  it("a tampered head keeps reason signature", () => {
+    const tampered = line({ org_id: "org_b" }, headOf());
+
+    const result = verifyHead(tampered, signer.publicKey, { expectedOrgId: "org_a" });
+
+    expect(result).toMatchObject({ ok: false, reason: "signature", orgId: "org_b" });
+  });
+
+  it("a head under another key keeps key_mismatch", () => {
+    const result = verifyHead(headOf({ org_id: "org_b" }), newSigner().publicKey, { expectedOrgId: "org_a" });
+
+    expect(result.reason).toBe("key_mismatch");
+  });
+
+  it("the org check comes before the undated and future_signed_at checks", () => {
+    const undated = headOf({ org_id: "org_b", signed_at: undefined });
+    const future = headOf({ org_id: "org_b", signed_at: new Date(Date.now() + 3_600_000).toISOString() });
+
+    for (const input of [undated, future]) {
+      expect(verifyHead(input, signer.publicKey, { expectedOrgId: "org_a" }).reason).toBe("expected_org_mismatch");
+      expect(verifyHead(input, signer.publicKey, { expectedOrgId: "org_b" }).reason).not.toBe("expected_org_mismatch");
+    }
   });
 });
