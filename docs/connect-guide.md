@@ -2276,9 +2276,10 @@ A sandbox has open outbound internet by default. Choose the mode when you create
   The proxy variables, including the per-sandbox proxy credentials, are visible to code inside the
   sandbox. DNS differs by tier:
   - On `gvisor` and `microvm`, direct DNS lookups fail immediately.
-  - On the `container` tier, names still resolve through Docker's resolver. That is a DNS
-    side channel: a resolved name can carry data even though the connection is refused. For
-    regulated data, use `gvisor` or `microvm` with the allowlist.
+  - On the `container` tier, the sandbox's only DNS server is the egress proxy's sink
+    (since 2026-11-25 on the beta), which answers every query REFUSED and forwards nothing,
+    so direct lookups fail here too and only the proxy resolves names. A sandbox created
+    before 2026-11-25 keeps the old resolvers until it is reset or recreated.
 - **Blocked:** `block_network=True` in the SDK (`network: {"block_all": true}` in REST). There is no
   network and no DNS on any tier: the sandbox shows no DNS configuration from the host, and name
   lookups fail at once on every tier.
@@ -2801,7 +2802,14 @@ you name: names and hosts are ASCII only, labels are not.
   name is at most 253 characters without the leading dot. Nothing is normalised: uppercase, a
   trailing dot or surrounding space is refused. An entry may not hold a scheme, a path (`/`,
   `?`, `#`), a port, a `*` wildcard or an IP literal (a last label made of digits or `0x` and
-  hex digits). A list takes at most 16 entries (the server setting
+  hex digits). To allow an address range, write a CIDR entry instead (an entry with a `/`,
+  such as `140.82.112.0/20`): it must already be canonical (compressed lowercase IPv6, no
+  leading zeros), name the network address (no host bits set), have a prefix of at least `/8`
+  for IPv4 or `/32` for IPv6, be entirely global (no loopback, private, shared, link-local,
+  multicast, reserved or documentation addresses) and not overlap the server's denied
+  networks (`SANDFORT_EGRESS_DENIED_CIDRS`). The proxy admits an IP-literal target only
+  through a CIDR entry, and a CIDR entry never admits a host name. Host names, leading-dot
+  domains and CIDR entries can be mixed in one list. A list takes at most 16 entries (the server setting
   `SANDFORT_EGRESS_ALLOWLIST_MAX_ENTRIES`; read the beta's value from the 422 message), and
   an empty list is valid but cannot be combined with `block_network`.
 - **Labels** (sandboxes and volumes; the same rules for both). Any script is accepted, not only

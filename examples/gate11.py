@@ -22,6 +22,13 @@ ran and ``SKIP <step>: <reason>`` when it did not, and the final line names the 
   address the egress network can reach, normally the ``sf-egress-net`` gateway, with
   ``deploy/host-setup.sh`` applied there (it admits udp and tcp 53 to that address only). Without
   both, D3 is skipped.
+* Sandboxes reach the proxy at ``GATE11_PROXY_HOST`` when set, else ``host.docker.internal``
+  everywhere but Linux, where the ``sf-egress-net`` bridge gateway is used instead (Linux
+  containers cannot resolve ``host.docker.internal``).
+* The gate's proxy listens on ``GATE11_PROXY_PORT`` (default 4206). On a host with
+  ``deploy/host-setup.sh`` rules applied, egress-net sandboxes reach only the configured
+  proxy port (normally 3128), so set this to that port and stop the deployed egress proxy
+  while the gate runs; any other port is rejected by the host guard (no route to host).
 
 Run: .venv/bin/python examples/gate11.py
 Requires a local Docker daemon with ``python:3.12-slim`` available and outbound internet access.
@@ -49,9 +56,9 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
 API_PORT = 4205
-PROXY_PORT = 4206
+PROXY_PORT = int(os.environ.get("GATE11_PROXY_PORT", "4206"))
 API = f"http://127.0.0.1:{API_PORT}"
-PROXY_ADDRESS = f"host.docker.internal:{PROXY_PORT}"
+PROXY_HOST_ENV = "GATE11_PROXY_HOST"
 EGRESS_SECRET = "gate11-egress-signing-secret-0123456789abcdef"
 IMAGE = "python:3.12-slim"
 SNAPSHOT_NAME = "gate11-python"
@@ -148,6 +155,7 @@ def spawn_proxy(env: dict[str, str], sink: str, count_file: Path) -> subprocess.
         "SANDFORT_EGRESS_SECRET": EGRESS_SECRET,
         "SANDFORT_EGRESS_LISTEN_HOST": "0.0.0.0",  # noqa: S104 - containers must reach it
         "SANDFORT_EGRESS_LISTEN_PORT": str(PROXY_PORT),
+        "SANDFORT_EGRESS_POLICY_URL": API,
         "SANDFORT_EGRESS_DNS_PIN_S": PIN_WINDOW_S,
         "SANDFORT_EGRESS_DNS_SINK_LISTEN": sink,
         "GATE11_COUNT_HOST": ALLOWED_HOST,
@@ -158,12 +166,42 @@ def spawn_proxy(env: dict[str, str], sink: str, count_file: Path) -> subprocess.
     )
 
 
-def spawn_server(env: dict[str, str], sink: str) -> subprocess.Popen[bytes]:
+def proxy_host() -> str:
+    """The name or address sandboxes use to reach the host-run proxy.
+
+    ``GATE11_PROXY_HOST`` when set. Otherwise ``host.docker.internal`` everywhere but Linux,
+    where containers cannot resolve that name, so the egress network's bridge gateway is used
+    (the proxy listens on ``0.0.0.0``, so the gateway address reaches it).
+    """
+    configured = os.environ.get(PROXY_HOST_ENV, "").strip()
+    if configured:
+        return configured
+    if sys.platform != "linux":
+        return "host.docker.internal"
+    import asyncio
+
+    from sandfort.drivers.docker.client import make_client
+    from sandfort.drivers.docker.egress_probe import gateway_of
+    from sandfort.drivers.docker.networks import EGRESS_NETWORK_NAME, ensure_network
+
+    client = make_client()
+    try:
+        asyncio.run(ensure_network(client, EGRESS_NETWORK_NAME))
+        address = gateway_of(client.networks.get(EGRESS_NETWORK_NAME).attrs)
+    finally:
+        client.close()
+    if address is None:
+        raise SystemExit("GATE11 FAIL: the egress network reports no gateway address")
+    return address
+
+
+def spawn_server(env: dict[str, str], sink: str, proxy_address: str) -> subprocess.Popen[bytes]:
     server_env = {
         **env,
         "SANDFORT_ROLE": "all",
         "SANDFORT_PORT": str(API_PORT),
-        "SANDFORT_EGRESS_PROXY_ADDRESS": PROXY_ADDRESS,
+        "SANDFORT_EGRESS_POLICY_ROUTE_ENABLED": "true",
+        "SANDFORT_EGRESS_PROXY_ADDRESS": proxy_address,
         "SANDFORT_EGRESS_SECRET": EGRESS_SECRET,
         "SANDFORT_EGRESS_DNS_SINK_ADDRESS": sink,
     }
@@ -381,9 +419,10 @@ def main() -> int:
         if sink:
             check_sink_refuses(proxy, sink)
 
-        processes.append(spawn_server(env, sink if container_dns else ""))
+        proxy_address = f"{proxy_host()}:{PROXY_PORT}"
+        processes.append(spawn_server(env, sink if container_dns else "", proxy_address))
         wait_health(API)
-        step(f"server healthy; sandboxes reach the proxy at {PROXY_ADDRESS}")
+        step(f"server healthy; sandboxes reach the proxy at {proxy_address}")
 
         run_gate(key, count_file, container_dns)
         suffix = f" (skipped: {', '.join(SKIPPED)})" if SKIPPED else ""

@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migrating from Runloop to Sandfort</title>
+<meta name="description" content="A concept map from Runloop devboxes, blueprints and snapshots to Sandfort sandboxes, image specs and snapshots, with a working Python example and the differences stated up front.">
+<meta property="og:title" content="Migrating from Runloop to Sandfort">
+<meta property="og:description" content="A concept map from Runloop devboxes, blueprints and snapshots to Sandfort sandboxes, image specs and snapshots, with a working Python example and the differences stated up front.">
+<meta name="theme-color" content="#0b0d11">
+<link rel="canonical" href="https://sandfort.dev/migrating-from-runloop.html">
+<meta property="og:url" content="https://sandfort.dev/migrating-from-runloop.html">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://sandfort.dev/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Sandfort: sandboxes for AI-generated code, on infrastructure you control">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://sandfort.dev/og-image.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"TechArticle","@id":"https://sandfort.dev/migrating-from-runloop.html","url":"https://sandfort.dev/migrating-from-runloop.html","mainEntityOfPage":"https://sandfort.dev/migrating-from-runloop.html","headline":"Migrating from Runloop to Sandfort","description":"A concept map from Runloop devboxes, blueprints and snapshots to Sandfort sandboxes, image specs and snapshots, with a working Python example and the differences stated up front.","inLanguage":"en","datePublished":"2026-11-25","dateModified":"2026-11-25","author":{"@type":"Organization","name":"Sandfort","url":"https://sandfort.dev/"},"publisher":{"@type":"Organization","name":"Sandfort","url":"https://sandfort.dev/"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Sandfort","item":"https://sandfort.dev/"},{"@type":"ListItem","position":2,"name":"Migrating from Runloop","item":"https://sandfort.dev/migrating-from-runloop.html"}]}]}</script>
+<style>
+:root{
+  --bg:#0b0d11; --bg-1:#101319; --bg-2:#151922; --bg-3:#1c212c;
+  --line:#222834; --line-2:#2f3746;
+  --text:#e9ebef; --text-2:#b4bac6; --muted:#8c94a3; --faint:#7a8296;
+  --accent:#e0a458; --accent-ink:#1a1206; --accent-2:#f0bd7a; --accent-wash:rgba(224,164,88,.08); --accent-line:rgba(224,164,88,.38);
+  --ok:#8fc18a; --bad:#e58a76;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+  --wrap:1200px; --gut:clamp(16px,4vw,40px);
+  --r:10px; --r-s:6px;
+  --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:76px;scrollbar-color:var(--line-2) var(--bg)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
+::selection{background:var(--accent);color:var(--accent-ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:10px;border:3px solid var(--bg)}
+a{color:inherit;text-decoration-color:var(--line-2);text-underline-offset:.22em;text-decoration-thickness:1px;transition:text-decoration-color .2s}
+a:hover{text-decoration-color:var(--accent)}
+code,kbd,samp,pre{font-family:var(--mono)}
+:where(p,li,td,dd,summary,.fine,h3,.fd) code{color:var(--text);background:var(--bg-2);border:1px solid var(--line);padding:.05em .35em;border-radius:4px;font-size:.84em;white-space:nowrap}
+svg{display:block}
+.skip{position:absolute;left:-9999px;top:8px;z-index:100;background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:6px;font-weight:600;text-decoration:none}
+.skip:focus{left:8px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* frame + rails */
+.frame{max-width:var(--wrap);margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.sec{border-top:1px solid var(--line);position:relative;padding:clamp(64px,9vw,120px) var(--gut)}
+.sec::before,.sec::after{content:"";position:absolute;top:-5px;width:9px;height:9px;background:linear-gradient(var(--faint),var(--faint)) center/1px 9px no-repeat,linear-gradient(var(--faint),var(--faint)) center/9px 1px no-repeat}
+.sec::before{left:-5px}.sec::after{right:-5px}
+.sec.first{border-top:0;padding-top:clamp(48px,6vw,80px);padding-bottom:clamp(40px,5vw,64px)}
+.sec.first::before,.sec.first::after{display:none}
+
+/* type */
+h1,h2,h3,h4{font-family:var(--sans);margin:0;color:var(--text);text-wrap:balance}
+h1{font-weight:600;font-size:clamp(2.2rem,1.3rem + 3.2vw,3.8rem);line-height:1.04;letter-spacing:-.04em;max-width:22ch}
+h2{font-weight:600;font-size:clamp(1.8rem,1.3rem + 1.6vw,2.7rem);line-height:1.08;letter-spacing:-.035em}
+h3{font-weight:600;font-size:1.1rem;line-height:1.35;letter-spacing:-.012em}
+.lede{font-size:clamp(1.06rem,1rem + .3vw,1.22rem);line-height:1.55;color:var(--text-2);max-width:68ch;margin:22px 0 0}
+.head{max-width:780px}
+.head + *{margin-top:clamp(32px,4vw,48px)}
+.crumb{margin:0 0 22px;font:400 12px/1.2 var(--mono);color:var(--faint)}
+.crumb a{text-decoration:none;color:var(--muted)}
+.crumb a:hover{color:var(--text)}
+.stamp{display:inline-flex;flex-wrap:wrap;gap:6px 14px;margin:28px 0 0;padding:12px 16px;border:1px solid var(--accent-line);border-radius:var(--r-s);background:var(--accent-wash);font:400 13px/1.5 var(--mono);color:var(--text-2)}
+.stamp b{font-weight:600;color:var(--text)}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:50;background:rgba(11,13,17,.86);backdrop-filter:saturate(140%) blur(12px);-webkit-backdrop-filter:saturate(140%) blur(12px);border-bottom:1px solid var(--line)}
+.nav .in{max-width:var(--wrap);margin:0 auto;height:62px;display:flex;align-items:center;gap:30px;padding:0 var(--gut);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:600 17px/1 var(--sans);letter-spacing:-.02em;color:var(--text)}
+.mark{width:26px;height:26px;border-radius:6px;background:var(--bg-2);border:1px solid var(--line-2);display:grid;place-items:center;color:var(--accent);font:700 15px/1 var(--mono)}
+.nav ul{display:flex;gap:24px;list-style:none;margin:0;padding:0}
+.nav ul a,.nav .docs{font-size:14px;color:var(--text-2);text-decoration:none;transition:color .2s}
+.nav ul a:hover,.nav .docs:hover{color:var(--text)}
+.nav ul a[aria-current="page"]{color:var(--text)}
+.nav .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:10px;height:46px;padding:0 20px;border-radius:8px;font:500 15px/1 var(--sans);text-decoration:none;border:1px solid transparent;transition:background .2s var(--ease),border-color .2s var(--ease),transform .15s var(--ease);white-space:nowrap}
+.btn-p{background:var(--accent);color:var(--accent-ink)}
+.btn-p:hover{background:var(--accent-2)}
+.btn:active{transform:translateY(1px)}
+.nav .btn{height:36px;padding:0 14px;font-size:14px}
+
+/* article body */
+.art{max-width:72ch}
+.art p{margin:16px 0 0;color:var(--text-2);font-size:1rem;line-height:1.65}
+.art p:first-child{margin-top:0}
+.art p b,.art li b{color:var(--text);font-weight:600}
+.art .slab,.art .tbl-wrap,.art .scroll-hint{margin-top:22px}
+.art .slab + p,.art .tbl-wrap + p{margin-top:22px}
+.art .prose{margin-top:22px}
+.art h2 + .prose,.art h2 + p{margin-top:0}
+
+/* code blocks, same slab as the landing page */
+.slab{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;max-width:100%}
+.rail{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--line);background:var(--bg);padding:0 8px;min-height:44px;overflow-x:auto;scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.tab{color:var(--muted);font:500 13px/1 var(--mono);padding:0 12px;height:44px;white-space:nowrap;display:inline-flex;align-items:center;gap:8px}
+.tab.static{color:var(--text)}
+.code{margin:0;padding:22px 24px;font:400 13px/1.8 var(--mono);color:var(--text-2);overflow-x:auto;white-space:pre}
+.code .c{color:var(--faint)}
+.code:focus-visible{outline-offset:-2px}
+
+/* tables */
+.scroll-hint{display:none;margin:0 0 10px;font:400 12px/1.4 var(--mono);color:var(--faint)}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.tbl-wrap:focus-visible{outline-offset:2px}
+.cmp{width:100%;min-width:1080px;border-collapse:separate;border-spacing:0;font-size:.88rem}
+.cmp.narrow{min-width:640px}
+.cmp th,.cmp td{text-align:left;vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--line);line-height:1.55}
+.cmp tr:last-child th,.cmp tr:last-child td{border-bottom:0}
+.cmp td + td,.cmp th + th,.cmp tbody th + td{border-left:1px solid var(--line)}
+.cmp thead th{font:600 .95rem/1.3 var(--sans);color:var(--text);background:var(--bg-1);white-space:nowrap}
+.cmp tbody th{font:500 12px/1.6 var(--mono);color:var(--text);width:150px;min-width:150px;background:var(--bg-1);position:sticky;left:0;z-index:1}
+.cmp thead th:first-child{position:sticky;left:0;z-index:2}
+.cmp td{color:var(--text-2);min-width:230px}
+.cmp.narrow td{min-width:0}
+.cmp code{white-space:normal;overflow-wrap:anywhere}
+
+/* lists */
+.prose{display:grid;gap:0;margin:0;padding:0;list-style:none;border-top:1px solid var(--line);max-width:90ch}
+.prose li{padding:18px 0;border-bottom:1px solid var(--line);color:var(--text-2);font-size:.96rem;line-height:1.6}
+.prose li b{color:var(--text);font-weight:600}
+
+/* footer */
+footer{border-top:1px solid var(--line)}
+footer .in{max-width:var(--wrap);margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line);padding:44px var(--gut) 32px;display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr));gap:32px;font-size:.9rem;color:var(--muted)}
+footer .fh{margin:0 0 14px;font:500 12px/1 var(--mono);color:var(--faint)}
+footer ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+footer a{text-decoration:none;color:var(--text-2);transition:color .2s}
+footer a:hover{color:var(--text)}
+footer .about p{margin:14px 0 0;max-width:36ch;line-height:1.55}
+footer .legal{grid-column:1/-1;border-top:1px solid var(--line);padding-top:20px;display:flex;flex-wrap:wrap;gap:8px 24px;font-size:.8rem;color:var(--faint)}
+
+@media (max-width:1060px){
+  .nav ul{display:none}
+  .scroll-hint{display:block}
+  footer .in{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .nav .docs{display:none}
+  .nav .in{gap:16px}
+  .frame,.nav .in,footer .in{border-left:0;border-right:0}
+  .sec::before,.sec::after{display:none}
+  footer .in{grid-template-columns:1fr}
+  .cmp tbody th{width:120px;min-width:120px}
+  .code{font-size:12px;padding:18px 16px}
+}
+@media (max-width:400px){.nav .btn{padding:0 10px;font-size:13px}}
+</style>
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="31bd681a-5195-4cec-a448-0a635c2c6736" data-domains="sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+        <li><a href="/compare.html">Comparison</a></li>
+        <li><a href="/run-ai-code-on-your-own-hosts.html">Article</a></li>
+        <li><a href="/restrict-network-egress-ai-agent-sandbox.html">Egress allowlists</a></li>
+        <li><a href="/migrating-from-runloop.html" aria-current="page">Migrating from Runloop</a></li>
+        <li><a href="/anthropic-siren-agent-sandbox.html">Anthropic Siren</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="https://docs.sandfort.dev/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="frame" id="top">
+
+<article>
+<section class="sec first" aria-labelledby="h-title">
+  <p class="crumb"><a href="/">Sandfort</a> / Migration guide</p>
+  <h1 id="h-title">Migrating from Runloop to Sandfort</h1>
+  <p class="lede">Runloop&#8217;s documentation says "Runloop is winding down its services" and that transition support for existing customers continues through November 13, 2026 at 11:59 PM PT. Runloop&#8217;s own transition page lists guides for four other platforms (the OpenAI Agents API, Tensorlake, Modal and Freestyle) and describes them as preliminary. Sandfort is not one of them.</p>
+  <p class="stamp"><b>Published: 2026-11-25</b><span>Sandfort 0.1.0</span><span>sandfort-sdk 0.1.0b83</span></p>
+  <div class="art" style="margin-top:clamp(32px,4vw,48px)">
+    <p>This guide is for teams that ran an agent loop against Runloop devboxes and want to evaluate Sandfort as a place to run the same kind of workload. It does three things. It maps Runloop concepts to Sandfort concepts, citing Runloop&#8217;s documentation for each Runloop term (see <a href="#sources">Sources</a>) and the repository for each Sandfort term. It gives a working Python example against the real SDK. It lists the differences you should know before you decide.</p>
+    <p>It is a concept map and not a tested migration. Runloop&#8217;s SDK, your agent code and your images are yours to port. This guide does not describe an automatic import path, and none exists in the Sandfort repository.</p>
+    <p>Sandfort is a self-hosted sandbox server for running AI-generated code: a REST API, a Python SDK and a CLI over isolated Docker-backed sandboxes. It is pre-1.0 (version <code>0.1.0</code>, released as <code>v0.1.0-beta.N</code> tags) and source-available.</p>
+  </div>
+</section>
+
+<section class="sec" id="concept-map" aria-labelledby="h-concept-map">
+  <div class="head"><h2 id="h-concept-map">Concept map</h2></div>
+  <div class="art">
+    <p>Runloop terms are taken from Runloop&#8217;s public documentation (URLs and check dates in the <a href="#sources">Sources</a> section). Sandfort terms are taken from the code in <code>sdk/python/src/sandfort_sdk/</code>, <code>cli/src/sandfort_cli/</code>, <code>README.md</code> and <code>docs/</code> in the repository.</p>
+    <p class="scroll-hint" aria-hidden="true">Scroll sideways to see all three columns.</p>
+    <div class="tbl-wrap" role="region" aria-label="Runloop to Sandfort concept map, scrolls horizontally" tabindex="0">
+      <table class="cmp narrow" aria-label="Runloop concepts and the Sandfort concepts that correspond to them">
+        <thead>
+          <tr><th scope="col">Runloop</th><th scope="col">Sandfort</th><th scope="col">What to know</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Devbox</th><td>Sandbox. In the Docker driver it is a container named <code>sf-&lt;sbx_id&gt;</code>. Create with <code>client.create_sandbox(...)</code>, delete with <code>sbx.delete()</code></td><td>Runloop describes devboxes as isolated with virtual machine technology. A Sandfort sandbox is a container, with <code>gvisor</code> and <code>microvm</code> (Kata Containers) as optional tiers. See <a href="#what-is-different">What is different</a>.</td></tr>
+          <tr><th scope="row"><code>devbox.shutdown()</code></th><td><code>sbx.delete()</code> or <code>client.delete(sandbox_id)</code>. Using the <code>Sandbox</code> handle in a <code>with</code> block deletes it on exit</td><td></td></tr>
+          <tr><th scope="row"><code>devbox.suspend()</code> / <code>resume()</code> (disk state kept, in-memory state not, processes must be restarted)</th><td><code>sbx.stop()</code> / <code>sbx.start(wait=True)</code>. A stopped sandbox keeps its files. A command running at stop time is cut short and reports <code>sandbox_stopped</code> with exit code 137</td><td>Both models keep files and drop running processes. Sandfort keeps the same sandbox id.</td></tr>
+          <tr><th scope="row"><code>keep_alive_time_seconds</code> (fixed maximum lifetime, default 1 hour) and <code>lifecycle.after_idle</code></th><td><code>auto_stop_minutes</code> (default 15, measured from the last activity, a negative value means never) and <code>auto_delete_minutes</code> (default -1, applies to stopped sandboxes)</td><td>Sandfort has no fixed maximum lifetime. Auto-stop is an idle timer. Units are minutes, not seconds.</td></tr>
+          <tr><th scope="row"><code>devbox.cmd.exec</code></th><td><code>sbx.process_exec(argv=[...])</code> or <code>sbx.process_exec("shell string")</code>. Returns <code>exit_code</code>, <code>stdout</code>, <code>stderr</code>, <code>timed_out</code> and <code>truncated</code>. <code>sbx.code_run("python", code)</code> runs code</td><td><code>process_exec</code> takes <code>cwd</code>, <code>env</code>, <code>timeout_s</code> and <code>stdin</code>.</td></tr>
+          <tr><th scope="row">Execution logs</th><td>Async commands in a session with <code>run_async=True</code>, then <code>sbx.process.follow_logs(session_id, command_id)</code> (SSE) or <code>get_command_logs</code></td><td></td></tr>
+          <tr><th scope="row">Named shells (keep working directory and exported variables, reattach by name)</th><td>Sessions: <code>sbx.process.create_session(cwd=..., env=...)</code> and <code>execute_session_command(session.id, "cd src")</code></td><td>Shell state such as <code>cd</code> persists between calls. Sessions are addressed by the id that <code>create_session</code> returns, not by a name.</td></tr>
+          <tr><th scope="row"><code>devbox.file.write</code> / <code>upload</code> / <code>read</code> / <code>download</code></th><td><code>sbx.fs.upload_file(path, data)</code>, <code>sbx.fs.read_bytes(path)</code>, <code>sbx.fs.download_file(path)</code> (streamed), <code>download_dir</code> (tar), plus <code>list_dir</code>, <code>stat</code>, <code>mkdir</code>, <code>move</code>, <code>delete</code></td><td>No chmod, search, find or replace in the filesystem API. Use <code>process_exec</code> for those.</td></tr>
+          <tr><th scope="row">Code mounts (a repository on the devbox)</th><td><code>sbx.git.clone(url, path, credential=...)</code>, then <code>status</code>, <code>add</code>, <code>commit</code>, <code>push</code>, <code>pull</code></td><td>Credentials go through a temporary askpass helper that is removed afterwards. No branch or checkout operations in the git API. Use <code>process_exec</code>.</td></tr>
+          <tr><th scope="row">Blueprint (template image, from a Dockerfile)</th><td>Image spec. In Python, <code>Image.debian_slim()</code> or <code>Image.from_image(ref)</code> with <code>pip_install</code>, <code>apt_install</code>, <code>add_file</code>, <code>env</code> and <code>workdir</code>, built with <code>client.snapshots.build(spec, name=...)</code>. A public registry image is registered with <code>client.snapshots.register(ref)</code></td><td>The builder takes a declarative spec. The SDK documents no Dockerfile input. Builds are cached by <code>spec_hash</code> and have an SSE build log.</td></tr>
+          <tr><th scope="row">Devbox snapshot (disk state, start new devboxes from it)</th><td>Snapshot. <code>client.snapshots.create_from_sandbox(sandbox_id, name, wait=True)</code> commits a running sandbox. New sandboxes start from it with <code>create_sandbox(snapshot=name_or_id)</code></td><td>The state is <code>pending</code> until the commit finishes, then <code>ready</code>. A ready snapshot can be exported as a <code>docker save</code> tar with <code>client.export_snapshot(...)</code>.</td></tr>
+          <tr><th scope="row">Tunnel (<code>https://{port}-{key}.tunnel.runloop.ai</code>, open or authenticated, one per devbox)</th><td>Preview URL. <code>sbx.preview(port, ttl_seconds=...)</code> returns <code>url</code>, <code>token</code>, <code>port</code> and <code>expires_at</code>. CLI: <code>sandfort preview</code></td><td>Preview goes through the Sandfort proxy. Runloop tunnel auth modes do not map one to one. Check the preview token model before you expose a service.</td></tr>
+          <tr><th scope="row">SSH (<code>rli devbox ssh</code>)</th><td>No SSH. Interactive access is a PTY: <code>sbx.pty.create()</code> in the SDK, <code>sandfort shell</code> in the CLI, and a web terminal</td><td>The feature map has no SSH endpoint, so tools that need an SSH hostname (editors, <code>scp</code>, port forwarding) do not carry over.</td></tr>
+          <tr><th scope="row">Network policies (<code>allowed_hostnames</code>, can be updated while devboxes run)</th><td>Per-sandbox <code>egress_allowlist</code> at create, <code>block_network=True</code>, and <code>client.set_egress_allowlist(sandbox_id, entries)</code> to replace the list later</td><td>See <a href="#egress">Egress</a>. It is a proxy-based allowlist, not a firewall.</td></tr>
+          <tr><th scope="row">Storage objects and mounts</th><td>Named volumes: <code>client.volumes.create(name)</code>, mounted at create with <code>VolumeMount(volume_id, "/data", read_only=...)</code></td><td>Volumes are the nearest concept, not an equivalent of storage objects.</td></tr>
+          <tr><th scope="row">Axons, Benchmarks</th><td>No counterpart in the Sandfort feature map</td><td>Runloop&#8217;s Tensorlake transition guide says there is no like-for-like substitute for Axons and that the Benchmark product has been discontinued. Plan that work outside Sandfort.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="quickstart" aria-labelledby="h-quickstart">
+  <div class="head"><h2 id="h-quickstart">Quickstart</h2></div>
+  <div class="art">
+    <p>You need a Sandfort server and an API key. To run your own server on a Docker host, follow the Quickstart in the repository <code>README.md</code> (Python 3.12, a local Docker daemon, <code>sandfort.admin_cli bootstrap</code> prints the <code>sf_</code> key once). To evaluate without installing a server, see <a href="#where-to-start">Where to start</a>.</p>
+    <p>Install the Python SDK from PyPI (current release <code>0.1.0b83</code>). It requires Python 3.12 or newer:</p>
+    <div class="slab"><div class="rail"><span class="tab static">bash</span></div><pre class="code" tabindex="0">pip install --pre sandfort-sdk</pre></div>
+    <p>Create a client, run a command, delete the sandbox. This is the example from the repository <code>README.md</code>:</p>
+    <div class="slab"><div class="rail"><span class="tab static">python</span></div><pre class="code" tabindex="0">from sandfort_sdk import Client
+
+client = Client(base_url="http://127.0.0.1:8000", api_key="sf_...")
+
+sbx = client.create_sandbox(name="hello", snapshot="python:3.12-slim", wait=True)
+result = sbx.process_exec(argv=["python3", "-c", "print(21 * 2)"])
+print(result.exit_code, result.stdout.strip())  # 0 42
+client.stop(sbx.id)
+client.delete(sbx.id)</pre></div>
+    <h3 id="the-same-shape-as-a-runloop-agent-loop" style="margin-top:32px">The same shape as a Runloop agent loop</h3>
+    <p>This second example uses the pieces from the concept map: an image spec in place of a blueprint, a snapshot name in place of a blueprint name, a session in place of a named shell, file upload, and a preview URL. Every call below exists in <code>sdk/python/src/sandfort_sdk/</code>, and the example runs end to end against a local server with a real Docker daemon.</p>
+    <div class="slab"><div class="rail"><span class="tab static">python</span></div><pre class="code" tabindex="0">import os
+
+from sandfort_sdk import Client, Image
+
+client = Client(base_url=os.environ["SANDFORT_URL"], api_key=os.environ["SANDFORT_API_KEY"])
+
+# Blueprint equivalent: a declarative image spec, built once and cached by spec_hash.
+spec = Image.debian_slim().pip_install("pytest").apt_install("git")
+snap = client.snapshots.build(spec, name="agent-base")
+if snap.state != "ready":
+    with client.snapshots.follow_build_logs(snap.id) as logs:
+        for event in logs:
+            if event.is_final and not event.succeeded:
+                raise RuntimeError(event.reason)
+
+# Devbox equivalent. Leaving the with block deletes the sandbox.
+with client.create_sandbox(
+    name="work",
+    snapshot="agent-base",
+    labels={"purpose": "migration-test"},
+    auto_stop_minutes=30,
+    wait=True,
+) as sbx:
+    sbx.fs.upload_file("/tmp/test_math.py", b"def test_add():\n    assert 1 + 1 == 2\n")
+
+    # Named shell equivalent: a session keeps its working directory between calls.
+    session = sbx.process.create_session(cwd="/tmp")
+    sbx.process.execute_session_command(session.id, "python3 -m pytest -q test_math.py")
+
+    # One-off command with a result.
+    result = sbx.process_exec(argv=["python3", "--version"])
+    print(result.exit_code, result.stdout.strip())
+
+    # Tunnel equivalent: a preview URL for a port inside the sandbox.
+    preview = sbx.preview(8000, ttl_seconds=600)
+    print(preview.url, preview.expires_at)</pre></div>
+    <h3 id="egress" style="margin-top:32px">Egress</h3>
+    <p>Runloop network policies restrict outbound traffic to a list of hostnames and can be updated while devboxes run. Sandfort has a per-sandbox allowlist whose entries are hostnames, leading-dot domains (<code>.example.com</code> admits the domain and its subdomains) and CIDR ranges. You set it at create and can replace it later:</p>
+    <div class="slab"><div class="rail"><span class="tab static">python</span></div><pre class="code" tabindex="0">sbx = client.create_sandbox(name="locked", egress_allowlist=["pypi.org"], wait=True)
+client.set_egress_allowlist(sbx.id, ["pypi.org", "files.pythonhosted.org"])</pre></div>
+    <p>Read these conditions before you rely on it:</p>
+    <ul class="prose">
+      <li>Replacement is one PATCH to <code>/v1/sandboxes/{id}</code>. The server stores the list at once and the egress proxy picks it up within its cache window, so the change takes effect after that delay. <code>[]</code> blocks every connection.</li>
+      <li>A CIDR entry must be written as a canonical network address, with a prefix of at least <code>/8</code> for IPv4 or <code>/32</code> for IPv6, and must be entirely global address space. Loopback, private, shared, link-local, multicast, reserved, documentation and translation ranges are refused. A target given as an IP literal passes only through a CIDR rule.</li>
+      <li>It works only on a sandbox created with a non-empty allowlist. A sandbox created without one or with <code>[]</code> cannot gain one, and an older sandbox needs a reset first. Otherwise the call raises <code>InvalidState</code>. An operator policy can also refuse it with <code>Forbidden</code>.</li>
+      <li>The allowlist is enforced by a CONNECT proxy. Software that ignores the proxy variables gets no network. The operator must run the egress proxy (<code>python -m sandfort.egress.proxy</code>), and a create with an allowlist is refused without it. Allowed ports default to 443 and 80 (<code>SANDFORT_EGRESS_ALLOWED_PORTS</code>). On the <code>container</code> tier DNS is a side channel, unless the operator sets up the DNS sink (<code>SANDFORT_EGRESS_DNS_SINK_ADDRESS</code> and <code>SANDFORT_EGRESS_DNS_SINK_LISTEN</code>, see <code>docs/operations.md</code>), which answers every query from those sandboxes REFUSED. It is not a firewall.</li>
+      <li>In jobs mode (which multi-node deployments require) allowlisted creates work and are placed only on nodes that run the egress stack; sandbox reset is unavailable there, so the egress token is never refreshed and a sandbox that outlives the token&#8217;s lifetime loses egress.</li>
+      <li><code>set_egress_allowlist</code> is in <code>sandfort-sdk</code> 0.1.0b83 on PyPI. The call is one PATCH to <code>/v1/sandboxes/{id}</code>, so the server you run must include that route. The CLI equivalents are <code>sandfort sandbox egress set &lt;id&gt;</code> and <code>sandfort sandbox egress show &lt;id&gt;</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec" id="what-is-different" aria-labelledby="h-what-is-different">
+  <div class="head"><h2 id="h-what-is-different">What is different</h2></div>
+  <div class="art">
+    <p>These are the points that change a decision. Several of them are limits and they are stated here on purpose.</p>
+    <p><b>Production is self-hosted.</b> Sandfort runs on hosts you operate: one Python process and SQLite for a laptop, Postgres and a Kubernetes kit for a cluster. The hosted instance is an invite-only beta for evaluation and design partners. It is shared, runs on modest hardware, has no SLA, must not hold production secrets or sensitive data, and may be upgraded with downtime. It is not a managed service. If you used Runloop as a hosted service, the equivalent Sandfort step is running the server yourself.</p>
+    <p><b>Isolation is container-based by default.</b> Runloop&#8217;s documentation describes devboxes as isolated with virtual machine technology. Sandfort offers three tiers per sandbox. <code>container</code> (runc) shares the host kernel. <code>gvisor</code> (runsc) puts a user-space kernel between the sandbox and the host, which is not a hardware boundary, and it carries an overhead on spawn-heavy and small-file-heavy work, measured in <code>docs/isolation-tiers.md</code>. <code>microvm</code> (Kata Containers) gives each sandbox its own guest kernel and needs KVM. A deployment offers only <code>container</code> unless the operator maps the other tiers to runtimes. The Firecracker driver in the repository is a skeleton tested against a mock agent and is not offered. If your threat model requires microVM isolation in production, Sandfort is not a fit today.</p>
+    <p><b>Stop and start keep files, not processes.</b> This matches what Runloop documents for suspend and resume. A stopped Sandfort sandbox keeps its files and the same id, and a command running at stop time is cut short. A sandbox can also stop because it hit a memory or process limit, and then <code>stop_cause</code> and the command&#8217;s <code>stop_reason</code> tell you why. Code contexts (persistent Python kernels) lose their state on stop, reset and delete.</p>
+    <p><b>A sandbox lives on one node.</b> Multi-node placement exists, but there is no rescheduling and no live migration. Multi-node needs jobs mode, which refuses creates that mount volumes and has no sandbox reset.</p>
+    <p><b>Docker socket.</b> Server processes on sandbox nodes mount <code>/var/run/docker.sock</code>, which gives control of the node. Use dedicated nodes. The socket is never mounted into a sandbox.</p>
+    <p><b>The TypeScript SDK is a subset.</b> The Python SDK is the complete client. The TypeScript SDK (<code>@sandfort/sdk</code>, ESM only, Node 20.3 or newer) has no jobs, org quota, members, SSO or SCIM client. There are no SDKs for other languages. Use the REST API for those. The exported OpenAPI spec (<code>openapi/sandfort.v1.json</code>) leaves out the PTY WebSocket, <code>/v1/nodes</code> and the SCIM routes.</p>
+    <p><b>Toolbox scope.</b> Filesystem: no chmod, search, find or replace. Git: no branch or checkout. Use <code>process_exec</code> for those. No SSH.</p>
+    <p><b>Pre-1.0, no production references.</b> Version <code>0.1.0</code>, built October to November 2026, no certifications (no SOC 2, no ISO 27001) and no production references.</p>
+    <p><b>License.</b> The server is FSL-1.1-Apache-2.0. Self-hosting, internal use and modification are permitted. Making the software available as a competing commercial product or service is not. Each version converts to Apache-2.0 two years after it is made available. It is source-available, not open source, until it converts. The Python SDK, the TypeScript SDK and the CLI are Apache-2.0.</p>
+    <p><b>Governance is part of the same package.</b> If your reason for moving is control over who ran what, Sandfort writes a per-org hash-chained audit log, with <code>audit-verify</code> and <code>audit-export</code> admin commands. The chain is tamper-evident, not immutable. Without <code>SANDFORT_AUDIT_CHAIN_KEY</code> it is an unkeyed hash that anyone who can write the database can recompute, so set the key for any deployment where that matters. API keys start with <code>sf_</code>, carry scopes, and the plaintext is shown once.</p>
+  </div>
+</section>
+
+<section class="sec" id="where-to-start" aria-labelledby="h-where-to-start">
+  <div class="head"><h2 id="h-where-to-start">Where to start</h2></div>
+  <div class="art">
+    <ul class="prose">
+      <li><b>Repository <code>README.md</code>.</b> The server Quickstart, the feature table and the Limits section. Read Limits first.</li>
+      <li><b>Docs.</b> The API reference, the quickstart and the isolation tiers page are at <a href="https://docs.sandfort.dev/">https://docs.sandfort.dev/</a>.</li>
+      <li><b>Hosted evaluation instance.</b> If you want to try the API before you install anything, write to <code>office@sandfort.dev</code>. Access is invite-only, best effort, with no SLA. Terms are in <code>docs/beta-terms.md</code>. When you move to your own hosts, the agent code stays the same and only <code>base_url</code> in <code>Client</code> changes.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec" id="sources" aria-labelledby="h-sources">
+  <div class="head"><h2 id="h-sources">Sources</h2></div>
+  <div class="art">
+    <p>Runloop facts come from Runloop&#8217;s public documentation. Pages marked 2026-11-25 were re-read on that date. The others were checked on 2026-11-24. Runloop may change or remove these pages, so re-read them before you rely on them.</p>
+    <ul class="prose">
+      <li>Wind-down notice, support end date and the four transition guides: <a href="https://docs.runloop.ai/docs/transitions/overview">docs.runloop.ai/docs/transitions/overview</a> (2026-11-25)</li>
+      <li>Axons and Benchmarks: <a href="https://docs.runloop.ai/docs/transitions/runloop-to-tensorlake.md">docs.runloop.ai/docs/transitions/runloop-to-tensorlake.md</a> (2026-11-24)</li>
+      <li>Devboxes and VM isolation: <a href="https://docs.runloop.ai/docs/devboxes/overview">docs.runloop.ai/docs/devboxes/overview</a> (2026-11-24)</li>
+      <li>Lifecycle, suspend and resume: <a href="https://docs.runloop.ai/docs/devboxes/lifecycle">docs.runloop.ai/docs/devboxes/lifecycle</a> (2026-11-24)</li>
+      <li>Lifetime and <code>keep_alive_time_seconds</code>: <a href="https://docs.runloop.ai/docs/devboxes/start-stop">docs.runloop.ai/docs/devboxes/start-stop</a> (2026-11-24)</li>
+      <li>Named shells: <a href="https://docs.runloop.ai/docs/devboxes/named-shells">docs.runloop.ai/docs/devboxes/named-shells</a> (2026-11-24)</li>
+      <li>Files: <a href="https://docs.runloop.ai/docs/devboxes/files">docs.runloop.ai/docs/devboxes/files</a> (2026-11-24)</li>
+      <li>Blueprints: <a href="https://docs.runloop.ai/docs/devboxes/blueprints/overview">docs.runloop.ai/docs/devboxes/blueprints/overview</a> (2026-11-24)</li>
+      <li>Snapshots: <a href="https://docs.runloop.ai/docs/devboxes/snapshots">docs.runloop.ai/docs/devboxes/snapshots</a> (2026-11-24)</li>
+      <li>Tunnels: <a href="https://docs.runloop.ai/docs/devboxes/tunnels">docs.runloop.ai/docs/devboxes/tunnels</a> (2026-11-24)</li>
+      <li>SSH: <a href="https://docs.runloop.ai/docs/devboxes/ssh">docs.runloop.ai/docs/devboxes/ssh</a> (2026-11-24)</li>
+      <li>Network policies: <a href="https://docs.runloop.ai/docs/network-policies">docs.runloop.ai/docs/network-policies</a> (2026-11-24)</li>
+    </ul>
+  </div>
+</section>
+
+</article>
+
+</div>
+</main>
+
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="https://docs.sandfort.dev/">API reference</a></li><li><a href="https://docs.sandfort.dev/governance">Governance page</a></li><li><a href="https://docs.sandfort.dev/release">Releases</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li><li><a href="/compare.html">Comparison</a></li><li><a href="/run-ai-code-on-your-own-hosts.html">Article</a></li><li><a href="/restrict-network-egress-ai-agent-sandbox.html">Egress allowlists</a></li><li><a href="/migrating-from-runloop.html" aria-current="page">Migrating from Runloop</a></li><li><a href="/anthropic-siren-agent-sandbox.html">Anthropic Siren</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal"><span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span><span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span><span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span><span>This page sets no cookies.</span></div>
+  </div>
+</footer>
+</body>
+</html>

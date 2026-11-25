@@ -223,10 +223,13 @@ it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor
 - allowlist: allowlisted hosts are reachable only through the egress proxy that the sandbox's
   `HTTP_PROXY` and `HTTPS_PROXY` variables point to (pip, curl and Python requests use them);
   every other destination is refused. On gvisor and microvm, direct DNS lookups fail
-  immediately. On the container tier names still resolve through Docker's resolver, which is a
-  DNS side channel: a resolved name can carry data even though the connection is refused. For
-  regulated data use gvisor or microvm with the allowlist. The proxy variables, including the
-  per-sandbox proxy credentials, are visible to code inside the sandbox.
+  immediately. On the container tier the sandbox's only DNS server is the egress proxy's sink
+  (since 2026-11-25 on the beta), which answers every query REFUSED and forwards nothing, so
+  only the proxy resolves names and direct lookups fail here too (verified by gate 11 and the
+  D3/D4 driver tests on the beta VM, 2026-11-25; `docs/egress-v2-design.md` section 6). A
+  container-tier sandbox created before the sink was configured keeps the old resolvers until
+  it is reset or recreated. The proxy variables, including the per-sandbox proxy credentials,
+  are visible to code inside the sandbox.
 
 ## Exec results, output cap and untrusted submissions
 

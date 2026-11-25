@@ -49,6 +49,37 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 90 (after tag v0.1.0-beta.83; gate 11 runs on the Linux beta VM)
+- **feat(integrations): `sandfort-sandbox` agent skill (2026-11-25).** A SKILL.md that teaches
+  an agent when to run code in a Sandfort sandbox and how to drive the 14 `sandfort-mcp` tools,
+  with safety defaults (isolation tiers, egress allowlist, no production secrets) and a
+  "No server yet?" branch (local Docker quickstart or the hosted beta). Apache-2.0. Source in
+  `integrations/skills/sandfort-sandbox/`, mirrored for distribution to
+  `github.com/malinele/sandfort-skills` (`npx skills add malinele/sandfort-skills`).
+  SkillSpector static+LLM scan: risk 4/100, SAFE. (`integrations/skills/sandfort-sandbox/SKILL.md`;
+  this commit)
+- **fix(examples): gate 11 works on a Linux Docker host (2026-11-25).** Two defects kept
+  `examples/gate11.py` from its stated target, the Linux beta VM. The proxy address given to
+  the server was hardcoded to `host.docker.internal`, which Linux containers cannot resolve:
+  the gate now uses `GATE11_PROXY_HOST` when set, the `sf-egress-net` bridge gateway on Linux,
+  and `host.docker.internal` elsewhere. And the gate predates round 5's v2-only token minting:
+  its proxy got no policy URL, so every CONNECT was denied 503 `egress policy unavailable` —
+  the proxy now gets `SANDFORT_EGRESS_POLICY_URL` pointing at the gate server and the server
+  runs with `SANDFORT_EGRESS_POLICY_ROUTE_ENABLED=true`. First pass on the beta VM 2026-11-25
+  (`GATE11 PASS`, D1 and D3 skipped without root for port 53); D4 passed there via
+  `tests/test_docker_egress_dns_v2.py`. A third defect surfaced once the host rules with the
+  sink exception were applied: the gate's proxy port 4206 is rejected by the host guard, which
+  admits only the configured proxy port — `GATE11_PROXY_PORT` now overrides the port (default
+  4206) so the gate can run on the admitted port (normally 3128) with the deployed egress
+  proxy stopped for the duration. (`examples/gate11.py`; this commit)
+- **docs(connect-guide): CIDR allowlist entries (2026-11-25).** The naming rules for
+  `egress_allowlist` described host names only and said an IP literal is refused, which has
+  not been the whole rule since round 84. The section now also gives the CIDR entry rules from
+  `src/sandfort/domain/egress_entries.py` (canonical form, network address, at least `/8` or
+  `/32`, global only, no overlap with `SANDFORT_EGRESS_DENIED_CIDRS`) and states that an
+  IP-literal target is admitted only through a CIDR entry. The example range was checked
+  against `cidr_problem`. (`docs/connect-guide.md`, `site/docs/guide.html`; this commit)
+
 #### Round 89 (after tag v0.1.0-beta.81; TypeScript SDK 0.2.2: runtime egress allowlist)
 - **feat(ts-sdk): updateSandbox egressAllowlist, egressPolicyGeneration and errorCode
   (2026-11-24).** `@sandfort/sdk` 0.2.2: `updateSandbox` gains `egressAllowlist` — the list

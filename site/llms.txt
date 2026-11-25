@@ -17,6 +17,8 @@ Limits that apply today:
 - [Comparison](https://sandfort.dev/compare.html): Sandfort, E2B, Daytona and OpenSandbox on running sandboxes on your own hardware, with sources and check dates.
 - [Run the code your agent writes on your own hosts](https://sandfort.dev/run-ai-code-on-your-own-hosts.html): quickstart to agent tool loop, isolation tiers and limits, with real commands.
 - [How to restrict network egress from an AI agent sandbox](https://sandfort.dev/restrict-network-egress-ai-agent-sandbox.html): a hostname allowlist through a CONNECT proxy, what it stops, what it does not, and its limits.
+- [Migrating from Runloop to Sandfort](https://sandfort.dev/migrating-from-runloop.html): a concept map from Runloop devboxes, blueprints and snapshots to Sandfort, a working Python example and the differences stated up front.
+- [What Anthropic's Siren evaluation means for the sandbox under your agent](https://sandfort.dev/anthropic-siren-agent-sandbox.html): what Siren measures and reports, five sandbox boundary properties, and how Sandfort implements each, with limits.
 - [Quickstart](https://docs.sandfort.dev/quickstart): from the delivery package to a working sandbox on the hosted beta.
 - [Connect guide](https://docs.sandfort.dev/guide): the full reference behind the quickstart for the hosted beta.
 

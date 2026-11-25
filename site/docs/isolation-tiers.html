@@ -229,10 +229,13 @@ configuration from the host, and lookups fail at once on every tier.</li>
 <li>allowlist: allowlisted hosts are reachable only through the egress proxy that the sandbox&#x27;s
 <code>HTTP_PROXY</code> and <code>HTTPS_PROXY</code> variables point to (pip, curl and Python requests use them);
 every other destination is refused. On gvisor and microvm, direct DNS lookups fail
-immediately. On the container tier names still resolve through Docker&#x27;s resolver, which is a
-DNS side channel: a resolved name can carry data even though the connection is refused. For
-regulated data use gvisor or microvm with the allowlist. The proxy variables, including the
-per-sandbox proxy credentials, are visible to code inside the sandbox.</li>
+immediately. On the container tier the sandbox&#x27;s only DNS server is the egress proxy&#x27;s sink
+(since 2026-11-25 on the beta), which answers every query REFUSED and forwards nothing, so
+only the proxy resolves names and direct lookups fail here too (verified by gate 11 and the
+D3/D4 driver tests on the beta VM, 2026-11-25; <code>docs/egress-v2-design.md</code> section 6). A
+container-tier sandbox created before the sink was configured keeps the old resolvers until
+it is reset or recreated. The proxy variables, including the per-sandbox proxy credentials,
+are visible to code inside the sandbox.</li>
 </ul>
 <h2 id="exec-results-output-cap-and-untrusted-submissions">Exec results, output cap and untrusted submissions<a class="anchor" href="#exec-results-output-cap-and-untrusted-submissions" aria-label="Link to section: Exec results, output cap and untrusted submissions">#</a></h2>
 <ul>
