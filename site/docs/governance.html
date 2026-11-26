@@ -32,7 +32,7 @@
       href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
   </div>
 </header>
-<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance" aria-current="page">Governance page</a></nav></div>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance" aria-current="page">Governance page</a><a href="/audit-reviewers">Audit for reviewers</a></nav></div>
 <main id="main">
 <div class="frame"><div class="doc has-toc">
 <details class="toc"><summary>On this page</summary><ul><li><a href="#api-key-scopes">API key scopes</a><ul><li><a href="#label-scoped-keys">Label-scoped keys</a></li><li><a href="#volumes-and-labels">Volumes and labels</a></li></ul></li><li><a href="#image-reference-policy">Image reference policy</a></li><li><a href="#rate-limits">Rate limits</a></li><li><a href="#audit">Audit</a></li><li><a href="#usage-metering">Usage metering</a></li><li><a href="#webhooks">Webhooks</a></li><li><a href="#data-retention-and-deletion">Data retention and deletion</a></li><li><a href="#telemetry">Telemetry</a></li><li><a href="#isolation">Isolation</a></li></ul></details>
@@ -200,24 +200,35 @@ keep running when a log follower disconnects, and <code>kill_command</code> stop
 <h2 id="audit">Audit<a class="anchor" href="#audit" aria-label="Link to section: Audit">#</a></h2>
 <p>Each event stores: actor (type and id), action, target (type and id), outcome (<code>success</code>,
 <code>denied</code> or <code>error</code>), request id, client IP, user agent and redacted details.</p>
+<p>To read and verify an organization&#x27;s audit log as a reviewer, see
+<a href="https://docs.sandfort.dev/audit-reviewers">Reading and verifying the audit log</a>.</p>
 <ul>
-<li><p>Every non-GET call writes one event for what it did (a meta-test enforces it), with named
-exceptions rather than a promise of exactly one row. A call refused after a valid key writes
+<li><p>Most non-GET calls write one event for what it did, with named
+exceptions rather than a promise of exactly one row. Two routes are known to write no row:
+<code>POST /v1/sandboxes/{id}/preview-tokens</code> and <code>PATCH /v1/webhooks/{id}</code>. No test walks every
+route to check this, so each feature is tested on its own and other gaps are possible.
+A call refused after a valid key writes
 one refusal row instead (<code>request.denied</code>, or <code>sandbox.create_refused</code> and
-<code>sandbox.start_refused</code> for host capacity, below). A call that is accepted and then fails
+<code>sandbox.start_refused</code> for host capacity or the key&#x27;s <code>max_sandboxes</code> cap, below, or a row
+under the call&#x27;s own action such as <code>toolbox.fs.upload</code>). A call that is accepted and then fails
 adds a failure row: <code>sandbox.failed</code> for a create or start whose driver call fails, and
 <code>sandbox.reset_failed</code> next to <code>sandbox.reset</code>. Most successful GETs are not
 audited, and failed authentication is not audited, except the refusal of a revoked or
 expired key (see below). The GETs that are audited because they
 read sandbox content: <code>sandbox.logs.read</code> (<code>GET /v1/sandboxes/{id}/logs</code>),
-<code>toolbox.fs.list</code>, <code>toolbox.fs.stat</code>, <code>toolbox.fs.download</code> and <code>toolbox.git.status</code>.
+<code>toolbox.fs.list</code>, <code>toolbox.fs.stat</code>, <code>toolbox.fs.download</code>, <code>toolbox.git.status</code>,
+<code>snapshot.exported</code> (<code>GET /v1/snapshots/{id}/export</code>) and <code>volume.export</code>
+(<code>GET /v1/volumes/{id}/export</code>).
 Listing and reading sandboxes, snapshots, volumes, jobs, usage and audit events, and reading
 session command logs, is not audited.</p></li>
 <li><p>A sandbox reset (<code>POST /v1/sandboxes/{id}/reset</code>) is audited as <code>sandbox.reset</code> with the
 state it started from; a reset whose driver call fails also writes <code>sandbox.reset_failed</code>
 with the (truncated) driver message.</p></li>
-<li><p>A refusal after a valid key (401, 403, 404, 409 or 422) is recorded as <code>request.denied</code>
-with outcome <code>denied</code> and the method, path, status and error code. One exception: a 422 for a
+<li><p>A refusal after a valid key (in practice 401 for a revoked or expired key, 403, 404 from a
+route that matched, 409, 422, and a 413 or 400 raised by a route) is recorded as
+<code>request.denied</code> with outcome <code>denied</code> and the method, path, status and error code. A 503
+with the code <code>CAPACITY</code> is recorded <code>denied</code> too, and any other 5xx is recorded as <code>error</code>
+with the action <code>request.failed</code>. One exception: a 422 for a
 request body that is not valid JSON is rejected before the key is resolved, so no
 <code>request.denied</code> row is written. Every other 422 after a valid key is recorded. A 429 with
 the code <code>QUOTA_EXCEEDED</code> is recorded too; a 429 with the code <code>RATE_LIMITED</code> is not, because a
@@ -226,8 +237,10 @@ response.</p></li>
 <li><p>Two refusals of a create look alike but are recorded differently. A create refused for host
 capacity answers 503 and is audited as <code>sandbox.create_refused</code> (a start is
 <code>sandbox.start_refused</code>). A create refused by the per-key <code>max_sandboxes</code> cap answers 429
-<code>QUOTA_EXCEEDED</code> and is audited as <code>request.denied</code>, not <code>sandbox.create_refused</code>. To find
-every refused create, query both actions.</p></li>
+<code>QUOTA_EXCEEDED</code> and is audited as <code>sandbox.create_refused</code> with <code>reason</code> <code>key_cap</code> and the
+cap in <code>max</code> and <code>current</code> (<code>src/sandfort/services/admission.py</code>), not as <code>request.denied</code>.
+Other 429 <code>QUOTA_EXCEEDED</code> refusals are audited as <code>request.denied</code>. To find every refused
+create, query both actions.</p></li>
 <li><p>Capacity refusals are coalesced. A client in a retry loop (the SDK retries a 503) would
 write a permanent row per retry, so for the same action, API key and reason at most one
 <code>sandbox.create_refused</code> (and one <code>sandbox.start_refused</code>) row is written per 60 seconds
@@ -236,9 +249,17 @@ details as <code>refusals_coalesced</code> (absent when nothing was suppressed).
 throttle, the repeats leave no row, so the chain shows that a key was refused and how many
 came in between, not each one; a restart empties the in-memory map and each <code>api</code> process
 keeps its own (<code>src/sandfort/services/admission.py</code>).</p></li>
+<li><p>Some requests leave no row, with or without a valid key: a refusal by the request text guard
+(a body that is not valid JSON or UTF-8, a lone surrogate or NUL character, a repeated
+object key, a body nested too deep, an integer with too many digits, and bad text in the path or
+query string), a non-JSON content type (415), a body over the size limit (413), a path that
+matches no route (404), a wrong method (405) and every refusal on the <code>/scim/v2</code> routes. A
+call refused by a service that already wrote its own refusal row, for example
+<code>toolbox.fs.upload</code> for an upload, gets no second <code>request.denied</code> row. For the reviewer&#x27;s
+view of all of this see the page linked at the top of this section.</p></li>
 <li><p>The actions written today (the <code>action</code> filter of <code>GET /v1/audit-events</code> takes any of them;
 details are redacted as below):</p>
-<div class="tbl-wrap" role="region" aria-label="Table: Audit" tabindex="0"><table><thead><tr><th scope="col">Action</th><th scope="col">Written when</th></tr></thead><tbody><tr><td><code>sandbox.create</code>, <code>sandbox.start</code>, <code>sandbox.stop</code>, <code>sandbox.update</code></td><td>the call</td></tr><tr><td><code>sandbox.delete</code>, <code>sandbox.reset</code>, <code>sandbox.claim</code></td><td>the call (<code>claim</code>: a warm standby)</td></tr><tr><td><code>sandbox.create_refused</code></td><td>a create refused for host capacity (503), outcome <code>denied</code></td></tr><tr><td><code>sandbox.start_refused</code></td><td>a start refused for host capacity (503), outcome <code>denied</code></td></tr><tr><td><code>sandbox.failed</code>, <code>sandbox.reset_failed</code></td><td>a driver failure after the call was accepted</td></tr><tr><td><code>sandbox.auto_stopped</code>, <code>sandbox.auto_deleted</code></td><td>the idle timers</td></tr><tr><td><code>sandbox.logs.read</code>, <code>sandbox.exec.replay</code></td><td>a read of logs; a replayed idempotent exec</td></tr><tr><td><code>toolbox.process.execute</code>, <code>toolbox.process.code_run</code></td><td>a synchronous exec or code-run</td></tr><tr><td><code>toolbox.code_contexts.create</code>, <code>.delete</code>, <code>.interrupt</code>, <code>.run</code></td><td>a code context call</td></tr><tr><td><code>toolbox.code_contexts.run_stream</code></td><td>a streamed run, rows as for <code>run</code></td></tr><tr><td><code>toolbox.session.*</code>, <code>toolbox.pty.*</code></td><td>session create, exec, kill; PTY create, resize, close</td></tr><tr><td><code>toolbox.fs.*</code>, <code>toolbox.git.*</code></td><td>file and git calls (the audited GETs included)</td></tr><tr><td><code>snapshot.create</code>, <code>snapshot.register</code>, <code>snapshot.delete</code>, <code>snapshot.exported</code></td><td>snapshots</td></tr><tr><td><code>volume.create</code>, <code>volume.delete</code></td><td>volumes</td></tr><tr><td><code>api_key.created</code>, <code>api_key.revoked</code>, <code>quota.updated</code></td><td>key and quota admin</td></tr><tr><td><code>request.denied</code>, <code>request.failed</code></td><td>a refusal after a valid key</td></tr></tbody></table></div></li>
+<div class="tbl-wrap" role="region" aria-label="Table: Audit" tabindex="0"><table><thead><tr><th scope="col">Action</th><th scope="col">Written when</th></tr></thead><tbody><tr><td><code>sandbox.create</code>, <code>sandbox.start</code>, <code>sandbox.stop</code>, <code>sandbox.update</code></td><td>the call</td></tr><tr><td><code>sandbox.delete</code>, <code>sandbox.reset</code>, <code>sandbox.claim</code></td><td>the call (<code>claim</code>: a warm standby)</td></tr><tr><td><code>sandbox.create_refused</code></td><td>a create refused for host capacity (503) or by the key&#x27;s <code>max_sandboxes</code> cap (429), outcome <code>denied</code></td></tr><tr><td><code>sandbox.start_refused</code></td><td>a start refused for host capacity (503), outcome <code>denied</code></td></tr><tr><td><code>sandbox.failed</code>, <code>sandbox.reset_failed</code></td><td>a driver failure after the call was accepted</td></tr><tr><td><code>sandbox.auto_stopped</code>, <code>sandbox.auto_deleted</code></td><td>the idle timers</td></tr><tr><td><code>sandbox.resized</code>, <code>sandbox.egress_updated</code></td><td>a resize, and a runtime egress allowlist replacement</td></tr><tr><td><code>sandbox.drift_detected</code>, <code>sandbox.orphan_removed</code></td><td>the reconciler: a sandbox that stopped unexpectedly, and a container with no sandbox that was removed</td></tr><tr><td><code>sandbox.logs.read</code>, <code>sandbox.exec.replay</code></td><td>a read of logs; a replayed idempotent exec</td></tr><tr><td><code>toolbox.process.execute</code>, <code>toolbox.process.code_run</code></td><td>a synchronous exec or code-run</td></tr><tr><td><code>toolbox.code_contexts.create</code>, <code>.delete</code>, <code>.interrupt</code>, <code>.run</code></td><td>a code context call</td></tr><tr><td><code>toolbox.code_contexts.run_stream</code></td><td>a streamed run, rows as for <code>run</code></td></tr><tr><td><code>toolbox.session.*</code>, <code>toolbox.pty.*</code></td><td>session create, exec, kill; PTY create, resize, close</td></tr><tr><td><code>toolbox.fs.*</code>, <code>toolbox.git.*</code></td><td>file and git calls (the audited GETs included)</td></tr><tr><td><code>snapshot.create</code>, <code>snapshot.register</code>, <code>snapshot.delete</code>, <code>snapshot.exported</code></td><td>snapshots</td></tr><tr><td><code>volume.create</code>, <code>volume.delete</code>, <code>volume.restore</code>, <code>volume.export</code></td><td>volumes, including a restore and an export</td></tr><tr><td><code>image.build.request</code>, <code>image.build.complete</code></td><td>an image build request and its end</td></tr><tr><td><code>api_key.created</code>, <code>api_key.revoked</code>, <code>quota.updated</code></td><td>key and quota admin</td></tr><tr><td><code>user.created</code>, <code>membership.added</code>, <code>membership.role_changed</code>, <code>membership.removed</code>, <code>membership.external_id_changed</code></td><td>member admin, including SCIM Users calls</td></tr><tr><td><code>session.created</code></td><td>an OIDC sign-in exchange</td></tr><tr><td><code>scim_token.created</code>, <code>scim_token.revoked</code></td><td>SCIM token admin</td></tr><tr><td><code>webhook.endpoint_created</code>, <code>webhook.endpoint_deleted</code>, <code>webhook.redelivered</code>, <code>webhook.endpoint_disabled</code></td><td>webhook admin. The last is written when delivery failures disable an endpoint</td></tr><tr><td><code>audit.chain_reanchored</code></td><td>an operator acknowledges historical chain findings</td></tr><tr><td><code>request.denied</code>, <code>request.failed</code></td><td>a refusal after a valid key</td></tr></tbody></table></div></li>
 <li><p>A revoked or expired key is refused with 401 and that refusal is recorded as
 <code>request.denied</code> on the key&#x27;s organization: the actor is the key, the details carry the
 method, path, status, <code>error_code</code> and a <code>reason</code> of <code>revoked</code> or <code>expired</code>
@@ -650,7 +671,7 @@ code, so a client that forgets <code>block_network=True</code> is still offline.
       <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
     </div>
     <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
-    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="/audit-reviewers">Audit for reviewers</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
     <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
     <div class="legal">
       <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>

@@ -39,6 +39,7 @@ from sandfort.drivers.base import EndpointDriver
 from sandfort.logging import configure_logging
 from sandfort.preflight import ConfigurationError, check_preflight
 from sandfort.proxy.app import create_proxy_app as build_proxy_app
+from sandfort.proxy.hygiene import install_log_redaction
 
 __all__ = ["create_app", "create_proxy_app", "main"]
 
@@ -56,13 +57,24 @@ REFUSAL_REASONS = (
 FINDING_SEPARATOR = "; "
 
 logger = logging.getLogger(__name__)
+ACCESS_LOGGER = "uvicorn.access"
+
+
+def _configure_logging(level: str) -> None:
+    """JSON logging plus token redaction on uvicorn's loggers, for every server role.
+
+    The API serves the pty connect websocket with ``?token=`` and uvicorn logs each handshake,
+    so the redaction cannot wait for the preview proxy to be built.
+    """
+    configure_logging(level)
+    install_log_redaction()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """The application with structured logging configured (the ``uvicorn --factory`` target)."""
     resolved = settings or Settings.from_env()
     check_preflight(resolved)  # before wiring: the secret box needs the webhook key
-    configure_logging(resolved.log_level)
+    _configure_logging(resolved.log_level)
     return build_app(resolved)
 
 
@@ -90,7 +102,7 @@ def create_proxy_app(
             lookup=sandbox_lookup(getattr(state, SESSION_FACTORY_ATTR)),
             driver=_endpoint_driver(getattr(state, DRIVER_ATTR)),
         )
-    configure_logging(resolved.log_level)
+    _configure_logging(resolved.log_level)
     engine = create_engine(resolved)
     return build_proxy_app(
         resolved,
@@ -135,10 +147,13 @@ async def _serve_together(*servers: _LinkedServer) -> None:
 def _serve_with_proxy(app: FastAPI, settings: Settings) -> None:
     """The API on ``port`` and the preview proxy on ``proxy_port``, in one event loop."""
     proxy_app = create_proxy_app(settings, api_app=app)
-    # The API's telemetry middleware logs its requests; the proxy keeps uvicorn's access log.
+    # The API's telemetry middleware logs its requests, the proxy keeps uvicorn's access log.
     guarded = with_plain_refusal(app)
     api = _LinkedServer(_config(guarded, settings, settings.port, access_log=False))
     proxy = _LinkedServer(_config(proxy_app, settings, settings.proxy_port, access_log=True))
+    # access_log=False on the API config turns propagation off on the shared access logger, so
+    # the proxy's lines would reach no handler. Each server still checks its own access_log.
+    logging.getLogger(ACCESS_LOGGER).propagate = True
     with contextlib.suppress(KeyboardInterrupt):  # uvicorn re-raises the signal it handled
         asyncio.run(_serve_together(api, proxy))
 
@@ -250,7 +265,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if settings.role in API_ROLES:
         app = create_app(settings)
     else:
-        configure_logging(settings.log_level)
+        _configure_logging(settings.log_level)
         app = build_worker_app(settings)
     uvicorn.run(
         with_plain_refusal(app),

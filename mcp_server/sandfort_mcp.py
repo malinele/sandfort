@@ -15,13 +15,17 @@ import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "sdk" / "python" / "src"))
 
 from mcp.server.mcpserver import MCPServer  # noqa: E402
+from pydantic import Strict  # noqa: E402
 from sandfort_sdk import Client, SandfortSDKError  # noqa: E402
+
+# A JSON true must stay a type error, not become the integer 1 (a one minute delete timer).
+StrictInt = Annotated[int, Strict()]
 
 URL_ENV = "SANDFORT_BASE_URL"
 KEY_ENV = "SANDFORT_API_KEY"
@@ -30,7 +34,10 @@ MAX_BINARY_BYTES = MAX_DOWNLOAD_BYTES
 MAX_BASE64_CHARS = 4 * ((MAX_BINARY_BYTES + 2) // 3)
 MAX_LIST_ENTRIES = 1000
 DEFAULT_TIMEOUT_S = 60
+START_WAIT_TIMEOUT_S = 60
+MAX_START_WAIT_S = 600
 HIDDEN_STATES = frozenset({"destroyed", "deleting"})
+UPLOAD_TOO_LARGE = "error: content is over the 1 MiB limit; not uploaded"
 
 
 class ConfigError(RuntimeError):
@@ -96,12 +103,84 @@ def _entry_json(entry: Any) -> dict[str, Any]:
     }
 
 
+def _state_json(sandbox: Any) -> str:
+    return json.dumps({"id": sandbox.id, "state": sandbox.state})
+
+
 @mcp.tool()
-def create_sandbox(name: str | None = None, snapshot: str | None = None) -> str:
-    """Create a sandbox and wait until it is started. Returns JSON with its id and state."""
+def create_sandbox(
+    name: str | None = None,
+    snapshot: str | None = None,
+    auto_stop_minutes: StrictInt | None = None,
+    auto_delete_minutes: StrictInt | None = None,
+    labels: dict[str, str] | None = None,
+    block_network: bool | None = None,
+    egress_allowlist: list[str] | None = None,
+    isolation: str | None = None,
+) -> str:
+    """Create a sandbox and wait until it is started. Returns JSON with its id and state.
+
+    Without snapshot the default image is python:3.12-slim (Python and pip, no git). An
+    option left as None is not sent and the server decides.
+    auto_stop_minutes: idle minutes before the sandbox is stopped (default 15).
+    auto_delete_minutes: minutes after a stop before the sandbox is deleted (default -1).
+    Both timers take -1 to 525600 and -1 turns a timer off. auto_stop_minutes 0 also
+    turns it off. auto_delete_minutes 0 deletes the sandbox at the next scan after any
+    stop, stop_sandbox included.
+    labels: string keys and values, at most 32. Keys starting with sandfort. are reserved.
+    block_network: true blocks all network access.
+    egress_allowlist: lowercase host names, leading-dot domains or CIDR ranges the
+    sandbox may reach through the egress proxy. An empty list allows no host. A
+    non-empty list cannot be combined with block_network true.
+    isolation: container, gvisor or microvm. The server refuses a tier it does not offer.
+    None uses the tier recorded on the snapshot, else the server default.
+    """
+    options: dict[str, Any] = {
+        "auto_stop_minutes": auto_stop_minutes,
+        "auto_delete_minutes": auto_delete_minutes,
+        "labels": labels,
+        "block_network": block_network,
+        "egress_allowlist": egress_allowlist,
+        "isolation": isolation,
+    }
+    extra = {key: value for key, value in options.items() if value is not None}
     try:
-        sandbox = HOLDER.get().create_sandbox(name=name, snapshot=snapshot)
-        return json.dumps({"id": sandbox.id, "state": sandbox.state})
+        sandbox = HOLDER.get().create_sandbox(name=name, snapshot=snapshot, **extra)
+        return _state_json(sandbox)
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+
+
+@mcp.tool()
+def start_sandbox(
+    sandbox_id: str, wait_timeout_seconds: StrictInt = START_WAIT_TIMEOUT_S
+) -> str:
+    """Start a stopped sandbox and wait until it is started. Returns JSON with id and state.
+
+    wait_timeout_seconds bounds the whole call, from 1 to 600 seconds. When the wait runs
+    out an error is returned and the start may still finish later.
+    """
+    if wait_timeout_seconds <= 0:
+        return "error: wait_timeout_seconds must be greater than 0"
+    if wait_timeout_seconds > MAX_START_WAIT_S:
+        return f"error: wait_timeout_seconds must be at most {MAX_START_WAIT_S}"
+    try:
+        client = HOLDER.get()
+        sandbox = client.start(sandbox_id, wait=True, wait_timeout_s=wait_timeout_seconds)
+        return _state_json(sandbox)
+    except (SandfortSDKError, ConfigError) as exc:
+        return _error(exc)
+
+
+@mcp.tool()
+def stop_sandbox(sandbox_id: str) -> str:
+    """Stop a sandbox. Returns JSON with its id and state.
+
+    The call does not wait for the stop to finish, so the state may still be stopping.
+    list_sandboxes shows when it is stopped.
+    """
+    try:
+        return _state_json(HOLDER.get().stop(sandbox_id))
     except (SandfortSDKError, ConfigError) as exc:
         return _error(exc)
 
@@ -137,10 +216,15 @@ def run_command(
 
 @mcp.tool()
 def upload_text_file(sandbox_id: str, path: str, content: str) -> str:
-    """Write text content (UTF-8) to a file path inside a sandbox, replacing any existing file."""
+    """Write text content (UTF-8) to a file path inside a sandbox, replacing any existing file.
+
+    Content over 1 MiB of UTF-8 bytes (not characters) is refused before any request.
+    """
+    data = content.encode("utf-8")
+    if len(data) > MAX_BINARY_BYTES:
+        return UPLOAD_TOO_LARGE
     try:
         sandbox = HOLDER.get().get(sandbox_id)
-        data = content.encode("utf-8")
         sandbox.fs.upload_file(path, data)
         return f"uploaded {len(data)} bytes to {path}"
     except (SandfortSDKError, ConfigError) as exc:
@@ -228,13 +312,13 @@ def upload_binary_file(
     overwrite is false.
     """
     if len(content_base64) > MAX_BASE64_CHARS:
-        return "error: content is over the 1 MiB limit; not uploaded"
+        return UPLOAD_TOO_LARGE
     try:
         data = base64.b64decode(content_base64, validate=True)
     except binascii.Error:
         return "error: content_base64 is not valid base64"
     if len(data) > MAX_BINARY_BYTES:
-        return "error: content is over the 1 MiB limit; not uploaded"
+        return UPLOAD_TOO_LARGE
     try:
         sandbox = HOLDER.get().get(sandbox_id)
         sandbox.fs.upload_file(path, data, overwrite=overwrite)

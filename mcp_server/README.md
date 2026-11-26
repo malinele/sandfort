@@ -54,7 +54,13 @@ Example entry for an MCP client that takes a JSON config:
 
 Sandboxes and snapshots:
 
-- `create_sandbox`: create a sandbox and wait until it is started
+- `create_sandbox`: create a sandbox and wait until it is started. Optional
+  `auto_stop_minutes`, `auto_delete_minutes`, `labels`, `block_network`,
+  `egress_allowlist` and `isolation`. Without a snapshot the image is
+  `python:3.12-slim` (Python and pip, no git).
+- `start_sandbox`: start a stopped sandbox and wait until it is started (the wait is 1 to 600
+  seconds, default 60)
+- `stop_sandbox`: stop a sandbox (returns at once, the state may still be `stopping`)
 - `list_sandboxes`: list live sandboxes (destroyed and deleting ones are left out)
 - `delete_sandbox`: delete a sandbox by id
 - `create_snapshot`: create a named snapshot from a sandbox
@@ -81,8 +87,9 @@ Tool errors are returned as text in the form `error: <message>`.
 
 - A reachable Sandfort server and an API key are required. This package does not start
   a server.
-- File downloads and binary uploads are limited to 1 MiB. Larger files are refused.
-  Base64 inflates the payload by about a third.
+- File downloads and uploads, text and binary, are limited to 1 MiB. Larger files are
+  refused. A text upload counts UTF-8 bytes, not characters. Base64 inflates the
+  payload by about a third.
 - The transport is stdio only. There is no HTTP transport.
 - The server acts with the scopes of the API key it is given.
 

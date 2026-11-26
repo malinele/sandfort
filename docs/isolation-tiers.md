@@ -89,13 +89,85 @@ gVisor-specific differences, each handled or documented:
    default on the hosted beta; a self-hosted operator can change them), because gVisor cannot
    reach Docker's internal resolver. On the allowlist network, direct lookups fail immediately
    (see Network modes and DNS).
-6. User namespaces (`unshare -U`) work inside gvisor and are refused on container.
+6. User namespaces: `unshare` itself works inside gvisor, but writing `/proc/self/uid_map` is
+   refused (EPERM), so a process cannot map itself to root. See "User namespaces per tier".
 7. Kernel introspection such as the kernel symbol table (`kallsyms`) is absent. `nproc` and
    `MemTotal` reflect the sandbox limits.
 
 Supervisors: treat a 409 "the sandbox container is not running" from exec as the sandbox being
 down, and re-read the sandbox state. It moves to `stopped` within a few seconds after an exec
 sees the sandbox die.
+
+## Process limits per tier
+
+The driver passes `pids_limit=512` to Docker for every tier. What that limit bounds depends on
+the runtime. Measured on the hosted beta host on 2026-11-26 with one throwaway container per
+runtime, the create options of a sandbox (1 CPU, 512 MiB memory without swap, `pids_limit=512`,
+the capability set above, `no-new-privileges`) and a loop that forks up to 1500 sleeping
+children. The host was unaffected in all three cases. These are single measurements on a shared
+instance, not a benchmark:
+
+| Tier | `pids.max` inside | Fork loop |
+|---|---|---|
+| container (runc) | 512 | stopped at 511 children with `EAGAIN` |
+| gvisor (runsc) | cgroup files not visible | the 512 MiB memory limit ended it before 100 children: the sandbox was OOM-killed (exit 137) |
+| microvm (Kata) | `max` | passed 1300 children, then the whole VM ended |
+
+- Only on the `container` tier does the guest see a process-count limit (`pids.max` 512). On
+  `gvisor` Docker applies the limit to the host cgroup that holds the `runsc` processes, and the
+  guest does not see it. In the measurement the memory limit ended the fork loop first, and fork
+  can also fail with an error such as `ENOMEM` ("gVisor: verified behavior" item 3). On `microvm`
+  the guest kernel does not take the limit over, and the measured loop ended with the whole VM.
+- On `gvisor` and `microvm` the measured fork loops ended with the sandbox or VM, not with a
+  refusal of the 513th process. Exec reports it as described under "gVisor: verified behavior"
+  item 3 and "microVM (Kata): verified behavior".
+- The one live fork-bomb test, `test_fork_bomb_exhausts_its_pid_budget_and_spares_the_host` in
+  `tests/test_docker_hardening_phase5.py`, builds its driver from default `Settings()`, which
+  sets no tier runtime, so it runs on the Docker daemon's default runtime (`runc`, unless the
+  daemon is configured otherwise). The `gvisor` and `microvm` rows above are not covered by a
+  test in the repository.
+
+## User namespaces per tier
+
+Measured on the same host, date and create options as above: a process calls
+`unshare(CLONE_NEWUSER)` and then writes `/proc/self/uid_map`.
+
+| Tier | `unshare` | `uid_map` write |
+|---|---|---|
+| container (runc) | refused (EPERM) | not reached |
+| gvisor (runsc) | works | refused (EPERM) |
+| microvm (Kata) | works | refused (EPERM) |
+
+- The repository's seccomp profile (`deploy/seccomp.json`) leaves `unshare` out of its
+  allowlist, so its default action refuses it with errno 1 (`EPERM`), and it also denies `clone`
+  with the flag that creates a user namespace. The live test
+  `test_repository_seccomp_profile_denies_user_namespaces` (skipped under gVisor) runs
+  `unshare -U` and checks that refusal. It covers the repository profile only, where
+  `SANDFORT_SECCOMP_PROFILE_PATH` is set.
+- The measured `container` row used the throwaway container's options, which name no seccomp
+  profile, so Docker's default profile applied. There `unshare` needs `CAP_SYS_ADMIN`, which is
+  dropped.
+- The `microvm` tier runs with the host user namespace option (`userns_mode=host`,
+  `SANDFORT_USERNS_HOST_TIERS`), and the repository configures no seccomp profile inside the
+  Kata guest.
+
+## Contained, not hidden
+
+The tiers contain untrusted code. They do not hide the sandbox from it, and hiding it is not a
+goal. Code inside a sandbox can work out that it runs in Sandfort and on which tier:
+
+- the kernel: `4.19.0-gvisor` on `gvisor`, a guest kernel of its own on `microvm` (6.18.56 on
+  the beta), the host's kernel on `container`.
+- `/.sandfort-reserve`, a 16 MiB file that exists when the disk quota is on (always in `prod`
+  and on the beta), and `/tmp/.sandfort-keep` on `gvisor` (see "gVisor: verified behavior").
+- `docker-init` as PID 1 (`init=True`), and the `/tmp/.sf-exec-<id>.pid` and
+  `/tmp/.sf-pty-<id>.pid` files while an exec or a PTY runs.
+- on an egress allowlist sandbox, the `http_proxy` and `https_proxy` variables, whose URL
+  carries the sandbox id.
+
+These traces do work (disk reserve, process kill, keepalive, egress), and Sandfort has no layer
+that masks them. Detonating or analysing malware that checks for sandbox traces is therefore not
+a supported use case.
 
 ## Disk size
 
@@ -186,7 +258,7 @@ it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor
 - A fork bomb can stop the whole microvm, as on gvisor. The exec then reports exit code 137 with
   `sandbox_stopped` true and the message "the sandbox stopped while running this command ...";
   the sandbox is already `stopped` when the response arrives, with an `error_reason`, and
-  starting it again works at once (start takes about 4 s on microvm). Evaluator data on the
+  starting it again works at once (start takes about 4 s on microvm). Measured on the
   beta: of 29 python fork bombs on microvm, 26 returned exit 137 with `sandbox_stopped` true
   within 6.1-12.7 s; 3 returned 124 `timed_out` with the sandbox already dead. Since commit
   5243f36 a death wins over the deadline: when the sandbox dies before or at the deadline the
@@ -224,11 +296,13 @@ it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor
   `HTTP_PROXY` and `HTTPS_PROXY` variables point to (pip, curl and Python requests use them);
   every other destination is refused. On gvisor and microvm, direct DNS lookups fail
   immediately. On the container tier the sandbox's only DNS server is the egress proxy's sink
-  (since 2026-11-25 on the beta), which answers every query REFUSED and forwards nothing, so
-  only the proxy resolves names and direct lookups fail here too (verified by gate 11 and the
-  D3/D4 driver tests on the beta VM, 2026-11-25; `docs/egress-v2-design.md` section 6). A
-  container-tier sandbox created before the sink was configured keeps the old resolvers until
-  it is reset or recreated. The proxy variables, including the per-sandbox proxy credentials,
+  (on the beta since the API restart at 2026-11-25T08:12:30Z), which answers every query
+  REFUSED and forwards nothing, so only the proxy resolves names and direct lookups fail here
+  too (`docs/egress-v2-design.md` section 6). Gate 11 and the D3/D4 driver tests passed on the
+  beta VM's Docker daemon on 2026-11-25. Gate 11 starts its own server and proxy and D3/D4
+  drive the driver directly, so neither exercised the deployed API. A container-tier sandbox
+  created before the sink was enabled, including one created earlier on 2026-11-25, keeps the
+  old resolvers until it is reset or recreated. The proxy variables, including the per-sandbox proxy credentials,
   are visible to code inside the sandbox.
 
 ## Exec results, output cap and untrusted submissions

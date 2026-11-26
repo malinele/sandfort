@@ -72,7 +72,7 @@ Multi-node is not the default kit. It needs all of the following (details under 
 and "Cross-node toolbox routing"):
 
 - `SANDFORT_SANDBOX_JOBS_ENABLED=true` on every api instance. Jobs mode refuses creates that
-  mount volumes and has no sandbox reset (`src/sandfort/services/sandboxes.py`,
+  mount volumes and has no sandbox reset (`src/sandfort/services/sandbox_create_rules.py`,
   `src/sandfort/services/sandbox_reset.py`). Creates with an egress allowlist are accepted, under
   the requirements below.
 - One database shared by every node, and a unique `SANDFORT_NODE_ID` per node.
@@ -2255,11 +2255,16 @@ told that absence of a notice is not a guarantee (the beta has no SLA).
 ## MCP server
 
 `mcp_server/sandfort_mcp.py` is a stdio MCP server that exposes sandboxes as tools
-(`create_sandbox`, `run_code`, `run_command`, `upload_text_file`, `download_text_file`,
-`list_sandboxes`, `delete_sandbox`, `create_snapshot`, and the filesystem tools
-`list_directory`, `stat_path`, `make_directory`, `delete_path`, `upload_binary_file`,
-`download_binary_file`) to any MCP client. It needs the
-`mcp` package (the dev extra) and two environment variables:
+(`create_sandbox`, `start_sandbox`, `stop_sandbox`, `run_code`, `run_command`,
+`upload_text_file`, `download_text_file`, `list_sandboxes`, `delete_sandbox`,
+`create_snapshot`, and the filesystem tools `list_directory`, `stat_path`, `make_directory`,
+`delete_path`, `upload_binary_file`, `download_binary_file`: 16 tools in all) to any MCP
+client. `create_sandbox` takes optional `auto_stop_minutes`, `auto_delete_minutes`, `labels`,
+`block_network`, `egress_allowlist` and `isolation`, and an option left out keeps the server
+default (`isolation` left out uses the tier recorded on the snapshot, else the server
+default). `start_sandbox` waits for 1 to 600 seconds (default 60), and `stop_sandbox` returns
+at once, so the state may still be `stopping`. The server needs the `mcp` package (the dev
+extra) and two environment variables:
 
 - `SANDFORT_BASE_URL`: the Sandfort server url.
 - `SANDFORT_API_KEY`: an API key (`sf_...`).
@@ -2280,7 +2285,9 @@ using the command line below (adjust paths), for example in an `mcpServers` entr
 ```
 
 Tool errors from the SDK are returned as `error: <message>` text, and files over 1 MiB are
-not returned by `download_text_file` or `download_binary_file` (binary transfer is base64,
-which inflates the payload by about a third; uploads over 1 MiB are refused before decoding).
+not returned by `download_text_file` or `download_binary_file`. `upload_text_file` and
+`upload_binary_file` refuse more than 1 MiB before any request is sent (text counts UTF-8
+bytes, not characters, and binary is checked on the base64 length and again after decoding).
+Binary transfer is base64, which inflates the payload by about a third.
 `list_directory` returns at most 1000 entries and sets `truncated` when more exist. stdout
 carries the protocol; logs go to stderr.

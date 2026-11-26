@@ -32,7 +32,7 @@
       href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
   </div>
 </header>
-<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security" aria-current="page">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security" aria-current="page">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a><a href="/audit-reviewers">Audit for reviewers</a></nav></div>
 <main id="main">
 <div class="frame"><div class="doc has-toc">
 <details class="toc"><summary>On this page</summary><ul><li><a href="#1-threat-model-summary">1. Threat model summary</a></li><li><a href="#2-sandbox-isolation-as-configured-by-the-docker-driver">2. Sandbox isolation as configured by the Docker driver</a><ul><li><a href="#network">Network</a></li><li><a href="#image-build-runtime">Image build runtime</a></li></ul></li><li><a href="#3-what-is-outside-the-sandbox-boundary">3. What is outside the sandbox boundary</a></li><li><a href="#4-control-plane">4. Control plane</a></li><li><a href="#5-audit-and-tamper-evidence">5. Audit and tamper evidence</a></li><li><a href="#6-operational-hardening-checklist">6. Operational hardening checklist</a></li><li><a href="#7-reporting-a-vulnerability">7. Reporting a vulnerability</a></li></ul></details>
@@ -51,10 +51,17 @@ or hostile. The platform tries to do three things with it:</p>
 <ul>
 <li>keep it contained: one sandbox should not reach the host, the control plane, other
 sandboxes or the platform&#x27;s secrets;</li>
-<li>keep it resource-bounded: CPU, memory, processes and disk are capped per sandbox;</li>
+<li>keep it resource-bounded: CPU, memory, processes and disk are capped per sandbox (the
+process cap works differently on each tier, see section 2);</li>
 <li>keep the actions around it auditable: lifecycle and toolbox calls are recorded per
 organization.</li>
 </ul>
+<p>Hiding the sandbox from the code inside it is not a goal. Code in a sandbox can tell that it
+runs in Sandfort and on which tier: gVisor reports its own kernel string, Kata a guest kernel
+of its own, and Sandfort adds files, a PID 1 and environment variables of its own (the list is
+in [isolation-tiers], &quot;Contained, not hidden&quot;). The tiers contain untrusted code. They do not
+make the sandbox undetectable, so Sandfort is not a tool for detonating or analysing evasive
+malware that checks for sandbox traces.</p>
 <p>The production driver is the Docker driver, and each sandbox runs on one of three isolation
 tiers, chosen per sandbox (<code>isolation</code> on create). The <code>container</code> tier (runc) and the <code>gvisor</code>
 tier (runsc) share the host kernel: under <code>gvisor</code> a user-space kernel handles the sandbox&#x27;s
@@ -77,10 +84,27 @@ compromised Docker daemon, and anyone who already holds control of a sandbox nod
 <h2 id="2-sandbox-isolation-as-configured-by-the-docker-driver">2. Sandbox isolation as configured by the Docker driver<a class="anchor" href="#2-sandbox-isolation-as-configured-by-the-docker-driver" aria-label="Link to section: 2. Sandbox isolation as configured by the Docker driver">#</a></h2>
 <p>The container settings are built in <code>src/sandfort/drivers/docker/hardening.py</code> and asserted
 by unit tests. Every sandbox gets:</p>
-<div class="tbl-wrap" role="region" aria-label="Table: 2. Sandbox isolation as configured by the Docker driver" tabindex="0"><table><thead><tr><th scope="col">Control</th><th scope="col">Setting</th></tr></thead><tbody><tr><td>Capabilities</td><td><code>cap_drop=ALL</code></td></tr><tr><td>Added back</td><td><code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>, <code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>, <code>NET_BIND_SERVICE</code></td></tr><tr><td>Privilege</td><td><code>privileged=False</code>, <code>no-new-privileges:true</code>, <code>init=True</code></td></tr><tr><td>Processes</td><td><code>pids_limit=512</code></td></tr><tr><td>CPU</td><td><code>nano_cpus</code> from the requested millicores</td></tr><tr><td>Memory</td><td><code>mem_limit</code> from the request, <code>memswap_limit</code> equal to it (no swap)</td></tr><tr><td>Shared memory</td><td><code>shm_size</code> is the smaller of 64 MiB and a quarter of memory</td></tr><tr><td>Open files</td><td><code>nofile</code> soft and hard limit 4096</td></tr><tr><td>Logs</td><td><code>local</code> log driver, 10 MB per file, 3 files</td></tr><tr><td>Docker socket</td><td>not mounted into sandboxes</td></tr></tbody></table></div>
+<div class="tbl-wrap" role="region" aria-label="Table: 2. Sandbox isolation as configured by the Docker driver" tabindex="0"><table><thead><tr><th scope="col">Control</th><th scope="col">Setting</th></tr></thead><tbody><tr><td>Capabilities</td><td><code>cap_drop=ALL</code></td></tr><tr><td>Added back</td><td><code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>, <code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>, <code>NET_BIND_SERVICE</code></td></tr><tr><td>Privilege</td><td><code>privileged=False</code>, <code>no-new-privileges:true</code>, <code>init=True</code></td></tr><tr><td>Processes</td><td><code>pids_limit=512</code>, a Docker host cgroup limit, and what it bounds differs per tier (see below)</td></tr><tr><td>CPU</td><td><code>nano_cpus</code> from the requested millicores</td></tr><tr><td>Memory</td><td><code>mem_limit</code> from the request, <code>memswap_limit</code> equal to it (no swap)</td></tr><tr><td>Shared memory</td><td><code>shm_size</code> is the smaller of 64 MiB and a quarter of memory</td></tr><tr><td>Open files</td><td><code>nofile</code> soft and hard limit 4096</td></tr><tr><td>Logs</td><td><code>local</code> log driver, 10 MB per file, 3 files</td></tr><tr><td>Docker socket</td><td>not mounted into sandboxes</td></tr></tbody></table></div>
 <p>What the table does not say:</p>
 <ul>
-<li><strong>Seccomp is optional, and only the Kubernetes kit sets it.</strong> <code>deploy/seccomp.json</code> is
+<li><strong>The process limit bounds guest processes on the <code>container</code> tier only.</strong> The driver
+passes <code>pids_limit=512</code> to Docker for every tier (<code>hardening.py</code>), and the tier changes only
+the runtime. Measured on the hosted beta host on 2026-11-26, with the create options of a
+sandbox (512 MiB memory, no swap) and one probe per tier. These are single measurements, not
+a benchmark or a guarantee:
+<ul>
+<li><code>container</code> (runc): <code>pids.max</code> reads 512 inside the sandbox, and a fork loop stopped at 511
+children with <code>EAGAIN</code>.</li>
+<li><code>gvisor</code> (runsc): Docker applies the limit to the host cgroup that holds the <code>runsc</code>
+processes. The cgroup files are not visible inside, and a fork loop was ended by the memory
+limit: the sandbox was OOM-killed (exit 137).</li>
+<li><code>microvm</code> (Kata): <code>pids.max</code> reads <code>max</code> in the guest, and a fork loop passed 1300
+processes before the whole VM ended.</li>
+<li>The host was unaffected in all three cases. On <code>gvisor</code> and <code>microvm</code> the memory limit and
+the end of the sandbox contain a fork loop, not a refusal of the 513th process. Details
+and the exec results: [isolation-tiers], &quot;Process limits per tier&quot;.</li>
+</ul></li>
+<li><strong>Seccomp is optional, and two kits set it.</strong> <code>deploy/seccomp.json</code> is
 derived from the moby v28.3.3 default profile, with some syscalls removed and extra rules
 on <code>clone</code> arguments (see its <code>_comment</code>). The driver passes it as a <code>security_opt</code> only
 when <code>SANDFORT_SECCOMP_PROFILE_PATH</code> points at it. The default is empty, which keeps
@@ -91,6 +115,9 @@ Docker&#x27;s own default profile. The file is read and validated once at startu
 mounts the <code>sandfort-seccomp</code> ConfigMap, which kustomize generates from
 <code>deploy/seccomp.json</code>, at <code>/etc/sandfort/seccomp</code>. Apply the kit with the load
 restrictor lifted (<code>deploy/k8s/kustomization.yaml</code>, <code>deploy/k8s/README.md</code>).</li>
+<li><code>deploy/selfhost/compose.yml</code>: sets
+<code>SANDFORT_SECCOMP_PROFILE_PATH=/etc/sandfort/seccomp/seccomp.json</code> (line 35) and bind-mounts
+<code>../seccomp.json</code> read-only at that path (line 40).</li>
 <li><code>deploy/compose.prod.yml</code> and <code>deploy/Dockerfile</code>: neither sets the path or mounts the
 profile. To use it with compose, add the setting and a bind mount of the file yourself.</li>
 <li>The driver passes the profile as a security option for every runtime once the path is set
@@ -99,6 +126,13 @@ not applied to the sandboxed processes&#x27; syscalls the way <code>runc</code> 
 tier gVisor&#x27;s own Sentry filters the syscalls, and the host-side <code>runsc</code> processes run
 under gVisor&#x27;s own seccomp filters ([isolation-tiers]). The Kubernetes kit defaults to
 <code>gvisor</code> (<code>SANDFORT_DEFAULT_ISOLATION</code>), so the profile there covers the <code>container</code> tier.</li>
+<li>Seccomp does not block <code>ptrace</code>. The profile allows it for kernels 4.8 and later, as
+Docker&#x27;s default profile does (<code>deploy/seccomp.json</code>, the rule that names <code>ptrace</code>,
+<code>process_vm_readv</code> and <code>process_vm_writev</code>). A refused trace inside a sandbox comes from
+something else: the dropped capabilities (<code>CAP_SYS_PTRACE</code> is not in the add-list above),
+the host&#x27;s Yama setting on the <code>container</code> tier (<code>kernel.yama.ptrace_scope</code> was 1 on the beta
+host on 2026-11-26, and Sandfort does not set it), or the runtime boundary on <code>gvisor</code> and
+<code>microvm</code>.</li>
 <li>The Kubernetes <code>api</code> manifest (<code>deploy/k8s/api.yaml</code>) also sets <code>seccompProfile</code> to
 <code>RuntimeDefault</code> in the pod <code>securityContext</code> of the API pod itself. That is a different
 thing from the sandbox profile above: it confines the API process, not the sandboxes.</li>
@@ -141,9 +175,16 @@ traffic disabled (<code>enable_icc=false</code>). Three controls sit on top of t
 <li><strong>Cloud metadata and private ranges.</strong> The driver itself does not filter addresses. The
 block comes from <code>deploy/host-setup.sh</code>, which installs iptables rules in <code>DOCKER-USER</code>
 that reject traffic from the sandbox bridge to <code>169.254.0.0/16</code> (including the metadata
-address <code>169.254.169.254</code>), <code>100.64.0.0/10</code>, the Azure wire server <code>168.63.129.16</code>, and
-the RFC 1918 ranges. It also rejects new connections from sandboxes to the host&#x27;s own
-address on the bridge. Without the script none of this applies.</li>
+address <code>169.254.169.254</code>), <code>100.64.0.0/10</code> (carrier-grade NAT space), the Azure wire server
+<code>168.63.129.16</code>, and the RFC 1918 ranges. The <code>100.64.0.0/10</code> rule covers <code>100.100.100.0</code> to
+<code>100.100.100.255</code>, so <code>100.100.100.100</code> is rejected like any other address in the range. It
+also rejects new connections from sandboxes to the host&#x27;s own address on the bridge. Without
+the script none of this applies. The egress canary that the driver runs probes
+<code>169.254.169.254:80</code>, the bridge gateway on port 22 and <code>10.255.255.254:80</code> on every managed
+network, plus <code>1.1.1.1:443</code> on the allowlist network (<code>targets_for</code> in
+<code>src/sandfort/drivers/docker/egress_probe.py</code>). None of these is in <code>100.64.0.0/10</code>. With a DNS
+sink configured, one more canary on the allowlist network checks that a public name does not
+resolve (<code>src/sandfort/drivers/docker/egress_probe_dns.py</code>).</li>
 <li><strong>Full block per sandbox.</strong> <code>network.block_all</code> at create time runs the sandbox with
 Docker network mode <code>none</code>. It takes precedence over everything else, and combining it
 with an egress allowlist is refused.</li>
@@ -306,14 +347,20 @@ fields of the row (<code>src/sandfort/services/audit_chain.py</code>). With no k
 <code>sha256</code> over the same input; <code>prod</code> refuses to start in that state unless
 <code>SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true</code> accepts the unkeyed chain explicitly. Audit rows are written in the
 same transaction as the change they describe. The rule is one event per mutating call, with
-named exceptions: a meta-test checks that every non-GET route writes one row for what it did.
-A call refused after a valid key writes a <code>request.denied</code> row instead (a create or start
-refused for host capacity writes <code>sandbox.create_refused</code> or <code>sandbox.start_refused</code>, at most
-one per API key and reason per 60 seconds, the suppressed ones counted in
-<code>refusals_coalesced</code>). A call that fails after it was accepted adds a failure row
-(<code>sandbox.failed</code>, <code>sandbox.reset_failed</code>). Read (<code>GET</code>) calls write no rows, except the few
-that read sandbox content. Details are redacted: no request bodies, no stdin, long commands
-truncated, credentials dropped. A row also stores the client <code>ip</code> and <code>user_agent</code>; both are
+named exceptions. Two routes are known to write no row: <code>POST /v1/sandboxes/{id}/preview-tokens</code>
+and <code>PATCH /v1/webhooks/{id}</code>. No test walks every route to check this.
+A call refused after a valid key usually writes a <code>request.denied</code> row instead. A create or
+start refused for host capacity writes <code>sandbox.create_refused</code> or <code>sandbox.start_refused</code>, and a
+create refused by the key&#x27;s <code>max_sandboxes</code> cap writes <code>sandbox.create_refused</code> with <code>reason</code>
+<code>key_cap</code>. Repeats are merged to one row per action, API key and reason per 60 seconds, the
+suppressed ones counted in <code>refusals_coalesced</code>. Some refusals leave no row: a body that is not
+valid JSON, a <code>RATE_LIMITED</code> 429, and a missing, malformed or unknown key (see the governance
+page). A call that fails after it was accepted adds a failure row (<code>sandbox.failed</code>,
+<code>sandbox.reset_failed</code>). Read (<code>GET</code>) calls write no rows, except the few that read sandbox
+content. Details are redacted: no request bodies, and <code>command</code>, <code>args</code>, <code>cmd</code>, <code>stdin</code>, <code>code</code>
+and <code>token</code> keep only an unsalted <code>redacted-sha256:</code> digest and the byte length, so a guessable
+value can be confirmed by hashing a guess. Credentials are dropped. A row also stores the
+client <code>ip</code> and <code>user_agent</code>; both are
 stored unhashed and are not part of the hash, so they are readable by anyone with <code>audit:read</code>.
 The full list of actions and the exceptions are on
 <a href="https://docs.sandfort.dev/governance">the governance page</a>, section Audit.</p>
@@ -334,7 +381,8 @@ org, run <code>audit-verify</code> and check it exits 0, then set the flag to <c
 from the database are compared as bytes in
 constant time.</p>
 <p>Signed head. With the key set, <code>audit-export</code> ends each org&#x27;s rows with one trailer line of
-type <code>audit_head</code> (newest row id, its hash and an HMAC over them). Consumers of the export
+type <code>audit_head</code> (newest row id, its hash, an HMAC over them, and on newer servers the content
+binding <code>row_count</code>, <code>first_row_id</code> and <code>export_sha256</code>). Consumers of the export
 must skip that line. <code>audit-verify --head &lt;file&gt;</code> checks the signature and that the live
 chain still reaches the head row, which catches deleting the newest rows.</p>
 <p>Ed25519 signature. With <code>SANDFORT_AUDIT_SIGNING_KEY</code> set as well, the head also carries <code>alg</code>,
@@ -344,12 +392,16 @@ key; the signature needs only the public key, so an auditor with no secret can c
 (first 16 hex of sha256 over the raw public key), both <code>null</code> unless heads are signed. Pin the
 fingerprint out of band, from the release notes or the operator&#x27;s own channel, not from the
 server that is being checked; the <code>public_key</code> inside a trailer is not a trust anchor.</p>
-<p><code>sandfort audit verify-head &lt;file&gt;</code> checks an export against that key. It proves that the
-signature verifies, that the file&#x27;s last row is the row the head names with the head&#x27;s hash,
-and that each row&#x27;s <code>prev_hash</code> is the hash of the row before it. It does not prove the rows
-before the last one: someone who rewrites <code>prev_hash</code> and <code>hash</code> consistently still passes,
-a row edited without touching its hashes passes, and an older genuine export still verifies
-(compare <code>signed_at</code>). Row hashes are keyed, so a client cannot recompute them. Only the
+<p><code>sandfort audit verify-head &lt;file&gt;</code> checks an export against that key. With a content-bound
+head it proves that the signature verifies, that the file is exactly the rows the server signed
+(SHA-256, row count and first row), that the last row is the row the head names with the head&#x27;s
+hash, and that each row&#x27;s <code>prev_hash</code> is the hash of the row before it. An edited row then fails
+as <code>content_mismatch</code> and a removed row as <code>count_mismatch</code>. It does not prove that the
+database was unchanged before the export, because the server signs the rows it holds at export
+time, and an older genuine export still verifies (compare <code>signed_at</code>). A legacy head, from an
+older server, signs only the last row: it does not prove the rows before it, so a row edited
+without touching its hashes passes. Row hashes are keyed, so a client cannot recompute them.
+Only the
 server-side check (<code>sandfort audit verify</code>, <code>audit-verify</code>, <code>GET /v1/audit-events/verify</code>)
 proves the full chain. Details: governance page, section Audit.</p>
 <p>The log is tamper-evident, not a guarantee against edits. The key lives outside the database, so
@@ -408,7 +460,7 @@ certificate and no third-party penetration test.</p>
       <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
     </div>
     <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
-    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="/audit-reviewers">Audit for reviewers</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
     <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
     <div class="legal">
       <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>

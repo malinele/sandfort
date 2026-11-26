@@ -49,6 +49,88 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 94 (after tag v0.1.0-beta.84, preview proxy token hygiene)
+- **fix(proxy): the preview token stays out of log lines and forwarded Referer headers
+  (2026-11-26).** uvicorn logs the request path with its query on `uvicorn.access` (HTTP)
+  and `uvicorn.error` (websocket handshakes), so the token of a first preview request
+  landed in the proxy log in clear. Every server role (`all`, `api`, `worker`, and the
+  standalone proxy) now adds a log filter to both loggers when it configures logging. The
+  filter replaces the token value with `REDACTED` and keeps every other parameter and the
+  shape of the record, so uvicorn's own `AccessFormatter` still prints the line. The single
+  use pty connect token (`token` on `GET /terminal` and on the API's pty websocket) is
+  redacted the same way. In the shared `all` process the API's uvicorn config used to turn
+  propagation off on `uvicorn.access`, so the proxy wrote no access lines at all. They now
+  reach the JSON log, redacted.
+  A forwarded `Referer` loses the token parameter and keeps the rest. Sandfort's own
+  request log (`sandfort.access`) has no path or query and is unchanged. Not covered: log
+  levels below INFO (at DEBUG the websockets library logs handshake headers, Cookie
+  included, and at TRACE uvicorn logs the whole ASGI scope), so a proxy that serves real
+  tokens runs at INFO, the default. An ingress in front of the proxy keeps its own log,
+  which the server cannot redact. Found in a beta client's evaluation.
+  (`src/sandfort/proxy/hygiene.py`, `src/sandfort/proxy/app.py`, `src/sandfort/main.py`,
+  `tests/test_proxy_token_hygiene_r94.py`, `tests/test_proxy_token_followup_r94.py`,
+  `tests/test_proxy_token_headers_r94.py`, this commit)
+- **fix(proxy): a `Referrer-Policy` and `Cache-Control: no-store` where the token can
+  leak (2026-11-26).** A response to a request whose URL names the token parameter gets
+  `Referrer-Policy: strict-origin` and `Cache-Control: no-store` in place of any upstream
+  value of the same name. It is `strict-origin`, not `no-referrer`, because under
+  `no-referrer` a browser sends `Origin: null` on the page's form POSTs and the cookie
+  check refuses them. Every error the proxy answers itself (404, 401 and 502, over HTTP
+  and over the websocket HTTP response extension) gets `Referrer-Policy: no-referrer` and
+  `Cache-Control: no-store`. Later cookie requests pass the upstream `Cache-Control` and
+  `Referrer-Policy` through unchanged. Two limits remain. The policy of the first response
+  holds for the whole document it creates, so that page (and a single page app booted from
+  it) sends only the origin as `Referer` to its own server for as long as it lives. A page
+  that sets its own policy (`<meta name="referrer">` or a `referrerpolicy` attribute)
+  overrides the header, and the proxy does not rewrite HTML. The first URL still carries
+  the token, and moving it out of the URL closes both. Found in a beta client's evaluation.
+  (`src/sandfort/proxy/hygiene.py`, `src/sandfort/proxy/app.py`,
+  `tests/test_proxy_token_headers_r94.py`, this commit)
+
+#### Round 92 (after tag v0.1.0-beta.84, sandfort-mcp 0.1.1)
+- **fix(mcp): `upload_text_file` refuses content over 1 MiB (2026-11-26).** The tool encodes the
+  text as UTF-8 and refuses more than 1 MiB of bytes, not characters, with the same error text
+  as `upload_binary_file`. The check runs before the sandbox lookup, so an oversize call sends
+  no request. Found in a beta client's evaluation.
+  (`mcp_server/sandfort_mcp.py`, `tests/test_mcp_server_r92.py`, this commit)
+- **feat(mcp): `create_sandbox` options, `start_sandbox` and `stop_sandbox` (2026-11-26).**
+  `create_sandbox` takes optional `auto_stop_minutes`, `auto_delete_minutes`, `labels`,
+  `block_network`, `egress_allowlist` and `isolation` and passes each one to the SDK only when
+  it is set, so an option left out keeps the server default. The docstring documents the timers
+  (-1 turns a timer off, `auto_delete_minutes` 0 deletes the sandbox at the next scan after any
+  stop, range -1 to 525600) and the default image `python:3.12-slim` (Python and pip, no git).
+  `start_sandbox` starts a stopped sandbox and waits until it is started, with
+  `wait_timeout_seconds` from 1 to 600 (default 60), refused outside that range before any
+  request, so a model cannot hold a worker thread for an unbounded wait. The two timers and
+  `wait_timeout_seconds` refuse a JSON boolean instead of turning `true` into 1, so a yes or no
+  reading of `auto_delete_minutes` cannot become a one minute delete timer. `stop_sandbox`
+  returns at once, so the state may still be `stopping`. `sandfort-mcp` now has 16 tools.
+  The package version is 0.1.1 in `mcp_server/pyproject.toml` and `server.json`, and
+  `mcp_server/README.md` lists the new tools and the text upload limit. Found in a beta
+  client's evaluation.
+  (`mcp_server/sandfort_mcp.py`, `mcp_server/pyproject.toml`, `server.json`,
+  `mcp_server/README.md`, `tests/test_mcp_server_r92.py`,
+  `tests/test_mcp_server_r92_args.py`, this commit)
+
+#### Round 91 (after tag v0.1.0-beta.84, console audit view)
+- **feat(console): audit view on /console (2026-11-26).** The table shows the newest 20 events
+  in one request (`order=desc`) with outcome, plain label, action, target and time. Rows with
+  status 401, 403 or 429, or error code FORBIDDEN, UNAUTHORIZED, QUOTA_EXCEEDED, RATE_LIMITED
+  or EGRESS_DENIED, and creates refused by the per-key sandbox cap (`sandbox.create_refused`
+  with reason `key_cap`), are marked as protection. A 404 or 409 refusal and a host capacity
+  refusal are not. The Verify chain button calls `GET /v1/audit-events/verify` and shows ok,
+  checked, the newest row id and hash and the findings. The page notes that a successful list,
+  verify or export of audit events writes no audit row and which refusals leave a row. The old
+  ascending walk of up to 30 pages is gone. RATE_LIMITED is never recorded and no API error
+  carries EGRESS_DENIED today, so those two never appear. `console.py` is split into
+  `console_assets.py` and `console_audit.py` and the route is unchanged. Each Verify chain
+  call empties the previous result first, and an answer that arrives after the key was
+  changed is dropped, so a verdict never sits under another key or next to a newer error.
+  A status error on the main line is now red as well.
+  (`src/sandfort/api/routes/console.py`, `src/sandfort/api/console_assets.py`,
+  `src/sandfort/api/console_audit.py`, `tests/test_console_audit.py`,
+  `tests/test_console_verify_dom.py`, this commit)
+
 #### Round 90 (after tag v0.1.0-beta.83; gate 11 runs on the Linux beta VM)
 - **feat(integrations): `sandfort-sandbox` agent skill (2026-11-25).** A SKILL.md that teaches
   an agent when to run code in a Sandfort sandbox and how to drive the 14 `sandfort-mcp` tools,
@@ -78,7 +160,20 @@ round replaces that description with the real hash from `git log`.
   `src/sandfort/domain/egress_entries.py` (canonical form, network address, at least `/8` or
   `/32`, global only, no overlap with `SANDFORT_EGRESS_DENIED_CIDRS`) and states that an
   IP-literal target is admitted only through a CIDR entry. The example range was checked
-  against `cidr_problem`. (`docs/connect-guide.md`, `site/docs/guide.html`; this commit)
+  against `cidr_problem`. (`docs/connect-guide.md`, `site/docs/guide.html`; 41226ca6)
+- **docs: DNS sink boundary is an instant, egress v2 status line current (2026-11-25).** The
+  connect and isolation guides gave 2026-11-25 as the boundary for sandboxes that keep their old
+  resolvers. The boundary is the API restart that applied the sink, 2026-11-25T08:12:30Z on the
+  beta, so sandboxes created earlier that day are also on the old path. The isolation guide no
+  longer calls gate 11 and the D3/D4 tests a verification of the deployed service: gate 11 starts
+  its own server and proxy and D3/D4 drive the driver directly. `docs/egress-v2-design.md` no
+  longer says none of it is implemented: rounds 1 to 5 ship in `v0.1.0-beta.83`.
+  (`docs/connect-guide.md`, `docs/isolation-tiers.md`, `docs/egress-v2-design.md`, `site/docs/`;
+  this commit)
+- **ci: skip runs for paths no test reads, cancel superseded runs (2026-11-25).** Pushes that
+  touch only paths no test reads (internal planning and media folders, or `CHANGELOG.md`)
+  no longer start the CI workflow, and a newer push to the same ref cancels the run in
+  progress. Jobs and steps are unchanged. (`.github/workflows/ci.yml`; this commit)
 
 #### Round 89 (after tag v0.1.0-beta.81; TypeScript SDK 0.2.2: runtime egress allowlist)
 - **feat(ts-sdk): updateSandbox egressAllowlist, egressPolicyGeneration and errorCode

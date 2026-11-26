@@ -32,7 +32,7 @@
       href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
   </div>
 </header>
-<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms" aria-current="page">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms" aria-current="page">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a><a href="/audit-reviewers">Audit for reviewers</a></nav></div>
 <main id="main">
 <div class="frame"><div class="doc has-toc">
 <details class="toc"><summary>On this page</summary><ul><li><a href="#1-pricing">1. Pricing</a></li><li><a href="#2-availability">2. Availability</a></li><li><a href="#3-support">3. Support</a></li><li><a href="#4-data">4. Data</a></li><li><a href="#5-releases">5. Releases</a></li><li><a href="#6-isolation">6. Isolation</a></li><li><a href="#7-operator">7. Operator</a></li><li><a href="#8-acceptable-use">8. Acceptable use</a></li><li><a href="#9-operator-access">9. Operator access</a></li><li><a href="#10-personal-data">10. Personal data</a></li><li><a href="#11-no-warranty">11. No warranty</a></li></ul></details>
@@ -79,11 +79,15 @@ you expected and what happened.</li>
 <ul>
 <li>Sandboxes are ephemeral: nothing in a sandbox survives its deletion, and a stopped sandbox is
 not guaranteed to be restartable after a host change. Do not keep state in a sandbox you
-cannot recreate. Until it is deleted, a stopped sandbox keeps its files and its environment
-values.</li>
-<li><code>auto_delete_minutes</code> defaults to never (<code>-1</code>), and <code>auto_stop_minutes</code> defaults to 15. Set
-<code>auto_delete_minutes</code> (and <code>auto_stop_minutes</code>) on every sandbox you do not want to keep, so
-stopped sandboxes do not pile up.</li>
+cannot recreate. Stopping a sandbox keeps its files and its environment values until you
+delete it. A reset replaces the container with a fresh one from the same image and spec, so
+everything written to the old container is gone. The env, labels and timers are kept.
+Volumes you created with <code>POST /v1/volumes</code> are kept. The scratch volumes behind
+<code>image_mounts</code> are emptied.</li>
+<li><code>auto_stop_minutes</code> defaults to 15, so an idle sandbox is stopped after 15 minutes.
+<code>auto_delete_minutes</code> defaults to never (<code>-1</code>), so nothing is deleted automatically. Set
+<code>auto_delete_minutes</code> on every sandbox you do not want to keep, so stopped sandboxes do not
+pile up.</li>
 <li>Snapshots and volumes persist until you delete them.</li>
 <li>An organisation&#x27;s data is deleted on request within five business days. Audit events are
 deleted together with the organisation&#x27;s data, so export them first with
@@ -230,7 +234,7 @@ them.</li>
       <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
     </div>
     <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
-    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="/audit-reviewers">Audit for reviewers</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
     <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
     <div class="legal">
       <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>

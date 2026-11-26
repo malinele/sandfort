@@ -32,10 +32,10 @@
       href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
   </div>
 </header>
-<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers" aria-current="page">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers" aria-current="page">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a><a href="/audit-reviewers">Audit for reviewers</a></nav></div>
 <main id="main">
 <div class="frame"><div class="doc has-toc">
-<details class="toc"><summary>On this page</summary><ul><li><a href="#api-and-configuration">API and configuration</a></li><li><a href="#gvisor-verified-behavior">gVisor: verified behavior</a></li><li><a href="#disk-size">Disk size</a></li><li><a href="#overhead-gvisor-compared-with-container">Overhead: gvisor compared with container</a></li><li><a href="#microvm-kata-verified-behavior">microVM (Kata): verified behavior</a></li><li><a href="#network-modes-and-dns-per-tier">Network modes and DNS, per tier</a></li><li><a href="#exec-results-output-cap-and-untrusted-submissions">Exec results, output cap and untrusted submissions</a></li><li><a href="#snapshots-and-isolation-tier">Snapshots and isolation tier</a></li><li><a href="#resize">Resize</a></li><li><a href="#rollout">Rollout</a></li><li><a href="#beta-status-image-builds-and-user-namespace-remapping">Beta status: image builds and user-namespace remapping</a></li></ul></details>
+<details class="toc"><summary>On this page</summary><ul><li><a href="#api-and-configuration">API and configuration</a></li><li><a href="#gvisor-verified-behavior">gVisor: verified behavior</a></li><li><a href="#process-limits-per-tier">Process limits per tier</a></li><li><a href="#user-namespaces-per-tier">User namespaces per tier</a></li><li><a href="#contained-not-hidden">Contained, not hidden</a></li><li><a href="#disk-size">Disk size</a></li><li><a href="#overhead-gvisor-compared-with-container">Overhead: gvisor compared with container</a></li><li><a href="#microvm-kata-verified-behavior">microVM (Kata): verified behavior</a></li><li><a href="#network-modes-and-dns-per-tier">Network modes and DNS, per tier</a></li><li><a href="#exec-results-output-cap-and-untrusted-submissions">Exec results, output cap and untrusted submissions</a></li><li><a href="#snapshots-and-isolation-tier">Snapshots and isolation tier</a></li><li><a href="#resize">Resize</a></li><li><a href="#rollout">Rollout</a></li><li><a href="#beta-status-image-builds-and-user-namespace-remapping">Beta status: image builds and user-namespace remapping</a></li></ul></details>
 <article class="prose">
 <h1 id="isolation-tiers">Isolation tiers<a class="anchor" href="#isolation-tiers" aria-label="Link to section: Isolation tiers">#</a></h1>
 <p>Sandfort runs untrusted, often AI-generated code. Plain containers share the host kernel, so
@@ -118,13 +118,71 @@ raise the memory limit.</li>
 default on the hosted beta; a self-hosted operator can change them), because gVisor cannot
 reach Docker&#x27;s internal resolver. On the allowlist network, direct lookups fail immediately
 (see Network modes and DNS).</li>
-<li>User namespaces (<code>unshare -U</code>) work inside gvisor and are refused on container.</li>
+<li>User namespaces: <code>unshare</code> itself works inside gvisor, but writing <code>/proc/self/uid_map</code> is
+refused (EPERM), so a process cannot map itself to root. See &quot;User namespaces per tier&quot;.</li>
 <li>Kernel introspection such as the kernel symbol table (<code>kallsyms</code>) is absent. <code>nproc</code> and
 <code>MemTotal</code> reflect the sandbox limits.</li>
 </ol>
 <p>Supervisors: treat a 409 &quot;the sandbox container is not running&quot; from exec as the sandbox being
 down, and re-read the sandbox state. It moves to <code>stopped</code> within a few seconds after an exec
 sees the sandbox die.</p>
+<h2 id="process-limits-per-tier">Process limits per tier<a class="anchor" href="#process-limits-per-tier" aria-label="Link to section: Process limits per tier">#</a></h2>
+<p>The driver passes <code>pids_limit=512</code> to Docker for every tier. What that limit bounds depends on
+the runtime. Measured on the hosted beta host on 2026-11-26 with one throwaway container per
+runtime, the create options of a sandbox (1 CPU, 512 MiB memory without swap, <code>pids_limit=512</code>,
+the capability set above, <code>no-new-privileges</code>) and a loop that forks up to 1500 sleeping
+children. The host was unaffected in all three cases. These are single measurements on a shared
+instance, not a benchmark:</p>
+<div class="tbl-wrap" role="region" aria-label="Table: Process limits per tier" tabindex="0"><table><thead><tr><th scope="col">Tier</th><th scope="col"><code>pids.max</code> inside</th><th scope="col">Fork loop</th></tr></thead><tbody><tr><td>container (runc)</td><td>512</td><td>stopped at 511 children with <code>EAGAIN</code></td></tr><tr><td>gvisor (runsc)</td><td>cgroup files not visible</td><td>the 512 MiB memory limit ended it before 100 children: the sandbox was OOM-killed (exit 137)</td></tr><tr><td>microvm (Kata)</td><td><code>max</code></td><td>passed 1300 children, then the whole VM ended</td></tr></tbody></table></div>
+<ul>
+<li>Only on the <code>container</code> tier does the guest see a process-count limit (<code>pids.max</code> 512). On
+<code>gvisor</code> Docker applies the limit to the host cgroup that holds the <code>runsc</code> processes, and the
+guest does not see it. In the measurement the memory limit ended the fork loop first, and fork
+can also fail with an error such as <code>ENOMEM</code> (&quot;gVisor: verified behavior&quot; item 3). On <code>microvm</code>
+the guest kernel does not take the limit over, and the measured loop ended with the whole VM.</li>
+<li>On <code>gvisor</code> and <code>microvm</code> the measured fork loops ended with the sandbox or VM, not with a
+refusal of the 513th process. Exec reports it as described under &quot;gVisor: verified behavior&quot;
+item 3 and &quot;microVM (Kata): verified behavior&quot;.</li>
+<li>The one live fork-bomb test, <code>test_fork_bomb_exhausts_its_pid_budget_and_spares_the_host</code> in
+<code>tests/test_docker_hardening_phase5.py</code>, builds its driver from default <code>Settings()</code>, which
+sets no tier runtime, so it runs on the Docker daemon&#x27;s default runtime (<code>runc</code>, unless the
+daemon is configured otherwise). The <code>gvisor</code> and <code>microvm</code> rows above are not covered by a
+test in the repository.</li>
+</ul>
+<h2 id="user-namespaces-per-tier">User namespaces per tier<a class="anchor" href="#user-namespaces-per-tier" aria-label="Link to section: User namespaces per tier">#</a></h2>
+<p>Measured on the same host, date and create options as above: a process calls
+<code>unshare(CLONE_NEWUSER)</code> and then writes <code>/proc/self/uid_map</code>.</p>
+<div class="tbl-wrap" role="region" aria-label="Table: User namespaces per tier" tabindex="0"><table><thead><tr><th scope="col">Tier</th><th scope="col"><code>unshare</code></th><th scope="col"><code>uid_map</code> write</th></tr></thead><tbody><tr><td>container (runc)</td><td>refused (EPERM)</td><td>not reached</td></tr><tr><td>gvisor (runsc)</td><td>works</td><td>refused (EPERM)</td></tr><tr><td>microvm (Kata)</td><td>works</td><td>refused (EPERM)</td></tr></tbody></table></div>
+<ul>
+<li>The repository&#x27;s seccomp profile (<code>deploy/seccomp.json</code>) leaves <code>unshare</code> out of its
+allowlist, so its default action refuses it with errno 1 (<code>EPERM</code>), and it also denies <code>clone</code>
+with the flag that creates a user namespace. The live test
+<code>test_repository_seccomp_profile_denies_user_namespaces</code> (skipped under gVisor) runs
+<code>unshare -U</code> and checks that refusal. It covers the repository profile only, where
+<code>SANDFORT_SECCOMP_PROFILE_PATH</code> is set.</li>
+<li>The measured <code>container</code> row used the throwaway container&#x27;s options, which name no seccomp
+profile, so Docker&#x27;s default profile applied. There <code>unshare</code> needs <code>CAP_SYS_ADMIN</code>, which is
+dropped.</li>
+<li>The <code>microvm</code> tier runs with the host user namespace option (<code>userns_mode=host</code>,
+<code>SANDFORT_USERNS_HOST_TIERS</code>), and the repository configures no seccomp profile inside the
+Kata guest.</li>
+</ul>
+<h2 id="contained-not-hidden">Contained, not hidden<a class="anchor" href="#contained-not-hidden" aria-label="Link to section: Contained, not hidden">#</a></h2>
+<p>The tiers contain untrusted code. They do not hide the sandbox from it, and hiding it is not a
+goal. Code inside a sandbox can work out that it runs in Sandfort and on which tier:</p>
+<ul>
+<li>the kernel: <code>4.19.0-gvisor</code> on <code>gvisor</code>, a guest kernel of its own on <code>microvm</code> (6.18.56 on
+the beta), the host&#x27;s kernel on <code>container</code>.</li>
+<li><code>/.sandfort-reserve</code>, a 16 MiB file that exists when the disk quota is on (always in <code>prod</code>
+and on the beta), and <code>/tmp/.sandfort-keep</code> on <code>gvisor</code> (see &quot;gVisor: verified behavior&quot;).</li>
+<li><code>docker-init</code> as PID 1 (<code>init=True</code>), and the <code>/tmp/.sf-exec-&lt;id&gt;.pid</code> and
+<code>/tmp/.sf-pty-&lt;id&gt;.pid</code> files while an exec or a PTY runs.</li>
+<li>on an egress allowlist sandbox, the <code>http_proxy</code> and <code>https_proxy</code> variables, whose URL
+carries the sandbox id.</li>
+</ul>
+<p>These traces do work (disk reserve, process kill, keepalive, egress), and Sandfort has no layer
+that masks them. Detonating or analysing malware that checks for sandbox traces is therefore not
+a supported use case.</p>
 <h2 id="disk-size">Disk size<a class="anchor" href="#disk-size" aria-label="Link to section: Disk size">#</a></h2>
 <p>The requested disk size (<code>disk_gib</code>) is enforced only on hosts with XFS project quotas. The
 hosted beta enforces it: its Docker uses overlay2 on XFS with project quotas, and the deployment
@@ -192,7 +250,7 @@ running and <code>sandbox_stopped</code> is false. A single huge allocation can 
 <li>A fork bomb can stop the whole microvm, as on gvisor. The exec then reports exit code 137 with
 <code>sandbox_stopped</code> true and the message &quot;the sandbox stopped while running this command ...&quot;;
 the sandbox is already <code>stopped</code> when the response arrives, with an <code>error_reason</code>, and
-starting it again works at once (start takes about 4 s on microvm). Evaluator data on the
+starting it again works at once (start takes about 4 s on microvm). Measured on the
 beta: of 29 python fork bombs on microvm, 26 returned exit 137 with <code>sandbox_stopped</code> true
 within 6.1-12.7 s; 3 returned 124 <code>timed_out</code> with the sandbox already dead. Since commit
 5243f36 a death wins over the deadline: when the sandbox dies before or at the deadline the
@@ -230,11 +288,13 @@ configuration from the host, and lookups fail at once on every tier.</li>
 <code>HTTP_PROXY</code> and <code>HTTPS_PROXY</code> variables point to (pip, curl and Python requests use them);
 every other destination is refused. On gvisor and microvm, direct DNS lookups fail
 immediately. On the container tier the sandbox&#x27;s only DNS server is the egress proxy&#x27;s sink
-(since 2026-11-25 on the beta), which answers every query REFUSED and forwards nothing, so
-only the proxy resolves names and direct lookups fail here too (verified by gate 11 and the
-D3/D4 driver tests on the beta VM, 2026-11-25; <code>docs/egress-v2-design.md</code> section 6). A
-container-tier sandbox created before the sink was configured keeps the old resolvers until
-it is reset or recreated. The proxy variables, including the per-sandbox proxy credentials,
+(on the beta since the API restart at 2026-11-25T08:12:30Z), which answers every query
+REFUSED and forwards nothing, so only the proxy resolves names and direct lookups fail here
+too (<code>docs/egress-v2-design.md</code> section 6). Gate 11 and the D3/D4 driver tests passed on the
+beta VM&#x27;s Docker daemon on 2026-11-25. Gate 11 starts its own server and proxy and D3/D4
+drive the driver directly, so neither exercised the deployed API. A container-tier sandbox
+created before the sink was enabled, including one created earlier on 2026-11-25, keeps the
+old resolvers until it is reset or recreated. The proxy variables, including the per-sandbox proxy credentials,
 are visible to code inside the sandbox.</li>
 </ul>
 <h2 id="exec-results-output-cap-and-untrusted-submissions">Exec results, output cap and untrusted submissions<a class="anchor" href="#exec-results-output-cap-and-untrusted-submissions" aria-label="Link to section: Exec results, output cap and untrusted submissions">#</a></h2>
@@ -319,7 +379,7 @@ remapped and the <code>microvm</code> tier keeps the host user namespace through
       <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
     </div>
     <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
-    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="/audit-reviewers">Audit for reviewers</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
     <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
     <div class="legal">
       <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>

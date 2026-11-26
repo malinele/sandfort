@@ -29,14 +29,16 @@ Look for the `sandfort-mcp` tools: `create_sandbox`, `run_code`, `run_command` a
 
 ## Workflow
 
-The server exposes 14 tools. Every tool returns text. A failure comes back as `error: <message>`, not as an exception.
+The server exposes 16 tools (`sandfort-mcp` 0.1.1 or newer). Every tool returns text. A failure comes back as `error: <message>`, not as an exception.
 
 | Step | Tool | Notes |
 |---|---|---|
-| Create | `create_sandbox(name, snapshot)` | Waits until `started`. Returns JSON `{id, state}`. Both parameters are optional. `snapshot` can be a public image such as `python:3.12-slim` or a snapshot name. |
+| Create | `create_sandbox(name, snapshot, auto_stop_minutes, auto_delete_minutes, labels, block_network, egress_allowlist, isolation)` | Waits until `started`. Returns JSON `{id, state}`. All parameters are optional. An option left out keeps the server default, and `isolation` left out uses the tier recorded on the snapshot, else the server default. `snapshot` can be a public image such as `python:3.12-slim` or a snapshot name. Both timers take -1 to 525600 and -1 turns a timer off. `auto_delete_minutes=0` deletes the sandbox at the next scan after any stop. A non-empty `egress_allowlist` cannot be combined with `block_network=true`, and an empty list allows no host. `isolation` is `container`, `gvisor` or `microvm`, and the server refuses a tier it does not offer. |
+| Stop and start | `stop_sandbox(sandbox_id)` | Returns at once, so the state may still be `stopping`. A stopped sandbox keeps its filesystem (on `gvisor` only when `runsc` is registered with `--overlay2=none`, as on the hosted beta, see docs/connect-guide.md). |
+| | `start_sandbox(sandbox_id, wait_timeout_seconds=60)` | Waits until `started`. The wait is 1 to 600 seconds, other values are refused before any request. |
 | Run code | `run_code(sandbox_id, language, code, timeout_seconds=60)` | `language` is one of `python`, `javascript`, `typescript`, `bash`. `javascript` and `typescript` need Node in the image, and `typescript` fetches `tsx` with `npx` at run time, so it needs network access. |
 | Run a command | `run_command(sandbox_id, command, cwd=None, timeout_seconds=60)` | `command` is a shell string. |
-| Write files | `upload_text_file(sandbox_id, path, content)` | UTF-8, replaces an existing file. |
+| Write files | `upload_text_file(sandbox_id, path, content)` | UTF-8, replaces an existing file. 1 MiB limit counted in UTF-8 bytes, not characters. |
 | | `upload_binary_file(sandbox_id, path, content_base64, overwrite=True)` | 1 MiB limit after decoding. |
 | Read files | `download_text_file(sandbox_id, path)` | Refuses files over 1 MiB and non-UTF-8 content. |
 | | `download_binary_file(sandbox_id, path)` | JSON `{path, size_bytes, content_base64}`, 1 MiB limit. |
@@ -102,12 +104,12 @@ finally:
 2. **Start closed on the network.** Allow only the hosts the code needs, and none if it needs none. The allowlist is enforced by a CONNECT proxy, not a firewall, and the server refuses a create with an allowlist when the egress proxy is not running. On the `container` tier DNS is a side channel unless the operator configures the egress DNS sink (`SANDFORT_EGRESS_DNS_SINK_ADDRESS`, see `docs/operations.md`); the hosted beta has the sink enabled since 2026-11-25.
 3. **Never put production secrets in a sandbox.** Do not upload them, pass them in `env`, or paste them into `code`. The server's own `SANDFORT_*` configuration is not placed in sandboxes and the `SANDFORT_` env prefix is rejected on input (`docs/architecture.md`, section "Secrets", with a test that runs `env` in a sandbox). That protects the server's secrets. It does not protect anything you put in yourself.
 4. **Keep the API key out of the conversation.** It starts with `sf_` and is shown once. Keep it in the MCP client's own secret or environment settings. Do not print it, log it, write it to a file in a repository, or commit it.
-5. **Limit lifetime.** Delete the sandbox when you are done. For sandboxes created through the SDK, set `auto_delete_minutes` so a forgotten sandbox removes itself.
+5. **Limit lifetime.** Delete the sandbox when you are done. Set `auto_delete_minutes` in `create_sandbox` so a forgotten sandbox removes itself. It counts from the stop, and the auto-stop default is 15 idle minutes. The `auto_delete_minutes` default is -1, which keeps a stopped sandbox until someone deletes it. Calls that need a running sandbox (`run_code`, `run_command`, file tools) return an `error:` for a stopped one until `start_sandbox` is called.
 6. **Keep the key's scope narrow.** The MCP server acts with whatever scopes its API key has. Ask for a narrow key for agent work when the operator can issue one.
 
-### What the MCP `create_sandbox` cannot set
+### What the MCP `create_sandbox` still cannot set
 
-The MCP tool takes only `name` and `snapshot`. It cannot set the isolation tier, the egress allowlist, a network block, an auto-delete timer or env. A sandbox created through MCP gets the server's defaults for those. If the code is untrusted and the server defaults are not known to be strict, create the sandbox with the SDK (or the REST API `POST /v1/sandboxes`) and pass the sandbox id to the MCP tools. This snippet runs outside the MCP server and reads `SANDFORT_BASE_URL` and `SANDFORT_API_KEY` from the environment, so tell the user what it does before running it, and never echo the key:
+The MCP tool sets the isolation tier, the egress allowlist, a network block, the two timers and labels, and it leaves env, resources and volumes at the server defaults. An option you leave out also keeps the server default (`isolation` left out uses the tier recorded on the snapshot, else the server default), so pass `isolation` and `egress_allowlist` or `block_network` yourself when the code is untrusted and the server defaults are not known to be strict. If you need env, resources or volumes, or a later change of the allowlist, create the sandbox with the SDK (or the REST API `POST /v1/sandboxes`) and pass the sandbox id to the MCP tools. This snippet runs outside the MCP server and reads `SANDFORT_BASE_URL` and `SANDFORT_API_KEY` from the environment, so tell the user what it does before running it, and never echo the key:
 
 ```python
 import os
@@ -191,7 +193,7 @@ Once the user has a server URL and an API key, the user adds this entry to their
   "mcpServers": {
     "sandfort": {
       "command": "uvx",
-      "args": ["sandfort-mcp@0.1.0"],
+      "args": ["sandfort-mcp"],
       "env": {
         "SANDFORT_BASE_URL": "http://127.0.0.1:8000",
         "SANDFORT_API_KEY": "sf_..."
@@ -201,15 +203,15 @@ Once the user has a server URL and an API key, the user adds this entry to their
 }
 ```
 
-`sandfort-mcp` needs Python 3.12 or newer. `pip install sandfort-mcp==0.1.0` works as well. The server exits with status 2 and a message on stderr when `SANDFORT_BASE_URL` or `SANDFORT_API_KEY` is missing. Restart the MCP client after changing its configuration.
+`sandfort-mcp` needs Python 3.12 or newer. The entry runs the newest release on PyPI, and `pip install sandfort-mcp` works as well. The Workflow above needs version 0.1.1 or newer. Version 0.1.0 has 14 tools, no `start_sandbox` or `stop_sandbox`, a `create_sandbox` that takes only `name` and `snapshot`, and no size limit on `upload_text_file`. The server exits with status 2 and a message on stderr when `SANDFORT_BASE_URL` or `SANDFORT_API_KEY` is missing. Restart the MCP client after changing its configuration.
 
 ## Limits
 
 - **Isolation is container-based by default.** `container` shares the host kernel. `gvisor` is a user-space kernel, not a hardware boundary. `microvm` needs KVM and Kata Containers. The Firecracker driver in the repository is a skeleton and is not offered. If your threat model requires microVM isolation in production, Sandfort is not a fit today (README, Limits).
 - **Pre-1.0 beta.** Version `0.1.0`, no production references, no certifications.
 - **Production is self-hosted.** The hosted beta is for evaluation only.
-- **The MCP server is stdio only** and needs a reachable Sandfort server. It does not start one. Files over 1 MiB are refused in both directions, and base64 adds about a third to the payload.
-- **The MCP tool set is small.** There are no tools to stop or start a sandbox, read a snapshot's state, list snapshots, or set isolation, egress or timers. There is no filesystem chmod, search, find or replace, and no git branch or checkout. Use `run_command` for those when the image has the tool.
+- **The MCP server is stdio only** and needs a reachable Sandfort server. It does not start one. Files over 1 MiB are refused in both directions, for text and binary alike, and base64 adds about a third to the payload.
+- **The MCP tool set is small.** There are no tools to read a snapshot's state, list snapshots, or set env, resources or volumes at create time, and none to change the egress allowlist of an existing sandbox. There is no filesystem chmod, search, find or replace, and no git branch or checkout. Use `run_command` for those when the image has the tool.
 - **Persistent code contexts** (variables kept between runs) exist in the SDK and REST API, not in MCP. They are Python only and their state is lost on stop, reset and delete.
 - **A sandbox lives on one node.** There is no rescheduling and no live migration.
 
@@ -219,8 +221,8 @@ This section is for people who maintain the skill. It adds no instructions for t
 
 Claims in this file come from:
 
-- mcp_server/sandfort_mcp.py and mcp_server/README.md (the 14 tools, parameters, defaults, 1 MiB limit, error format, env variables, exit status 2)
-- mcp_server/pyproject.toml and PyPI (sandfort-mcp 0.1.0, sandfort-sdk 0.1.0b83, checked 2026-11-25. 0.1.0b83 has create-time egress_allowlist and set_egress_allowlist)
+- mcp_server/sandfort_mcp.py and mcp_server/README.md (the 16 tools, parameters, defaults, 1 MiB limit, error format, env variables, exit status 2)
+- mcp_server/pyproject.toml and PyPI (sandfort-mcp 0.1.1 in mcp_server/pyproject.toml, PyPI listed only sandfort-mcp 0.1.0 on 2026-11-26, sandfort-sdk 0.1.0b83 checked 2026-11-25. 0.1.0b83 has create-time egress_allowlist and set_egress_allowlist)
 - README.md (Quickstart commands, Limits, isolation tiers, Hosted evaluation instance, contact)
 - sdk/python/src/sandfort_sdk/client.py (create_sandbox arguments, set_egress_allowlist), sandbox.py, process.py
 - src/sandfort/toolbox/code_run.py (supported languages), src/sandfort/domain/isolation.py (DEFAULT_TIER = container)

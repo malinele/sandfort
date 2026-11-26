@@ -197,23 +197,35 @@ keep running when a log follower disconnects, and `kill_command` stops them.
 Each event stores: actor (type and id), action, target (type and id), outcome (`success`,
 `denied` or `error`), request id, client IP, user agent and redacted details.
 
-- Every non-GET call writes one event for what it did (a meta-test enforces it), with named
-  exceptions rather than a promise of exactly one row. A call refused after a valid key writes
+To read and verify an organization's audit log as a reviewer, see
+[Reading and verifying the audit log](https://docs.sandfort.dev/audit-reviewers.html).
+
+- Most non-GET calls write one event for what it did, with named
+  exceptions rather than a promise of exactly one row. Two routes are known to write no row:
+  `POST /v1/sandboxes/{id}/preview-tokens` and `PATCH /v1/webhooks/{id}`. No test walks every
+  route to check this, so each feature is tested on its own and other gaps are possible.
+  A call refused after a valid key writes
   one refusal row instead (`request.denied`, or `sandbox.create_refused` and
-  `sandbox.start_refused` for host capacity, below). A call that is accepted and then fails
+  `sandbox.start_refused` for host capacity or the key's `max_sandboxes` cap, below, or a row
+  under the call's own action such as `toolbox.fs.upload`). A call that is accepted and then fails
   adds a failure row: `sandbox.failed` for a create or start whose driver call fails, and
   `sandbox.reset_failed` next to `sandbox.reset`. Most successful GETs are not
   audited, and failed authentication is not audited, except the refusal of a revoked or
   expired key (see below). The GETs that are audited because they
   read sandbox content: `sandbox.logs.read` (`GET /v1/sandboxes/{id}/logs`),
-  `toolbox.fs.list`, `toolbox.fs.stat`, `toolbox.fs.download` and `toolbox.git.status`.
+  `toolbox.fs.list`, `toolbox.fs.stat`, `toolbox.fs.download`, `toolbox.git.status`,
+  `snapshot.exported` (`GET /v1/snapshots/{id}/export`) and `volume.export`
+  (`GET /v1/volumes/{id}/export`).
   Listing and reading sandboxes, snapshots, volumes, jobs, usage and audit events, and reading
   session command logs, is not audited.
 - A sandbox reset (`POST /v1/sandboxes/{id}/reset`) is audited as `sandbox.reset` with the
   state it started from; a reset whose driver call fails also writes `sandbox.reset_failed`
   with the (truncated) driver message.
-- A refusal after a valid key (401, 403, 404, 409 or 422) is recorded as `request.denied`
-  with outcome `denied` and the method, path, status and error code. One exception: a 422 for a
+- A refusal after a valid key (in practice 401 for a revoked or expired key, 403, 404 from a
+  route that matched, 409, 422, and a 413 or 400 raised by a route) is recorded as
+  `request.denied` with outcome `denied` and the method, path, status and error code. A 503
+  with the code `CAPACITY` is recorded `denied` too, and any other 5xx is recorded as `error`
+  with the action `request.failed`. One exception: a 422 for a
   request body that is not valid JSON is rejected before the key is resolved, so no
   `request.denied` row is written. Every other 422 after a valid key is recorded. A 429 with
   the code `QUOTA_EXCEEDED` is recorded too; a 429 with the code `RATE_LIMITED` is not, because a
@@ -222,8 +234,10 @@ Each event stores: actor (type and id), action, target (type and id), outcome (`
 - Two refusals of a create look alike but are recorded differently. A create refused for host
   capacity answers 503 and is audited as `sandbox.create_refused` (a start is
   `sandbox.start_refused`). A create refused by the per-key `max_sandboxes` cap answers 429
-  `QUOTA_EXCEEDED` and is audited as `request.denied`, not `sandbox.create_refused`. To find
-  every refused create, query both actions.
+  `QUOTA_EXCEEDED` and is audited as `sandbox.create_refused` with `reason` `key_cap` and the
+  cap in `max` and `current` (`src/sandfort/services/admission.py`), not as `request.denied`.
+  Other 429 `QUOTA_EXCEEDED` refusals are audited as `request.denied`. To find every refused
+  create, query both actions.
 - Capacity refusals are coalesced. A client in a retry loop (the SDK retries a 503) would
   write a permanent row per retry, so for the same action, API key and reason at most one
   `sandbox.create_refused` (and one `sandbox.start_refused`) row is written per 60 seconds
@@ -232,6 +246,14 @@ Each event stores: actor (type and id), action, target (type and id), outcome (`
   throttle, the repeats leave no row, so the chain shows that a key was refused and how many
   came in between, not each one; a restart empties the in-memory map and each `api` process
   keeps its own (`src/sandfort/services/admission.py`).
+- Some requests leave no row, with or without a valid key: a refusal by the request text guard
+  (a body that is not valid JSON or UTF-8, a lone surrogate or NUL character, a repeated
+  object key, a body nested too deep, an integer with too many digits, and bad text in the path or
+  query string), a non-JSON content type (415), a body over the size limit (413), a path that
+  matches no route (404), a wrong method (405) and every refusal on the `/scim/v2` routes. A
+  call refused by a service that already wrote its own refusal row, for example
+  `toolbox.fs.upload` for an upload, gets no second `request.denied` row. For the reviewer's
+  view of all of this see the page linked at the top of this section.
 - The actions written today (the `action` filter of `GET /v1/audit-events` takes any of them;
   details are redacted as below):
 
@@ -239,10 +261,12 @@ Each event stores: actor (type and id), action, target (type and id), outcome (`
   |---|---|
   | `sandbox.create`, `sandbox.start`, `sandbox.stop`, `sandbox.update` | the call |
   | `sandbox.delete`, `sandbox.reset`, `sandbox.claim` | the call (`claim`: a warm standby) |
-  | `sandbox.create_refused` | a create refused for host capacity (503), outcome `denied` |
+  | `sandbox.create_refused` | a create refused for host capacity (503) or by the key's `max_sandboxes` cap (429), outcome `denied` |
   | `sandbox.start_refused` | a start refused for host capacity (503), outcome `denied` |
   | `sandbox.failed`, `sandbox.reset_failed` | a driver failure after the call was accepted |
   | `sandbox.auto_stopped`, `sandbox.auto_deleted` | the idle timers |
+  | `sandbox.resized`, `sandbox.egress_updated` | a resize, and a runtime egress allowlist replacement |
+  | `sandbox.drift_detected`, `sandbox.orphan_removed` | the reconciler: a sandbox that stopped unexpectedly, and a container with no sandbox that was removed |
   | `sandbox.logs.read`, `sandbox.exec.replay` | a read of logs; a replayed idempotent exec |
   | `toolbox.process.execute`, `toolbox.process.code_run` | a synchronous exec or code-run |
   | `toolbox.code_contexts.create`, `.delete`, `.interrupt`, `.run` | a code context call |
@@ -250,8 +274,14 @@ Each event stores: actor (type and id), action, target (type and id), outcome (`
   | `toolbox.session.*`, `toolbox.pty.*` | session create, exec, kill; PTY create, resize, close |
   | `toolbox.fs.*`, `toolbox.git.*` | file and git calls (the audited GETs included) |
   | `snapshot.create`, `snapshot.register`, `snapshot.delete`, `snapshot.exported` | snapshots |
-  | `volume.create`, `volume.delete` | volumes |
+  | `volume.create`, `volume.delete`, `volume.restore`, `volume.export` | volumes, including a restore and an export |
+  | `image.build.request`, `image.build.complete` | an image build request and its end |
   | `api_key.created`, `api_key.revoked`, `quota.updated` | key and quota admin |
+  | `user.created`, `membership.added`, `membership.role_changed`, `membership.removed`, `membership.external_id_changed` | member admin, including SCIM Users calls |
+  | `session.created` | an OIDC sign-in exchange |
+  | `scim_token.created`, `scim_token.revoked` | SCIM token admin |
+  | `webhook.endpoint_created`, `webhook.endpoint_deleted`, `webhook.redelivered`, `webhook.endpoint_disabled` | webhook admin. The last is written when delivery failures disable an endpoint |
+  | `audit.chain_reanchored` | an operator acknowledges historical chain findings |
   | `request.denied`, `request.failed` | a refusal after a valid key |
 - A revoked or expired key is refused with 401 and that refusal is recorded as
   `request.denied` on the key's organization: the actor is the key, the details carry the

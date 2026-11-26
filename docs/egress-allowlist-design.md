@@ -48,7 +48,7 @@ Differences from the design text below:
   limits" below. The non-goals section no longer says the port is unrestricted.
 - An empty allowlist (`[]`) is not refused. The create succeeds and the sandbox is created with
   `block_all` set, whatever the deployment default or an explicit `block_all=false`, so it
-  has no network at all (`_with_default_network` in `src/sandfort/services/sandboxes.py`). Only
+  has no network at all (`_with_default_network` in `src/sandfort/services/sandbox_create_rules.py`). Only
   `None` (no allowlist) leaves egress as it was.
 - Jobs mode (`SANDFORT_SANDBOX_JOBS_ENABLED`, required for multi-node) refuses creates with an
   allowlist (`docs/operations.md`, "Egress proxy"), so an allowlist and multi-node placement

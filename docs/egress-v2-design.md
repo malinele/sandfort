@@ -4,9 +4,10 @@ Status: design, 2026-11-24, checked against HEAD 9d9f1c18. Revised the same day 
 the admission re-check that makes the propagation contract hold (sections 4.1, 4.2.1, 5.3) and
 the lookup that brings v1 tokens under revocation (section 5.5). The code facts behind both were
 re-read at HEAD dd14c9b7 (`src/sandfort/egress/proxy.py`, `src/sandfort/egress/tokens.py`).
-None of it is implemented yet. This document extends `docs/egress-allowlist-design.md` (v1).
-Until a delivery round below lands and records itself under "Implementation status", v1
-describes the behavior that ships.
+Update 2026-11-25: rounds 1 to 5 are implemented and ship in `v0.1.0-beta.83`
+(`CHANGELOG.md` rounds 84 to 88). The "Implementation status" list below records rounds 1 to 3
+in detail, and the changelog is authoritative for the rest. This document extends
+`docs/egress-allowlist-design.md` (v1).
 
 ## Implementation status
 
@@ -1105,14 +1106,17 @@ All K and W cases are hermetic.
 
 ### 12.8 Gate 11 (Linux, real Docker, host rules applied)
 
-Gate 11 covers the cases gate 8 left out (`docs/egress-allowlist-design.md`,
-"Implementation status"):
+Gate 11 is meant to cover the cases gate 8 left out (`docs/egress-allowlist-design.md`,
+"Implementation status"). The list below is the plan. `examples/gate11.py` today runs only the
+pinned resolution check (P1) and the DNS sink checks (D1, D3), so the other steps are not
+automated yet:
 
 1. The `container` tier with allowlist `["example.com", "<A record of example.com resolved on
    the host>/32"]`: an HTTPS fetch of the name succeeds.
 2. A CONNECT to the literal succeeds. A CONNECT to another public literal gets 403.
 3. Port 22 on the allowed host gets 403.
-4. `169.254.169.254` as a literal gets 403.
+4. `169.254.169.254` gets 403. `examples/gate11.py` does not check this. The proxy unit test
+   `tests/test_egress_proxy_r58.py` covers it for a name that resolves to that address.
 5. A direct TCP connect without the proxy fails (host chain). `curl --noproxy '*'` fails.
 6. `getent hosts example.com` fails, and the sink counter rises.
 7. A PATCH that removes `example.com`: a tunnel held open before the PATCH is closed within

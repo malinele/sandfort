@@ -13,6 +13,7 @@
 - [Releases](https://docs.sandfort.dev/release): A release is a git tag v0.1.0-beta.N on main, created after the gate passes. The tag fixes the commit. The artifacts are the Python SDK wheel, the CLI wheel and the server wheel (the sandfort...
 - [Governance reference](https://docs.sandfort.dev/governance): For platform and compliance reviewers. Every statement here was checked against the server package (src/sandfort/), the source file is named where a reviewer may want to confirm it. Defaults are the...
 - [Sandfort hosted beta: connect guide](https://docs.sandfort.dev/guide): > First time here? The quickstart is one page: > verify the delivery, install, first sandbox. This guide is the full reference behind it.
+- [Reading and verifying the audit log](https://docs.sandfort.dev/audit-reviewers): For security and compliance reviewers who read an organization's audit log and verify it themselves. It covers the key, the routes, the signed head and its limits.
 
 ## Reference
 

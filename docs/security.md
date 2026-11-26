@@ -16,9 +16,17 @@ or hostile. The platform tries to do three things with it:
 
 - keep it contained: one sandbox should not reach the host, the control plane, other
   sandboxes or the platform's secrets;
-- keep it resource-bounded: CPU, memory, processes and disk are capped per sandbox;
+- keep it resource-bounded: CPU, memory, processes and disk are capped per sandbox (the
+  process cap works differently on each tier, see section 2);
 - keep the actions around it auditable: lifecycle and toolbox calls are recorded per
   organization.
+
+Hiding the sandbox from the code inside it is not a goal. Code in a sandbox can tell that it
+runs in Sandfort and on which tier: gVisor reports its own kernel string, Kata a guest kernel
+of its own, and Sandfort adds files, a PID 1 and environment variables of its own (the list is
+in [isolation-tiers], "Contained, not hidden"). The tiers contain untrusted code. They do not
+make the sandbox undetectable, so Sandfort is not a tool for detonating or analysing evasive
+malware that checks for sandbox traces.
 
 The production driver is the Docker driver, and each sandbox runs on one of three isolation
 tiers, chosen per sandbox (`isolation` on create). The `container` tier (runc) and the `gvisor`
@@ -52,7 +60,7 @@ by unit tests. Every sandbox gets:
 | Capabilities | `cap_drop=ALL` |
 | Added back | `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID`, `SETGID`, `KILL`, `NET_BIND_SERVICE` |
 | Privilege | `privileged=False`, `no-new-privileges:true`, `init=True` |
-| Processes | `pids_limit=512` |
+| Processes | `pids_limit=512`, a Docker host cgroup limit, and what it bounds differs per tier (see below) |
 | CPU | `nano_cpus` from the requested millicores |
 | Memory | `mem_limit` from the request, `memswap_limit` equal to it (no swap) |
 | Shared memory | `shm_size` is the smaller of 64 MiB and a quarter of memory |
@@ -62,7 +70,22 @@ by unit tests. Every sandbox gets:
 
 What the table does not say:
 
-- **Seccomp is optional, and only the Kubernetes kit sets it.** `deploy/seccomp.json` is
+- **The process limit bounds guest processes on the `container` tier only.** The driver
+  passes `pids_limit=512` to Docker for every tier (`hardening.py`), and the tier changes only
+  the runtime. Measured on the hosted beta host on 2026-11-26, with the create options of a
+  sandbox (512 MiB memory, no swap) and one probe per tier. These are single measurements, not
+  a benchmark or a guarantee:
+  - `container` (runc): `pids.max` reads 512 inside the sandbox, and a fork loop stopped at 511
+    children with `EAGAIN`.
+  - `gvisor` (runsc): Docker applies the limit to the host cgroup that holds the `runsc`
+    processes. The cgroup files are not visible inside, and a fork loop was ended by the memory
+    limit: the sandbox was OOM-killed (exit 137).
+  - `microvm` (Kata): `pids.max` reads `max` in the guest, and a fork loop passed 1300
+    processes before the whole VM ended.
+  - The host was unaffected in all three cases. On `gvisor` and `microvm` the memory limit and
+    the end of the sandbox contain a fork loop, not a refusal of the 513th process. Details
+    and the exec results: [isolation-tiers], "Process limits per tier".
+- **Seccomp is optional, and two kits set it.** `deploy/seccomp.json` is
   derived from the moby v28.3.3 default profile, with some syscalls removed and extra rules
   on `clone` arguments (see its `_comment`). The driver passes it as a `security_opt` only
   when `SANDFORT_SECCOMP_PROFILE_PATH` points at it. The default is empty, which keeps
@@ -72,6 +95,9 @@ What the table does not say:
     mounts the `sandfort-seccomp` ConfigMap, which kustomize generates from
     `deploy/seccomp.json`, at `/etc/sandfort/seccomp`. Apply the kit with the load
     restrictor lifted (`deploy/k8s/kustomization.yaml`, `deploy/k8s/README.md`).
+  - `deploy/selfhost/compose.yml`: sets
+    `SANDFORT_SECCOMP_PROFILE_PATH=/etc/sandfort/seccomp/seccomp.json` (line 35) and bind-mounts
+    `../seccomp.json` read-only at that path (line 40).
   - `deploy/compose.prod.yml` and `deploy/Dockerfile`: neither sets the path or mounts the
     profile. To use it with compose, add the setting and a bind mount of the file yourself.
   - The driver passes the profile as a security option for every runtime once the path is set
@@ -80,6 +106,13 @@ What the table does not say:
     tier gVisor's own Sentry filters the syscalls, and the host-side `runsc` processes run
     under gVisor's own seccomp filters ([isolation-tiers]). The Kubernetes kit defaults to
     `gvisor` (`SANDFORT_DEFAULT_ISOLATION`), so the profile there covers the `container` tier.
+  - Seccomp does not block `ptrace`. The profile allows it for kernels 4.8 and later, as
+    Docker's default profile does (`deploy/seccomp.json`, the rule that names `ptrace`,
+    `process_vm_readv` and `process_vm_writev`). A refused trace inside a sandbox comes from
+    something else: the dropped capabilities (`CAP_SYS_PTRACE` is not in the add-list above),
+    the host's Yama setting on the `container` tier (`kernel.yama.ptrace_scope` was 1 on the beta
+    host on 2026-11-26, and Sandfort does not set it), or the runtime boundary on `gvisor` and
+    `microvm`.
   - The Kubernetes `api` manifest (`deploy/k8s/api.yaml`) also sets `seccompProfile` to
     `RuntimeDefault` in the pod `securityContext` of the API pod itself. That is a different
     thing from the sandbox profile above: it confines the API process, not the sandboxes.
@@ -122,9 +155,16 @@ traffic disabled (`enable_icc=false`). Three controls sit on top of that.
 - **Cloud metadata and private ranges.** The driver itself does not filter addresses. The
   block comes from `deploy/host-setup.sh`, which installs iptables rules in `DOCKER-USER`
   that reject traffic from the sandbox bridge to `169.254.0.0/16` (including the metadata
-  address `169.254.169.254`), `100.64.0.0/10`, the Azure wire server `168.63.129.16`, and
-  the RFC 1918 ranges. It also rejects new connections from sandboxes to the host's own
-  address on the bridge. Without the script none of this applies.
+  address `169.254.169.254`), `100.64.0.0/10` (carrier-grade NAT space), the Azure wire server
+  `168.63.129.16`, and the RFC 1918 ranges. The `100.64.0.0/10` rule covers `100.100.100.0` to
+  `100.100.100.255`, so `100.100.100.100` is rejected like any other address in the range. It
+  also rejects new connections from sandboxes to the host's own address on the bridge. Without
+  the script none of this applies. The egress canary that the driver runs probes
+  `169.254.169.254:80`, the bridge gateway on port 22 and `10.255.255.254:80` on every managed
+  network, plus `1.1.1.1:443` on the allowlist network (`targets_for` in
+  `src/sandfort/drivers/docker/egress_probe.py`). None of these is in `100.64.0.0/10`. With a DNS
+  sink configured, one more canary on the allowlist network checks that a public name does not
+  resolve (`src/sandfort/drivers/docker/egress_probe_dns.py`).
 - **Full block per sandbox.** `network.block_all` at create time runs the sandbox with
   Docker network mode `none`. It takes precedence over everything else, and combining it
   with an egress allowlist is refused.
@@ -295,14 +335,20 @@ fields of the row (`src/sandfort/services/audit_chain.py`). With no key set the 
 `sha256` over the same input; `prod` refuses to start in that state unless
 `SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true` accepts the unkeyed chain explicitly. Audit rows are written in the
 same transaction as the change they describe. The rule is one event per mutating call, with
-named exceptions: a meta-test checks that every non-GET route writes one row for what it did.
-A call refused after a valid key writes a `request.denied` row instead (a create or start
-refused for host capacity writes `sandbox.create_refused` or `sandbox.start_refused`, at most
-one per API key and reason per 60 seconds, the suppressed ones counted in
-`refusals_coalesced`). A call that fails after it was accepted adds a failure row
-(`sandbox.failed`, `sandbox.reset_failed`). Read (`GET`) calls write no rows, except the few
-that read sandbox content. Details are redacted: no request bodies, no stdin, long commands
-truncated, credentials dropped. A row also stores the client `ip` and `user_agent`; both are
+named exceptions. Two routes are known to write no row: `POST /v1/sandboxes/{id}/preview-tokens`
+and `PATCH /v1/webhooks/{id}`. No test walks every route to check this.
+A call refused after a valid key usually writes a `request.denied` row instead. A create or
+start refused for host capacity writes `sandbox.create_refused` or `sandbox.start_refused`, and a
+create refused by the key's `max_sandboxes` cap writes `sandbox.create_refused` with `reason`
+`key_cap`. Repeats are merged to one row per action, API key and reason per 60 seconds, the
+suppressed ones counted in `refusals_coalesced`. Some refusals leave no row: a body that is not
+valid JSON, a `RATE_LIMITED` 429, and a missing, malformed or unknown key (see the governance
+page). A call that fails after it was accepted adds a failure row (`sandbox.failed`,
+`sandbox.reset_failed`). Read (`GET`) calls write no rows, except the few that read sandbox
+content. Details are redacted: no request bodies, and `command`, `args`, `cmd`, `stdin`, `code`
+and `token` keep only an unsalted `redacted-sha256:` digest and the byte length, so a guessable
+value can be confirmed by hashing a guess. Credentials are dropped. A row also stores the
+client `ip` and `user_agent`; both are
 stored unhashed and are not part of the hash, so they are readable by anyone with `audit:read`.
 The full list of actions and the exceptions are on
 [the governance page](https://docs.sandfort.dev/governance.html), section Audit.
@@ -330,7 +376,8 @@ from the database are compared as bytes in
 constant time.
 
 Signed head. With the key set, `audit-export` ends each org's rows with one trailer line of
-type `audit_head` (newest row id, its hash and an HMAC over them). Consumers of the export
+type `audit_head` (newest row id, its hash, an HMAC over them, and on newer servers the content
+binding `row_count`, `first_row_id` and `export_sha256`). Consumers of the export
 must skip that line. `audit-verify --head <file>` checks the signature and that the live
 chain still reaches the head row, which catches deleting the newest rows.
 
@@ -342,12 +389,16 @@ key; the signature needs only the public key, so an auditor with no secret can c
 fingerprint out of band, from the release notes or the operator's own channel, not from the
 server that is being checked; the `public_key` inside a trailer is not a trust anchor.
 
-`sandfort audit verify-head <file>` checks an export against that key. It proves that the
-signature verifies, that the file's last row is the row the head names with the head's hash,
-and that each row's `prev_hash` is the hash of the row before it. It does not prove the rows
-before the last one: someone who rewrites `prev_hash` and `hash` consistently still passes,
-a row edited without touching its hashes passes, and an older genuine export still verifies
-(compare `signed_at`). Row hashes are keyed, so a client cannot recompute them. Only the
+`sandfort audit verify-head <file>` checks an export against that key. With a content-bound
+head it proves that the signature verifies, that the file is exactly the rows the server signed
+(SHA-256, row count and first row), that the last row is the row the head names with the head's
+hash, and that each row's `prev_hash` is the hash of the row before it. An edited row then fails
+as `content_mismatch` and a removed row as `count_mismatch`. It does not prove that the
+database was unchanged before the export, because the server signs the rows it holds at export
+time, and an older genuine export still verifies (compare `signed_at`). A legacy head, from an
+older server, signs only the last row: it does not prove the rows before it, so a row edited
+without touching its hashes passes. Row hashes are keyed, so a client cannot recompute them.
+Only the
 server-side check (`sandfort audit verify`, `audit-verify`, `GET /v1/audit-events/verify`)
 proves the full chain. Details: governance page, section Audit.
 

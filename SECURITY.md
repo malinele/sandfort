@@ -54,6 +54,12 @@ Out of scope:
   hardware boundary, the DNS side channel on the `container` tier with an allowlist, the
   unauthenticated `/metrics` endpoint, the plain-HTTP node-to-node hop in multi-node routing,
   and the fact that the audit log is tamper-evident, not immutable.
+- Recognisability of the sandbox: code inside a sandbox can tell that it runs under gVisor, Kata
+  or Sandfort (kernel strings and Sandfort's own files, PID 1 and proxy variables, listed in
+  `docs/isolation-tiers.md`, "Contained, not hidden"). The tiers contain untrusted code and do not
+  hide the sandbox from it.
+- Process limits that differ per tier, as documented in `docs/security.md` section 2: the
+  `pids_limit` count bounds guest processes on the `container` tier only.
 - Control of a sandbox node by someone who already has access to its Docker socket or its
   host, and a malicious operator or database administrator.
 - The Firecracker driver, which is a skeleton and is not supported.

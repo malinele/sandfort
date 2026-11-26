@@ -32,10 +32,10 @@
       href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
   </div>
 </header>
-<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide" aria-current="page">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a></nav></div>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide" aria-current="page">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a><a href="/audit-reviewers">Audit for reviewers</a></nav></div>
 <main id="main">
 <div class="frame"><div class="doc has-toc">
-<details class="toc"><summary>On this page</summary><ul><li><a href="#1-what-you-receive-from-the-maintainer">1. What you receive from the maintainer</a><ul><li><a href="#scopes-and-what-they-allow">Scopes and what they allow</a></li><li><a href="#keys-limited-to-labelled-sandboxes">Keys limited to labelled sandboxes</a></li><li><a href="#managing-api-keys">Managing API keys</a></li></ul></li><li><a href="#2-install-the-sdks-mcp-server-and-cli">2. Install the SDKs, MCP server and CLI</a><ul><li><a href="#cli-in-five-commands">CLI in five commands</a></li><li><a href="#python-sdk">Python SDK</a></li><li><a href="#typescript-sdk-if-you-received-the-tarball">TypeScript SDK (if you received the tarball)</a></li><li><a href="#mcp-server-if-you-received-the-server-file">MCP server (if you received the server file)</a></li><li><a href="#command-line-if-you-received-the-cli-wheel">Command-line (if you received the CLI wheel)</a></li></ul></li><li><a href="#3-first-sandbox-in-five-minutes">3. First sandbox in five minutes</a><ul><li><a href="#what-the-default-image-contains">What the default image contains</a></li><li><a href="#retries-and-idempotent-create">Retries and idempotent create</a></li><li><a href="#running-code-output-limits-and-files">Running code, output limits and files</a></li><li><a href="#quotas">Quotas</a></li><li><a href="#usage-report">Usage report</a></li><li><a href="#resizing-a-stopped-sandbox">Resizing a stopped sandbox</a></li><li><a href="#resetting-a-sandbox">Resetting a sandbox</a></li><li><a href="#a-student-facing-run-code-button">A student-facing Run code button</a></li><li><a href="#course-and-grader-walkthrough">Course and grader walkthrough</a></li><li><a href="#network">Network</a></li><li><a href="#choosing-an-isolation-tier">Choosing an isolation tier</a></li><li><a href="#snapshots">Snapshots</a></li><li><a href="#volumes">Volumes</a></li><li><a href="#naming-rules">Naming rules</a></li><li><a href="#long-running-commands-and-the-exec-timeout">Long-running commands and the exec timeout</a></li><li><a href="#data-analysis">Data analysis</a></li><li><a href="#rest-api">REST API</a></li></ul></li><li><a href="#4-preview-urls">4. Preview URLs</a></li><li><a href="#5-beta-limits">5. Beta limits</a></li><li><a href="#6-support-and-what-we-ask">6. Support and what we ask</a><ul><li><a href="#status-and-incidents">Status and incidents</a></li><li><a href="#reporting-a-problem">Reporting a problem</a></li></ul></li></ul></details>
+<details class="toc"><summary>On this page</summary><ul><li><a href="#1-what-you-receive-from-the-maintainer">1. What you receive from the maintainer</a><ul><li><a href="#scopes-and-what-they-allow">Scopes and what they allow</a></li><li><a href="#keys-limited-to-labelled-sandboxes">Keys limited to labelled sandboxes</a></li><li><a href="#managing-api-keys">Managing API keys</a></li></ul></li><li><a href="#2-install-the-sdks-mcp-server-and-cli">2. Install the SDKs, MCP server and CLI</a><ul><li><a href="#cli-in-five-commands">CLI in five commands</a></li><li><a href="#python-sdk">Python SDK</a></li><li><a href="#typescript-sdk-if-you-received-the-tarball">TypeScript SDK (if you received the tarball)</a></li><li><a href="#mcp-server">MCP server</a></li><li><a href="#command-line-if-you-received-the-cli-wheel">Command-line (if you received the CLI wheel)</a></li></ul></li><li><a href="#3-first-sandbox-in-five-minutes">3. First sandbox in five minutes</a><ul><li><a href="#what-the-default-image-contains">What the default image contains</a></li><li><a href="#retries-and-idempotent-create">Retries and idempotent create</a></li><li><a href="#running-code-output-limits-and-files">Running code, output limits and files</a></li><li><a href="#quotas">Quotas</a></li><li><a href="#usage-report">Usage report</a></li><li><a href="#what-stop-start-resize-reset-and-delete-keep">What stop, start, resize, reset and delete keep</a></li><li><a href="#resizing-a-stopped-sandbox">Resizing a stopped sandbox</a></li><li><a href="#resetting-a-sandbox">Resetting a sandbox</a></li><li><a href="#a-student-facing-run-code-button">A student-facing Run code button</a></li><li><a href="#course-and-grader-walkthrough">Course and grader walkthrough</a></li><li><a href="#network">Network</a></li><li><a href="#choosing-an-isolation-tier">Choosing an isolation tier</a></li><li><a href="#snapshots">Snapshots</a></li><li><a href="#volumes">Volumes</a></li><li><a href="#naming-rules">Naming rules</a></li><li><a href="#long-running-commands-and-the-exec-timeout">Long-running commands and the exec timeout</a></li><li><a href="#data-analysis">Data analysis</a></li><li><a href="#rest-api">REST API</a></li></ul></li><li><a href="#4-preview-urls">4. Preview URLs</a></li><li><a href="#5-beta-limits">5. Beta limits</a></li><li><a href="#6-support-and-what-we-ask">6. Support and what we ask</a><ul><li><a href="#status-and-incidents">Status and incidents</a></li><li><a href="#reporting-a-problem">Reporting a problem</a></li></ul></li></ul></details>
 <article class="prose">
 <h1 id="sandfort-hosted-beta-connect-guide">Sandfort hosted beta: connect guide<a class="anchor" href="#sandfort-hosted-beta-connect-guide" aria-label="Link to section: Sandfort hosted beta: connect guide">#</a></h1>
 <p>&gt; First time here? The <a href="https://docs.sandfort.dev/quickstart">quickstart</a> is one page:
@@ -72,11 +72,12 @@ key without a label scope can exec in any sandbox of your organization. To restr
 labelled sandboxes, see &quot;Keys limited to labelled sandboxes&quot; below. The endpoints each scope
 covers are in &quot;Scopes and what they allow&quot; below. The Python SDK has API key helpers
 (<code>create_api_key</code>, <code>list_api_keys</code>, <code>revoke_api_key</code>) and the CLI has <code>sandfort key create</code>, <code>key list</code> and <code>key revoke</code>. The REST calls and both clients are in &quot;Managing API keys&quot; below.</p></li>
-<li><p><strong>Delivery package:</strong> the Python SDK wheel is always included. The TypeScript SDK tarball, the
-single-file MCP server and the CLI wheel are included according to your stack, so do not assume
-all of them are present; use only the sections below that match the files you were sent. The
+<li><p><strong>Delivery package:</strong> the Python SDK wheel is always included. The TypeScript SDK tarball and the
+CLI wheel are included according to your stack, so do not assume all of them are present.
+Use only the sections below that match the files you were sent. The MCP server is not a file: it
+is the PyPI package <code>sandfort-mcp</code>, outside <code>SHA256SUMS</code> and <code>RELEASE.txt</code>. The delivered
 files come with a <code>SHA256SUMS</code> file and a plain-text release note, <code>RELEASE.txt</code>. The note
-names the commit and the build time; from <code>v0.1.0-beta.38</code> on it also names the tag. Since
+names the commit and the build time. From <code>v0.1.0-beta.38</code> on it also names the tag. Since
 beta 60 the files also come with <code>SHA256SUMS.sig</code>, an OpenSSH signature over <code>SHA256SUMS</code>, and
 the file <code>release-allowed-signers</code> (signer <code>release@sandfort.dev</code>). Check the files before you
 install, in the directory that holds them: first the signature, then the checksums.</p>
@@ -359,10 +360,45 @@ so <code>pip list</code> tells builds apart and installing the newer wheel upgra
 type declarations, so a plain <code>npm install</code> of the file you were sent works in Node (20 or newer)
 with no TypeScript toolchain. It is delivered as a file during the beta, not from a public registry.</p>
 <div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 9" data-copy>Copy</button></div><pre class="code"><code>npm install ./sandfort-sdk-0.1.1.tgz   # use the tarball you were sent</code></pre></div>
-<h3 id="mcp-server-if-you-received-the-server-file">MCP server (if you received the server file)<a class="anchor" href="#mcp-server-if-you-received-the-server-file" aria-label="Link to section: MCP server (if you received the server file)">#</a></h3>
-<p>The MCP server is delivered as a single Python file and runs with the Python SDK installed. In any
-MCP client, run <code>python</code> with the server file as its argument and set <code>SANDFORT_BASE_URL</code> and
-<code>SANDFORT_API_KEY</code> in the environment. The client can then use the sandbox tools.</p>
+<h3 id="mcp-server">MCP server<a class="anchor" href="#mcp-server" aria-label="Link to section: MCP server">#</a></h3>
+<p>The MCP server is the PyPI package <code>sandfort-mcp</code> (Python 3.12 or newer), not a file in the
+delivery package. In an MCP client that takes a JSON config, run it with <code>uvx</code> and set
+<code>SANDFORT_BASE_URL</code> and <code>SANDFORT_API_KEY</code> in the environment:</p>
+<div class="slab"><div class="rail"><span class="tab static">json</span><button class="tool" type="button" aria-label="Copy code: json block 10" data-copy>Copy</button></div><pre class="code"><code>{
+  &quot;mcpServers&quot;: {
+    &quot;sandfort&quot;: {
+      &quot;command&quot;: &quot;uvx&quot;,
+      &quot;args&quot;: [&quot;sandfort-mcp&quot;],
+      &quot;env&quot;: {
+        &quot;SANDFORT_BASE_URL&quot;: &quot;&lt;the base URL you were sent&gt;&quot;,
+        &quot;SANDFORT_API_KEY&quot;: &quot;sf_...&quot;
+      }
+    }
+  }
+}</code></pre></div>
+<p><code>uvx sandfort-mcp</code> runs the newest release on PyPI. The tools and options below need
+<code>sandfort-mcp</code> 0.1.1 or newer. Version 0.1.0 has 14 tools, no <code>start_sandbox</code> or <code>stop_sandbox</code>,
+and a <code>create_sandbox</code> that takes only <code>name</code> and <code>snapshot</code>.</p>
+<p>From version 0.1.1 the server has 16 tools: create, start, stop, list and delete for sandboxes,
+<code>create_snapshot</code>, <code>run_code</code>, <code>run_command</code> and eight file tools (text and binary upload and
+download, <code>list_directory</code>, <code>stat_path</code>, <code>make_directory</code>, <code>delete_path</code>). What an agent needs to
+know:</p>
+<ul>
+<li><code>create_sandbox</code> takes the optional <code>auto_stop_minutes</code>, <code>auto_delete_minutes</code>, <code>labels</code>,
+<code>block_network</code>, <code>egress_allowlist</code> and <code>isolation</code>. An option left out keeps the server default.</li>
+<li>By default (no <code>auto_stop_minutes</code>), a sandbox created through MCP stops after 15 idle minutes
+and is not deleted unless the agent passes <code>auto_delete_minutes</code> to <code>create_sandbox</code>. A stopped
+sandbox keeps its files (see &quot;What
+stop, start, resize, reset and delete keep&quot; below). <code>start_sandbox</code> starts it again and waits
+until it is started, for 1 to 600 seconds (default 60). <code>stop_sandbox</code> returns at once, so the
+state may still be <code>stopping</code>.</li>
+<li>Without a <code>snapshot</code> the image is <code>python:3.12-slim</code>: Python and pip, no git. See &quot;What the
+default image contains&quot; below.</li>
+<li>Text and binary uploads and downloads are limited to 1 MiB. A text upload counts UTF-8 bytes,
+not characters.</li>
+<li>A tool error comes back as text in the form <code>error: &lt;message&gt;</code>. The server acts with the scopes
+of the API key it is given.</li>
+</ul>
 <h3 id="command-line-if-you-received-the-cli-wheel">Command-line (if you received the CLI wheel)<a class="anchor" href="#command-line-if-you-received-the-cli-wheel" aria-label="Link to section: Command-line (if you received the CLI wheel)">#</a></h3>
 <p>The install is in &quot;CLI in five commands&quot; above. This section covers what the CLI does after it.</p>
 <p>The sandbox name of <code>sandbox create</code> is a positional argument. Without <code>--snapshot</code> the image is
@@ -823,7 +859,7 @@ that is not a number at all, and <code>--wait-timeout</code> without <code>--wai
 <code>must be a finite number greater than 0</code> when only the value is wrong. It is <code>requires --wait, and must be a finite number greater than 0</code> when both are. Without <code>--wait</code> the command returns right
 after the server answers, as before. On the hosted beta the start reply already says <code>started</code>, so
 plain <code>start</code> and <code>start --wait</code> look identical there; <code>--wait</code> is there for slower backends.</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 10" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox start cli-first --wait --wait-timeout 60   # returns once the sandbox is started
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 11" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox start cli-first --wait --wait-timeout 60   # returns once the sandbox is started
 echo hello | sandfort exec -i cli-first -- sh -c &#x27;tr a-z A-Z&#x27;   # HELLO
 sandfort cp -r ./project cli-first:/work     # the directory&#x27;s contents land in /work
 sandfort cp -r cli-first:/work ./out         # and back; the target is created if missing
@@ -861,7 +897,7 @@ answers with <code>NOT_FOUND</code>, or an already-destroyed sandbox is skipped 
 1 with <code>NOT_FOUND: no sandbox named &#x27;&lt;name&gt;&#x27;; ...</code> when the sandbox is already gone. <code>--if-exists</code>
 still fails (exit 1) on real errors: an ambiguous name, authentication, a network failure or a 5xx.
 As a last step, list the sandboxes by label to find a job that was killed before its trap ran:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 11" data-copy>Copy</button></div><pre class="code"><code>trap &#x27;sandfort sandbox rm --if-exists &quot;$NAME&quot;&#x27; EXIT
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 12" data-copy>Copy</button></div><pre class="code"><code>trap &#x27;sandfort sandbox rm --if-exists &quot;$NAME&quot;&#x27; EXIT
 # ... create the sandbox with --label job=&lt;id&gt; and do the work ...
 sandfort sandbox list --state started --label job=&lt;id&gt;   # remove any that remain</code></pre></div>
 <p>Use the label value exactly as you stored it. A label filter with the raw value still matches:
@@ -870,7 +906,7 @@ sandfort sandbox list --state started --label job=&lt;id&gt;   # remove any that
 that output is the one that may differ from the stored one.</p>
 <h4 id="machine-readable-output-and-exit-codes">Machine-readable output and exit codes<a class="anchor" href="#machine-readable-output-and-exit-codes" aria-label="Link to section: Machine-readable output and exit codes">#</a></h4>
 <p>With the global <code>--json</code> flag, errors are JSON too. They are printed to stdout as:</p>
-<div class="slab"><div class="rail"><span class="tab static">json</span><button class="tool" type="button" aria-label="Copy code: json block 12" data-copy>Copy</button></div><pre class="code"><code>{&quot;error&quot;: {&quot;code&quot;: &quot;...&quot;, &quot;message&quot;: &quot;...&quot;, &quot;details&quot;: {}, &quot;request_id&quot;: &quot;...&quot;}}</code></pre></div>
+<div class="slab"><div class="rail"><span class="tab static">json</span><button class="tool" type="button" aria-label="Copy code: json block 13" data-copy>Copy</button></div><pre class="code"><code>{&quot;error&quot;: {&quot;code&quot;: &quot;...&quot;, &quot;message&quot;: &quot;...&quot;, &quot;details&quot;: {}, &quot;request_id&quot;: &quot;...&quot;}}</code></pre></div>
 <p>A sandbox that failed during <code>create --wait</code> adds <code>sandbox_id</code> and <code>state</code> to that object, with the
 code <code>SANDBOX_FAILED</code>.</p>
 <p>Scripts that read the result of <code>login --json</code> should read <code>key_status</code>; <code>key_verified</code> stays only
@@ -986,7 +1022,7 @@ error carries the <code>x-request-id</code> of the create reply: the text line e
 <code>(request id &lt;id&gt;)</code> and the error object&#x27;s <code>request_id</code> holds it. Quote it, with the sandbox id,
 when you report such a failure.</li>
 </ul>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 13" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox create ci-run --wait --wait-timeout 120 --keep-on-failure</code></pre></div>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 14" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox create ci-run --wait --wait-timeout 120 --keep-on-failure</code></pre></div>
 <p><code>snapshot create SANDBOX NAME --wait</code> blocks until the snapshot is ready.</p>
 <p><strong>Narrow terminals.</strong> A table keeps one line per row. When the terminal is too narrow, the CLI cuts
 free-text cells with an ellipsis and drops whole columns. In <code>audit list</code> it drops the actor and
@@ -1043,7 +1079,7 @@ object with the code <code>SANDBOX_FAILED</code>, which carries <code>sandbox_id
 need only one of them.</p>
 <p>Export the key from the secret link as <code>SANDFORT_API_KEY</code>, then run the snippets below in order in
 one Python session. The later ones reuse <code>client</code> and <code>sbx</code>.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 14" data-copy>Copy</button></div><pre class="code"><code>import os
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 15" data-copy>Copy</button></div><pre class="code"><code>import os
 from sandfort_sdk import Client
 
 client = Client(
@@ -1075,7 +1111,7 @@ print(sbx.fs.read_bytes(&quot;/tmp/hello.txt&quot;))                # b&#x27;hel
 <p><code>code_run</code> starts a fresh process every time, so variables do not survive from one call to the
 next. When state has to persist (a data frame, an import, a counter), open a persistent code
 context, a Python kernel inside the sandbox:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 15" data-copy>Copy</button></div><pre class="code"><code>ctx = sbx.code_contexts.create()
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 16" data-copy>Copy</button></div><pre class="code"><code>ctx = sbx.code_contexts.create()
 ctx.run(&quot;x = 21&quot;)
 print(ctx.run(&quot;x * 2&quot;).result)                            # 42</code></pre></div>
 <p>Only Python, and the state is lost when the sandbox stops, resets or is deleted. The full
@@ -1083,12 +1119,17 @@ behaviour is in &quot;Code contexts: state that survives between runs&quot; belo
 <p>For untrusted or student code, create sandboxes with <code>block_network=True</code>.</p>
 <p>When you are done, delete the sandbox. Put the work in a <code>try</code> block so that a failure still
 deletes it:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 16" data-copy>Copy</button></div><pre class="code"><code>try:
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 17" data-copy>Copy</button></div><pre class="code"><code>try:
     print(sbx.code_run(&quot;python&quot;, &quot;print(21 * 2)&quot;).stdout.strip())     # 42
 finally:
     sbx.delete()</code></pre></div>
 <p><code>labels=</code> lets you list your sandboxes later (<code>sandfort sandbox list --label purpose=walkthrough</code>),
 and <code>auto_delete_minutes=</code> removes one you forgot to delete. Use the two together.</p>
+<p>Left out, <code>auto_stop_minutes</code> is 15 (idle minutes) and <code>auto_delete_minutes</code> is -1, which never
+deletes. <code>auto_delete_minutes</code> counts minutes after the sandbox stopped, and 0 deletes it at the
+next scan after any stop. A stopped sandbox therefore stays, with its files and its disk, until you
+delete it. The MCP <code>create_sandbox</code> tool takes the same two options (<code>sandfort-mcp</code> 0.1.1 or
+newer).</p>
 <h3 id="what-the-default-image-contains">What the default image contains<a class="anchor" href="#what-the-default-image-contains" aria-label="Link to section: What the default image contains">#</a></h3>
 <p>A sandbox created without a <code>snapshot</code> starts from <code>python:3.12-slim</code>. It has Python 3.12 and pip,
 plus the basic shell tools. It does not have git, curl, Node or build tools (no compiler, no
@@ -1099,7 +1140,7 @@ Python, or <code>sandfort sandbox create -s python:3.12</code> on the command li
 full Debian-based image and includes git, curl and a C compiler toolchain. For Node use
 <code>node:22-bookworm</code>.</p>
 <p>Every git example in this guide assumes a sandbox like this one:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 17" data-copy>Copy</button></div><pre class="code"><code>sbx = client.create_sandbox(name=&quot;with-git&quot;, snapshot=&quot;python:3.12&quot;, wait=True)
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 18" data-copy>Copy</button></div><pre class="code"><code>sbx = client.create_sandbox(name=&quot;with-git&quot;, snapshot=&quot;python:3.12&quot;, wait=True)
 try:
     sbx.git.clone(&quot;https://github.com/octocat/Hello-World.git&quot;, &quot;/work/hello&quot;)
     print(sbx.git.status(&quot;/work/hello&quot;).branch)           # master
@@ -1220,7 +1261,7 @@ sessions, fs, git, PTY create and code contexts answer 409 <code>CONFLICT</code>
 sandbox is stopping or stopped and its stored cause is missing; the key is absent for a deleted
 sandbox. A concurrent-update 409 (<code>concurrent_update</code>) also carries <code>details.expected_version</code>,
 the version the caller&#x27;s write expected.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 18" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import SANDBOX_STOP_CAUSE_AUTO_STOP, SANDBOX_STOP_CAUSE_CONTAINER_EXITED
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 19" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import SANDBOX_STOP_CAUSE_AUTO_STOP, SANDBOX_STOP_CAUSE_CONTAINER_EXITED
 
 sbx.refresh()
 if sbx.state == &quot;stopped&quot; and sbx.stop_cause in (
@@ -1295,7 +1336,7 @@ key and you get the same sandbox, whatever happened to the first request. When t
 before the request left the client (<code>RequestTimedOut.request_sent</code> is <code>False</code>), the server never saw
 the request and nothing is deleted. To bound the whole call with your own deadline instead, wrap it
 in <code>asyncio.wait_for(...)</code> (the cleanup works with it):</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 19" data-copy>Copy</button></div><pre class="code"><code>import asyncio, os
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 20" data-copy>Copy</button></div><pre class="code"><code>import asyncio, os
 from sandfort_sdk import AsyncClient
 
 async def main() -&gt; None:
@@ -1364,7 +1405,7 @@ runs out of time or ends in <code>error</code>.</li>
 deletes its kernel. A sandbox or context that is already gone is ignored; another delete error
 is raised, unless an exception is already propagating out of the block (then it is logged, so it
 does not mask the original error).</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 20" data-copy>Copy</button></div><pre class="code"><code>with client.create_sandbox(name=&quot;job-42&quot;, idempotency_key=&quot;job-42-create&quot;) as sbx:
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 21" data-copy>Copy</button></div><pre class="code"><code>with client.create_sandbox(name=&quot;job-42&quot;, idempotency_key=&quot;job-42-create&quot;) as sbx:
     print(sbx.code_run(&quot;python&quot;, &quot;print(21 * 2)&quot;).stdout.strip())     # 42
 # the sandbox is deleted here</code></pre></div>
 <p><code>create_sandbox(..., idempotency_key=&quot;job-42-create&quot;)</code> sends the key as <code>Idempotency-Key</code>, which
@@ -1378,7 +1419,7 @@ sandbox&#x27;s current representation, not the stored body, and carries the <cod
 not as <code>started</code>; if its row no longer exists, the stored body is replayed unchanged. After 24
 hours the key is forgotten, and the same key sends a create that makes a new sandbox. Keys belong
 to the API key that sent them. Only a create that succeeded stores a response.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 21" data-copy>Copy</button></div><pre class="code"><code>client = Client(base_url=&quot;https://api.sandfort.dev&quot;,
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 22" data-copy>Copy</button></div><pre class="code"><code>client = Client(base_url=&quot;https://api.sandfort.dev&quot;,
                 api_key=os.environ[&quot;SANDFORT_API_KEY&quot;], max_retries=3)
 sbx = client.create_sandbox(name=&quot;job-42&quot;, idempotency_key=&quot;job-42-create&quot;)</code></pre></div>
 <p>Environment variables you pass at create are given to the sandbox, but API responses
@@ -1391,7 +1432,7 @@ sbx = client.create_sandbox(name=&quot;job-42&quot;, idempotency_key=&quot;job-4
 <code>POST /v1/sandboxes/{id}/toolbox/process/execute</code>, takes it too, so a client that lost the
 answer can send the same exec again without running the command a second time. The SDK takes
 <code>idempotency_key=</code> on exec and the CLI has <code>exec --idempotency-key</code>; in a REST call set the header:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 22" data-copy>Copy</button></div><pre class="code"><code>curl -s -X POST &quot;$SANDFORT_BASE_URL/v1/sandboxes/$SBX/toolbox/process/execute&quot; \
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 23" data-copy>Copy</button></div><pre class="code"><code>curl -s -X POST &quot;$SANDFORT_BASE_URL/v1/sandboxes/$SBX/toolbox/process/execute&quot; \
   -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; -H &quot;Content-Type: application/json&quot; \
   -H &quot;Idempotency-Key: build-42-step-3&quot; \
   -d &#x27;{&quot;argv&quot;: [&quot;make&quot;, &quot;build&quot;], &quot;timeout_s&quot;: 300}&#x27;</code></pre></div>
@@ -1431,7 +1472,7 @@ use one fixed key such as <code>&quot;grade&quot;</code>. In a sandbox that you 
 key replays the first submission&#x27;s grade for every later one. A command that exits non-zero is
 still an answer, so a failed grade is kept and replayed with its exit code like a passing one. The
 repeat does not run the tests again.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 23" data-copy>Copy</button></div><pre class="code"><code>result = sbx.process_exec(
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 24" data-copy>Copy</button></div><pre class="code"><code>result = sbx.process_exec(
     argv=[&quot;python&quot;, &quot;/work/run_tests.py&quot;],
     timeout_s=60,
     idempotency_key=f&quot;grade-{submission_id}&quot;,
@@ -1536,7 +1577,7 @@ container the reset replaced. When a sandbox dies before or at the deadline, the
 command returns within about 0.2-1.5 s of <code>timeout_s</code>, and the kill takes longer on <code>gvisor</code>. The
 classic bash fork bomb <code>:(){ :|:&amp; };:</code> usually returns exit 0 within about 1 s on <code>gvisor</code> and
 <code>microvm</code>, and the NEXT exec reports <code>sandbox_stopped</code> (after up to about 5 s on <code>microvm</code>).</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 24" data-copy>Copy</button></div><pre class="code"><code>res = sbx.process_exec(argv=[&quot;python&quot;, &quot;-c&quot;, &quot;...&quot;])
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 25" data-copy>Copy</button></div><pre class="code"><code>res = sbx.process_exec(argv=[&quot;python&quot;, &quot;-c&quot;, &quot;...&quot;])
 if res.stop_reason == &quot;sandbox_stopped&quot;:     # not sandbox_deleted / sandbox_reset (see above)
     sbx.start(wait=True, wait_timeout_s=60)   # state is already stopped; files are kept
     print(sbx.process_exec(argv=[&quot;echo&quot;, &quot;alive&quot;]).exit_code)   # 0
@@ -1557,7 +1598,7 @@ which creates parent folders as well; otherwise the error says <code>no such dir
 is read, with a message such as <code>upload limit is 256 MiB (268435456 bytes); this upload is N bytes</code>
 and <code>details</code> holding <code>limit_bytes</code> and <code>size_bytes</code>. The Python SDK raises <code>PayloadTooLarge</code> before
 it sends anything. Split the file, or fetch it from inside the sandbox.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 25" data-copy>Copy</button></div><pre class="code"><code>sbx.fs.mkdir(&quot;/tmp/data/in&quot;)
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 26" data-copy>Copy</button></div><pre class="code"><code>sbx.fs.mkdir(&quot;/tmp/data/in&quot;)
 sbx.fs.upload_file(&quot;/tmp/data/in/a.txt&quot;, b&quot;a\n&quot;)</code></pre></div>
 <p>To reattach to an existing sandbox from another process, fetch it with <code>client.get(ref)</code> rather than
 keeping the object around. <code>ref</code> is an id (<code>sbx_...</code>) or the name of a live sandbox:
@@ -1590,11 +1631,11 @@ see &quot;Per-key sandbox cap&quot;). Read the
 limits and usage with <code>client.quota.get()</code> in the SDK, with <code>sandfort quota</code> in the CLI, or with a
 GET on the <code>quota</code> path under <code>/v1/org</code>. The key needs the <code>org:read</code> scope, also when it is
 limited to labelled sandboxes. The reply has <code>limits</code>, <code>reserved</code> and <code>scope</code>:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 26" data-copy>Copy</button></div><pre class="code"><code>quota = client.quota.get()
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 27" data-copy>Copy</button></div><pre class="code"><code>quota = client.quota.get()
 print(quota.limits.max_sandboxes, quota.reserved.sandboxes)
 if quota.scope:                       # only for a key with sandbox_labels
     print(quota.scope.sandboxes, quota.scope.max_sandboxes, quota.scope.remaining)</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 27" data-copy>Copy</button></div><pre class="code"><code>sandfort quota            # add --json for {&quot;limits&quot;, &quot;reserved&quot;, &quot;scope&quot;}
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 28" data-copy>Copy</button></div><pre class="code"><code>sandfort quota            # add --json for {&quot;limits&quot;, &quot;reserved&quot;, &quot;scope&quot;}
 curl -s -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; https://api.sandfort.dev/v1/org/quota</code></pre></div>
 <p>An org-wide key gets the organization&#x27;s numbers, and <code>scope</code> is <code>null</code>. A key limited to labelled
 sandboxes gets the same <code>limits</code>. Its <code>reserved</code> counts only the sandboxes in its scope, and
@@ -1694,7 +1735,7 @@ date alone is midnight UTC. The period defaults to the current UTC month so far.
 <code>KEY</code>. <code>--limit</code> sets the groups per page (1 to 100, server default 50), and <code>--all</code> pages through
 every group. A cursor belongs to its period, so <code>--cursor</code> needs an explicit <code>--from</code> and <code>--to</code>.
 When a page has more groups, the command for the next page is printed on stderr.</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 28" data-copy>Copy</button></div><pre class="code"><code>sandfort usage
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 29" data-copy>Copy</button></div><pre class="code"><code>sandfort usage
 sandfort usage --from 2026-11-01 --to 2026-11-08 --group-by sandbox
 sandfort usage --group-by label:team --all</code></pre></div>
 <p>The Python SDK has <code>client.usage.get</code> and <code>client.usage.iter</code>. The async client has the same two
@@ -1706,13 +1747,33 @@ walks every page and yields the groups. Each group has <code>group_key</code>, <
 key and <code>group_value</code> is the label value, or <code>None</code> for sandboxes without that label. When no
 sandbox in the window carries the label key at all (a typo is the usual cause), the one <code>None</code>
 group holds the whole total and the answer&#x27;s <code>meta.note</code> says <code>label key &#x27;nope&#x27; was not found on any sandbox in this window; check the key</code>. The SDK shows it as <code>UsageReport.note</code>, and <code>sandfort usage --group-by label:&lt;key&gt;</code> prints it on stderr (with <code>--json</code> it is a <code>note</code> key, present only then).</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 29" data-copy>Copy</button></div><pre class="code"><code>from datetime import datetime, timezone
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 30" data-copy>Copy</button></div><pre class="code"><code>from datetime import datetime, timezone
 
 start = datetime(2026, 11, 1, tzinfo=timezone.utc)
 end = datetime(2026, 11, 8, tzinfo=timezone.utc)
 for group in client.usage.iter(from_=start, to=end, group_by=&quot;label:team&quot;):
     print(group.group_value, [(t.dimension, t.unit, t.total) for t in group.totals])
 # async: async for group in client.usage.iter(from_=start, to=end, group_by=&quot;label:team&quot;): ...</code></pre></div>
+<h3 id="what-stop-start-resize-reset-and-delete-keep">What stop, start, resize, reset and delete keep<a class="anchor" href="#what-stop-start-resize-reset-and-delete-keep" aria-label="Link to section: What stop, start, resize, reset and delete keep">#</a></h3>
+<p>What each action keeps or removes, checked against the code on 2026-11-26. &quot;Image scratch
+volumes&quot; are the volumes behind <code>image_mounts</code> (see &quot;Volumes&quot; below).</p>
+<div class="tbl-wrap" role="region" aria-label="Table: What stop, start, resize, reset and delete keep" tabindex="0"><table><thead><tr><th scope="col">Action</th><th scope="col">Root filesystem</th><th scope="col">Processes</th><th scope="col">Image scratch volumes</th><th scope="col">Named volumes</th><th scope="col">Id, name, labels, timers</th></tr></thead><tbody><tr><td><code>stop</code></td><td>Kept, all of it: <code>/root</code>, <code>/etc</code>, cron entries, SSH keys, shell profiles</td><td>End</td><td>Kept</td><td>Kept</td><td>Kept</td></tr><tr><td><code>start</code> (of a stopped sandbox)</td><td>Same container, same files</td><td>Start fresh</td><td>Kept</td><td>Kept</td><td>Kept</td></tr><tr><td><code>resize</code> (stopped only)</td><td>Kept (copied into the new container)</td><td>End</td><td>Kept</td><td>Kept</td><td>Kept</td></tr><tr><td><code>reset</code></td><td>Replaced by the image&#x27;s, everything written is gone</td><td>End</td><td>Emptied: new empty volumes</td><td>Kept</td><td>Kept, with resources, env, network policy, tier and volume mounts</td></tr><tr><td><code>delete</code></td><td>Removed</td><td>End</td><td>Removed</td><td>Kept, they are separate objects</td><td>Gone</td></tr></tbody></table></div>
+<ul>
+<li><code>stop</code> is a plain stop of the same container: nothing is committed or removed
+(<code>src/sandfort/drivers/docker/containers.py</code>, <code>stop_container</code>). A stopped sandbox gives back its
+whole quota reservation (CPU, memory, disk and its count against the sandbox limit), while its
+files keep using disk on the host until it is deleted. <code>start</code> reuses the container. Sandfort
+rewrites <code>/etc/resolv.conf</code> on start where it manages DNS, removes stale pid files, and on
+<code>gvisor</code> puts an empty <code>/tmp/.sandfort-keep</code>. With a disk quota, a stop empties the reserve file
+<code>/.sandfort-reserve</code> and a start fills it again. Your own files are not touched.</li>
+<li>On the hosted beta, files survive a stop on <code>gvisor</code> because the runtime is registered with
+<code>--overlay2=none</code> (<code>deploy/node-setup.sh</code>). On a self-hosted node, register <code>runsc</code> the same way.
+The server does not check it.</li>
+<li><code>reset</code> removes the container together with the image scratch volumes and creates new, empty
+ones. Anything a <code>volumes</code> entry mounts is a named volume and is not touched.</li>
+<li><code>delete</code> removes the container, the image scratch volumes and the saved image a resize leaves
+behind. Volumes you created through the volumes API stay until you delete them.</li>
+</ul>
 <h3 id="resizing-a-stopped-sandbox">Resizing a stopped sandbox<a class="anchor" href="#resizing-a-stopped-sandbox" aria-label="Link to section: Resizing a stopped sandbox">#</a></h3>
 <p><code>POST /v1/sandboxes/{id}/resize</code> changes the CPU and memory of a stopped sandbox. On a sandbox that
 is started it returns 409 <code>INVALID_STATE</code>, so stop it first. There is no SDK or CLI helper for it
@@ -1731,7 +1792,8 @@ writable layer.</p>
 replaces the sandbox&#x27;s container with a fresh one made from the same image and spec. It is the
 clean slate: everything written to the old container is gone. The sandbox keeps its id, name,
 labels, resources, env, network policy, isolation tier, volume mounts and auto timers. Named
-volumes are separate objects and are kept, so a mounted volume is not cleaned.</p>
+volumes (from <code>POST /v1/volumes</code>) are separate objects and are kept, so a mounted volume is not
+cleaned. The scratch volumes an image declares (<code>image_mounts</code>) are emptied.</p>
 <ul>
 <li>Allowed from <code>started</code> (the sandbox ends <code>started</code>) and from <code>stopped</code> (it ends <code>stopped</code>).
 Any other state answers 409.</li>
@@ -1748,7 +1810,7 @@ you delete the sandbox and create a new one.</li>
 sandbox must be small and offline. The steps, each checked against the server and SDK code:</p>
 <ol>
 <li><p><strong>Create one sandbox per student session</strong> (not one shared by students):</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 30" data-copy>Copy</button></div><pre class="code"><code>sbx = client.create_sandbox(
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 31" data-copy>Copy</button></div><pre class="code"><code>sbx = client.create_sandbox(
     name=f&quot;student-{session_id}&quot;,
     snapshot=&quot;python:3.12-slim&quot;,        # node:22-bookworm for javascript / typescript
     resources=Resources(cpu_millicores=500, memory_mib=256, disk_gib=1),
@@ -1793,7 +1855,7 @@ class dataset read-only&quot; below; do it before step 2 so the student keys can
 limited to that student&#x27;s label and capped, and give them an <code>expires_at</code> (see &quot;Managing API
 keys&quot; and &quot;Per-key sandbox cap&quot;). The key holds <code>volumes:read</code> so that it can list and mount
 the class dataset; add <code>shared_volume_labels</code> for it (see the worked example):</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 31" data-copy>Copy</button></div><pre class="code"><code>key = client.create_api_key(
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 32" data-copy>Copy</button></div><pre class="code"><code>key = client.create_api_key(
     f&quot;student-{n}&quot;,
     [&quot;sandboxes:read&quot;, &quot;sandboxes:write&quot;, &quot;toolbox:use&quot;, &quot;volumes:read&quot;],
     sandbox_labels={&quot;student&quot;: str(n)}, max_sandboxes=3,
@@ -1831,11 +1893,11 @@ rules as <code>sandbox_labels</code>.</p>
 <ol>
 <li><p><strong>The instructor creates the dataset volume with course labels.</strong> Use the instructor (admin,
 org-wide) key:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 32" data-copy>Copy</button></div><pre class="code"><code>data = client.volumes.create(&quot;cs101-data&quot;, labels={&quot;course&quot;: &quot;cs101&quot;})</code></pre></div></li>
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 33" data-copy>Copy</button></div><pre class="code"><code>data = client.volumes.create(&quot;cs101-data&quot;, labels={&quot;course&quot;: &quot;cs101&quot;})</code></pre></div></li>
 <li><p><strong>Seed it once from a seed sandbox, then delete that sandbox.</strong> Mount the volume read-write,
 write the files into it, and delete the sandbox. The volume stays. The label <code>{&quot;role&quot;: &quot;seed&quot;}</code>
 keeps the sandbox away from every student key:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 33" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import VolumeMount
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 34" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import VolumeMount
 
 with client.create_sandbox(
     name=&quot;cs101-seed&quot;, labels={&quot;role&quot;: &quot;seed&quot;},
@@ -1846,11 +1908,11 @@ with client.create_sandbox(
 sandbox before you hand out the keys and before any later cleanup.</p></li>
 <li><p><strong>Create the student keys with <code>shared_volume_labels</code> and <code>volumes:read</code></strong> (the key from step 2
 of the walkthrough above). With the CLI:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 34" data-copy>Copy</button></div><pre class="code"><code>sandfort key create student-3 -s sandboxes:read -s sandboxes:write -s toolbox:use \
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 35" data-copy>Copy</button></div><pre class="code"><code>sandfort key create student-3 -s sandboxes:read -s sandboxes:write -s toolbox:use \
   -s volumes:read -l student=3 --shared-volume-label course=cs101 --max-sandboxes 3</code></pre></div></li>
 <li><p><strong>A student mounts it read-only.</strong> The student key lists the volume (<code>client.volumes.list()</code>)
 and mounts it with <code>read_only=True</code>; a mount without it answers 403:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 35" data-copy>Copy</button></div><pre class="code"><code>sbx = student_client.create_sandbox(
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 36" data-copy>Copy</button></div><pre class="code"><code>sbx = student_client.create_sandbox(
     name=&quot;cs101-lab&quot;,
     mounts=[VolumeMount(data.id, &quot;/data&quot;, read_only=True)],   # CLI: --mount VOLUME:/data:ro
     wait=True,
@@ -1893,9 +1955,10 @@ sandbox. DNS differs by tier:
 <ul>
 <li>On <code>gvisor</code> and <code>microvm</code>, direct DNS lookups fail immediately.</li>
 <li>On the <code>container</code> tier, the sandbox&#x27;s only DNS server is the egress proxy&#x27;s sink
-(since 2026-11-25 on the beta), which answers every query REFUSED and forwards nothing,
-so direct lookups fail here too and only the proxy resolves names. A sandbox created
-before 2026-11-25 keeps the old resolvers until it is reset or recreated.</li>
+(on the beta since the API restart at 2026-11-25T08:12:30Z), which answers every query
+REFUSED and forwards nothing, so direct lookups fail here too and only the proxy resolves
+names. A sandbox created before that instant, including one created earlier on
+2026-11-25, keeps the old resolvers until it is reset or recreated.</li>
 </ul></li>
 <li><strong>Blocked:</strong> <code>block_network=True</code> in the SDK (<code>network: {&quot;block_all&quot;: true}</code> in REST). There is no
 network and no DNS on any tier: the sandbox shows no DNS configuration from the host, and name
@@ -1906,11 +1969,13 @@ lookups fail at once on every tier.</li>
 <ul>
 <li><strong><code>container</code>:</strong> Linux namespaces, cgroups, a seccomp profile and a reduced capability set. The
 profile is Docker&#x27;s default unless <code>SANDFORT_SECCOMP_PROFILE_PATH</code> names a file (empty by
-default). The Kubernetes kit sets it in <code>deploy/k8s/configmap.yaml</code>, to the profile generated
-from <code>deploy/seccomp.json</code>. <code>deploy/compose.prod.yml</code> does not set it, so a Compose deployment
-uses Docker&#x27;s default profile unless you add the variable to <code>deploy/sandfort.env</code> and
-bind-mount the profile file into the container yourself (an unreadable path fails server
-start; see the <a href="https://docs.sandfort.dev/security">security page</a>). The Docker daemon passes
+default). Two kits set it: the Kubernetes kit in <code>deploy/k8s/configmap.yaml</code>, to the profile
+generated from <code>deploy/seccomp.json</code>, and the self-host Compose file
+<code>deploy/selfhost/compose.yml</code>, which mounts <code>deploy/seccomp.json</code> read-only.
+<code>deploy/compose.prod.yml</code> does not set it, so that Compose deployment uses Docker&#x27;s default
+profile unless you add the variable to <code>deploy/sandfort.env</code> and bind-mount the profile file into
+the container yourself (an unreadable path fails server start; see the
+<a href="https://docs.sandfort.dev/security">security page</a>). The Docker daemon passes
 the profile under <code>runsc</code> (the <code>gvisor</code> tier), but <code>runsc</code> does not enforce it, so &quot;Docker&#x27;s
 default profile&quot; is the container tier&#x27;s wording only. All capabilities are
 dropped except <code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>, <code>KILL</code>, <code>SETGID</code>, <code>SETUID</code> and
@@ -1940,10 +2005,10 @@ user namespace because Kata cannot run remapped. These are host-side hardening s
 nothing in the tier descriptions above: <code>container</code> still shares the host kernel, <code>gvisor</code> is
 still not a hardware boundary, and we do not claim microVM-grade isolation for the <code>container</code> or
 <code>gvisor</code> tiers.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 36" data-copy>Copy</button></div><pre class="code"><code>sbx = client.create_sandbox(name=&quot;isolated&quot;, isolation=&quot;gvisor&quot;, wait=True)
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 37" data-copy>Copy</button></div><pre class="code"><code>sbx = client.create_sandbox(name=&quot;isolated&quot;, isolation=&quot;gvisor&quot;, wait=True)
 print(sbx.isolation)                      # gvisor
 print(client.isolation())                 # the default tier and the available tiers</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 37" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox create isolated --isolation gvisor
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 38" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox create isolated --isolation gvisor
 sandfort sandbox isolation</code></pre></div>
 <p>In REST the field is <code>isolation</code> on create and on every sandbox response.</p>
 <p>How the <code>gvisor</code> tier behaves differently from <code>container</code>:</p>
@@ -1985,7 +2050,10 @@ marker file; do not delete it. Sandboxes created before 2026-11-04 keep their ol
 <li>DNS: <code>gvisor</code> sandboxes resolve names through public resolvers (<code>1.1.1.1</code> and <code>8.8.8.8</code> by
 default on the hosted beta; a self-hosted operator can change them), because gVisor cannot reach
 Docker&#x27;s internal resolver.</li>
-<li>User namespaces (<code>unshare -U</code>) work inside <code>gvisor</code> and are refused on <code>container</code>.</li>
+<li>User namespaces, measured on the hosted beta host on 2026-11-26 with the create options of a
+sandbox (one run per tier, not a guarantee): on <code>container</code>, <code>unshare -U</code> is refused. On <code>gvisor</code>
+and <code>microvm</code>, <code>unshare -U</code> succeeds, but writing <code>/proc/self/uid_map</code> is refused with <code>EPERM</code>,
+so a process cannot map itself root in its new namespace.</li>
 <li>Kernel introspection such as the kernel symbol table (<code>kallsyms</code>) is absent. <code>nproc</code> and
 <code>MemTotal</code> reflect the sandbox&#x27;s limits.</li>
 <li>The Docker daemon passes the seccomp profile for every runtime, but per gVisor&#x27;s documentation
@@ -2037,7 +2105,7 @@ running and <code>sandbox_stopped</code> is false. A single huge allocation can 
 <li>A fork bomb can stop the whole <code>microvm</code>, as on <code>gvisor</code>. The exec then reports exit code 137 with
 <code>sandbox_stopped</code> true and the message &quot;the sandbox stopped while running this command ...&quot;. The
 sandbox is already <code>stopped</code> when the response arrives, with an <code>error_reason</code>, and starting it
-again works at once (start takes about 4 s on <code>microvm</code>). Evaluator data: of 29 python fork bombs
+again works at once (start takes about 4 s on <code>microvm</code>). On the beta, of 29 python fork bombs
 on <code>microvm</code>, 26 returned exit 137 with <code>sandbox_stopped</code> true within 6.1-12.7 s, and 3 returned
 124 <code>timed_out</code> with the sandbox already dead. A death before or at the deadline counts instead of
 the timeout, so that case is reported as exit 137 with <code>sandbox_stopped</code> true. Caveat: the classic
@@ -2076,7 +2144,7 @@ submissions.</p>
 tests either, because exec runs as root unless you say otherwise. Put the tests in a directory
 that only root can enter (mode <code>0700</code>, files <code>0600</code>) and run the candidate as an unprivileged
 user. <code>setpriv</code> is present on <code>python:3.12-slim</code>; <code>65534</code> is the <code>nobody</code> user and group:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 38" data-copy>Copy</button></div><pre class="code"><code>sbx.fs.mkdir(&quot;/grader&quot;, mode=&quot;700&quot;)                  # directory 0700
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 39" data-copy>Copy</button></div><pre class="code"><code>sbx.fs.mkdir(&quot;/grader&quot;, mode=&quot;700&quot;)                  # directory 0700
 sbx.fs.upload_file(&quot;/grader/test_hidden.py&quot;, hidden_tests, mode=&quot;600&quot;)   # file 0600
 sbx.fs.mkdir(&quot;/work&quot;, mode=&quot;755&quot;)                    # the candidate can read this one
 sbx.fs.upload_file(&quot;/work/submission.py&quot;, candidate_code, mode=&quot;644&quot;)
@@ -2124,15 +2192,15 @@ client retry is needed.</li>
 <p>Commit a running sandbox into a snapshot with <code>client.snapshots.create_from_sandbox</code>, which takes the
 sandbox id and a name. With <code>wait=True</code> it returns once the snapshot is ready; without it the call
 returns a <code>pending</code> snapshot. Start a new sandbox from the snapshot id (it has the <code>snap_</code> prefix):</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 39" data-copy>Copy</button></div><pre class="code"><code>snap = client.snapshots.create_from_sandbox(sbx.id, &quot;after-setup&quot;, wait=True)
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 40" data-copy>Copy</button></div><pre class="code"><code>snap = client.snapshots.create_from_sandbox(sbx.id, &quot;after-setup&quot;, wait=True)
 print(snap.id, snap.state)                                # snap_... ready
 again = client.create_sandbox(name=&quot;second&quot;, snapshot=snap.id, wait=True)</code></pre></div>
 <p>Do not delete the source sandbox before the snapshot finishes.</p>
 <p>A snapshot can carry labels, like a sandbox or a volume. Set them when you create or register it, and
 filter the list by them:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 40" data-copy>Copy</button></div><pre class="code"><code>snap = client.snapshots.create_from_sandbox(sbx.id, &quot;after-setup&quot;, labels={&quot;course&quot;: &quot;cs101&quot;}, wait=True)
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 41" data-copy>Copy</button></div><pre class="code"><code>snap = client.snapshots.create_from_sandbox(sbx.id, &quot;after-setup&quot;, labels={&quot;course&quot;: &quot;cs101&quot;}, wait=True)
 mine = list(client.snapshots.iter(labels={&quot;course&quot;: &quot;cs101&quot;}))   # every pair must match</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 41" data-copy>Copy</button></div><pre class="code"><code>sandfort snapshot create cli-first after-setup -l course=cs101 --wait
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 42" data-copy>Copy</button></div><pre class="code"><code>sandfort snapshot create cli-first after-setup -l course=cs101 --wait
 sandfort snapshot list -l course=cs101                     # -l repeats; every pair must match
 curl -s &quot;$SANDFORT_BASE_URL/v1/snapshots?label=course=cs101&quot; -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot;</code></pre></div>
 <p>In the REST API the create and register bodies take a <code>labels</code> object, and <code>GET /v1/snapshots</code> takes
@@ -2166,8 +2234,8 @@ the snapshot content it starts from does not count against <code>disk_gib</code>
 <h4 id="exporting-a-snapshot">Exporting a snapshot<a class="anchor" href="#exporting-a-snapshot" aria-label="Link to section: Exporting a snapshot">#</a></h4>
 <p>A <code>ready</code> snapshot can be downloaded as an image tar, the archive <code>docker save</code> produces. It
 needs the <code>snapshots:read</code> scope; the call is audited as <code>snapshot.exported</code>.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 42" data-copy>Copy</button></div><pre class="code"><code>size = client.export_snapshot(snap.id, &quot;after-setup.tar&quot;)   # bytes written; streamed, not buffered</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 43" data-copy>Copy</button></div><pre class="code"><code>sandfort snapshot export snap_... -o after-setup.tar         # REST: GET /v1/snapshots/{id}/export
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 43" data-copy>Copy</button></div><pre class="code"><code>size = client.export_snapshot(snap.id, &quot;after-setup.tar&quot;)   # bytes written; streamed, not buffered</code></pre></div>
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 44" data-copy>Copy</button></div><pre class="code"><code>sandfort snapshot export snap_... -o after-setup.tar         # REST: GET /v1/snapshots/{id}/export
 docker load -i after-setup.tar                                # on any Docker host</code></pre></div>
 <ul>
 <li><p>A snapshot that is not <code>ready</code> answers 409 <code>INVALID_STATE</code> (<code>details.state</code> names the state).
@@ -2184,7 +2252,7 @@ that exists only in the target&#x27;s local Docker store cannot be registered. T
 repository is also reserved, and a register or create that names it answers 422. So retag the
 loaded image, push it to a registry that the target server can pull from, and register that
 reference:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 44" data-copy>Copy</button></div><pre class="code"><code>docker tag &lt;image id&gt; registry.example.org/team/after-setup:v1
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 45" data-copy>Copy</button></div><pre class="code"><code>docker tag &lt;image id&gt; registry.example.org/team/after-setup:v1
 docker push registry.example.org/team/after-setup:v1
 sandfort snapshot register registry.example.org/team/after-setup:v1 --name after-setup</code></pre></div>
 <p>(<code>client.snapshots.register(image, name=...)</code> in the SDK.) The target server needs pull access
@@ -2202,13 +2270,13 @@ and mounting read-only need <code>volumes:read</code>; creating, deleting and mo
 <p><strong>Create one, with labels.</strong> The name is 1 to 63 characters (letters, digits, <code>_</code>, <code>.</code> and <code>-</code>,
 starting with a letter or digit). A volume takes at most 32 labels, under the label rules in
 <a href="#naming-rules">Naming rules</a>:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 45" data-copy>Copy</button></div><pre class="code"><code>curl -s &quot;$SANDFORT_BASE_URL/v1/volumes&quot; \
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 46" data-copy>Copy</button></div><pre class="code"><code>curl -s &quot;$SANDFORT_BASE_URL/v1/volumes&quot; \
   -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; -H &quot;Content-Type: application/json&quot; \
   -d &#x27;{&quot;name&quot;:&quot;dataset&quot;,&quot;labels&quot;:{&quot;team&quot;:&quot;data&quot;}}&#x27;
 sandfort volume create dataset --label team=data      # --label repeats
 sandfort volume get dataset                           # get and rm take an id or a name
 sandfort volume rm dataset                            # refused while a sandbox mounts it</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 46" data-copy>Copy</button></div><pre class="code"><code>vol = client.volumes.create(&quot;dataset&quot;, labels={&quot;team&quot;: &quot;data&quot;})   # vol.id, vol.labels</code></pre></div>
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 47" data-copy>Copy</button></div><pre class="code"><code>vol = client.volumes.create(&quot;dataset&quot;, labels={&quot;team&quot;: &quot;data&quot;})   # vol.id, vol.labels</code></pre></div>
 <p>A label-scoped key sees only the volumes whose labels contain all of its scope labels, and a
 volume it creates gets the scope labels merged into its own. It does not see the rest of the
 organization&#x27;s volumes, except those that a key created with <code>shared_volume_labels</code> is meant to
@@ -2220,8 +2288,8 @@ read-only&quot; under &quot;Course and grader walkthrough&quot;.</p>
 <p><strong>Mount it read-write or read-only.</strong> A sandbox takes up to 16 mounts at create time. Each is a
 <code>volume_id</code>, a <code>mount_path</code> and an optional <code>read_only</code> flag (default <code>false</code>). The sandbox view
 lists them under <code>volumes</code>, with <code>read_only</code> on each:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 47" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox create analysis --wait --mount &lt;volume-id&gt;:/data:ro --mount &lt;out-id&gt;:/out</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 48" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import VolumeMount
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 48" data-copy>Copy</button></div><pre class="code"><code>sandfort sandbox create analysis --wait --mount &lt;volume-id&gt;:/data:ro --mount &lt;out-id&gt;:/out</code></pre></div>
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 49" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import VolumeMount
 
 sbx = client.create_sandbox(
     name=&quot;analysis&quot;,
@@ -2261,18 +2329,19 @@ shown.</p>
 <p><strong><code>image_mounts</code>.</strong> Some images declare volume paths of their own. The sandbox view lists, in
 <code>image_mounts</code> (sorted; empty when there are none), the declared paths that none of your
 <code>volumes</code> covers. Each is backed by a per-sandbox scratch volume, mounted read-write, that lives
-outside <code>disk_gib</code> and is deleted with the sandbox. The soft size limit does not cover these
-volumes. Mount a volume of your own at such a path if the data must outlive the sandbox.</p>
+outside <code>disk_gib</code>, is deleted with the sandbox and is emptied by a reset. The soft size limit
+does not cover these volumes. Mount a volume of your own at such a path if the data must outlive
+the sandbox.</p>
 <h4 id="exporting-and-restoring-a-volume">Exporting and restoring a volume<a class="anchor" href="#exporting-and-restoring-a-volume" aria-label="Link to section: Exporting and restoring a volume">#</a></h4>
 <p>You can download the files of a volume as a gzipped tar and put them back later, into the same volume or into another
 one. Export needs <code>volumes:read</code>, restore needs <code>volumes:write</code>; both are audited (<code>volume.export</code>, <code>volume.restore</code>).</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 49" data-copy>Copy</button></div><pre class="code"><code>sandfort volume export dataset -o dataset.tar.gz       # REST: GET  /v1/volumes/{id}/export
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 50" data-copy>Copy</button></div><pre class="code"><code>sandfort volume export dataset -o dataset.tar.gz       # REST: GET  /v1/volumes/{id}/export
 sandfort volume restore dataset dataset.tar.gz         # REST: POST /v1/volumes/{id}/restore, raw gzip body</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 50" data-copy>Copy</button></div><pre class="code"><code>written = client.volumes.export(vol.id, &quot;dataset.tar.gz&quot;)      # bytes written; streamed, not buffered
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 51" data-copy>Copy</button></div><pre class="code"><code>written = client.volumes.export(vol.id, &quot;dataset.tar.gz&quot;)      # bytes written; streamed, not buffered
 result = client.volumes.restore(vol.id, &quot;dataset.tar.gz&quot;)      # a path, bytes or a binary file object
 print(result.restored_bytes)                                   # decompressed tar bytes, headers included
 # async: await client.volumes.export(...), await client.volumes.restore(...)</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 51" data-copy>Copy</button></div><pre class="code"><code>curl -fsS -o dataset.tar.gz -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; &quot;$SANDFORT_BASE_URL/v1/volumes/$VOLUME_ID/export&quot;
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 52" data-copy>Copy</button></div><pre class="code"><code>curl -fsS -o dataset.tar.gz -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; &quot;$SANDFORT_BASE_URL/v1/volumes/$VOLUME_ID/export&quot;
 curl -fsS -X POST -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; -H &quot;Content-Type: application/gzip&quot; \
   --data-binary @dataset.tar.gz &quot;$SANDFORT_BASE_URL/v1/volumes/$VOLUME_ID/restore&quot;</code></pre></div>
 <p><strong>A restore replaces everything, and it is not atomic.</strong> The volume must already exist. Restore empties it first (it
@@ -2379,7 +2448,7 @@ command asynchronously and returns a handle with <code>info()</code>, <code>logs
 exit if it is still running. This replaces <code>create_session</code> +
 <code>execute_session_command(run_async=True)</code> + <code>kill_command</code>; those calls still work. Without
 <code>timeout_s</code> the command gets the 60 s default budget, so pass a larger one for a dev server:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 52" data-copy>Copy</button></div><pre class="code"><code># A dev server for a preview URL; it is killed when the with block ends.
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 53" data-copy>Copy</button></div><pre class="code"><code># A dev server for a preview URL; it is killed when the with block ends.
 with sbx.process.start(&quot;python -m http.server 8000&quot;, cwd=&quot;/tmp&quot;, timeout_s=1800) as server:
     print(sbx.preview(8000).url)
     input(&quot;open the URL, then press Enter to stop the server&quot;)
@@ -2412,7 +2481,7 @@ command, so put what you need there or set it in each command. When commands of 
 run at the same time, the one that finishes last decides the directory.</p>
 <p>Clean up in this order: a sandbox started from a snapshot must be deleted before the snapshot itself.
 Deleting a snapshot that a sandbox still uses returns a 409 conflict.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 53" data-copy>Copy</button></div><pre class="code"><code>for box in (sbx, again):
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 54" data-copy>Copy</button></div><pre class="code"><code>for box in (sbx, again):
     box.delete()                    # a running sandbox can be deleted; no stop needed
 client.snapshots.delete(snap.id)    # last, after every sandbox started from it is gone
 client.close()</code></pre></div>
@@ -2428,7 +2497,7 @@ identical spec was built before); poll <code>client.snapshots.get(snap.id)</code
 <li><strong>Snapshot after setup:</strong> install into one sandbox, then
 <code>client.snapshots.create_from_sandbox(sbx.id, &quot;pandas&quot;, wait=True)</code> (see Snapshots above).</li>
 </ul>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 54" data-copy>Copy</button></div><pre class="code"><code>import time
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 55" data-copy>Copy</button></div><pre class="code"><code>import time
 from sandfort_sdk.image import Image
 
 spec = Image.debian_slim().pip_install(&quot;pandas&quot;, &quot;numpy&quot;, &quot;matplotlib&quot;).workdir(&quot;/work&quot;)
@@ -2468,7 +2537,7 @@ loaded data of the earlier steps, as in a notebook, use a code context instead.<
 <h4 id="code-contexts-state-that-survives-between-runs">Code contexts: state that survives between runs<a class="anchor" href="#code-contexts-state-that-survives-between-runs" aria-label="Link to section: Code contexts: state that survives between runs">#</a></h4>
 <p><code>sbx.code_contexts.create()</code> starts a Python kernel inside a started sandbox. <code>ctx.run(code)</code>
 executes a cell in it, and what earlier cells defined is still there:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 55" data-copy>Copy</button></div><pre class="code"><code>box.fs.upload_file(&quot;/work/sales.csv&quot;, open(&quot;sales.csv&quot;, &quot;rb&quot;).read())
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 56" data-copy>Copy</button></div><pre class="code"><code>box.fs.upload_file(&quot;/work/sales.csv&quot;, open(&quot;sales.csv&quot;, &quot;rb&quot;).read())
 ctx = box.code_contexts.create(cwd=&quot;/work&quot;)          # cwd is optional
 
 ctx.run(&quot;import pandas as pd\ndf = pd.read_csv(&#x27;sales.csv&#x27;)&quot;)           # loaded once
@@ -2605,7 +2674,7 @@ kernel host, so use a pool of sandboxes for parallel work. A run can wait longer
 executing. The run never started. The context and its state are kept, so send that cell again.</p></li>
 <li><p><strong>Plots.</strong> There are no inline images. Write the figure to a file with <code>plt.savefig(...)</code> and
 download it:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 56" data-copy>Copy</button></div><pre class="code"><code>ctx.run(&quot;import matplotlib\nmatplotlib.use(&#x27;Agg&#x27;)\nimport matplotlib.pyplot as plt\n&quot;
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 57" data-copy>Copy</button></div><pre class="code"><code>ctx.run(&quot;import matplotlib\nmatplotlib.use(&#x27;Agg&#x27;)\nimport matplotlib.pyplot as plt\n&quot;
         &quot;plt.plot([1, 2, 3])\nplt.savefig(&#x27;/work/plot.png&#x27;)&quot;)
 png = box.fs.read_bytes(&quot;/work/plot.png&quot;)           # the PNG as bytes</code></pre></div></li>
 <li><p><strong>Cells that print a lot.</strong> Output is buffered: the kernel collects the writes of each stream and
@@ -2623,7 +2692,7 @@ such children are alive, <code>error.message</code> ends with a hint line. The s
 <code>stderr</code>. The hint is &quot;hint: functions defined in cells are not importable by spawn/forkserver
 children; use multiprocessing.get_context(&quot;fork&quot;) or put the function in a module file&quot;. The hint
 explains the hang; it does not prevent it. Ask for the fork context explicitly:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 57" data-copy>Copy</button></div><pre class="code"><code>ctx.run(&quot;&quot;&quot;
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 58" data-copy>Copy</button></div><pre class="code"><code>ctx.run(&quot;&quot;&quot;
 import multiprocessing
 
 def square(x):
@@ -2642,7 +2711,7 @@ ends; a context that is gone already is ignored.</p></li>
 <p>A context can carry a name, unique among the live contexts of its sandbox. The name follows the
 character rules of sandbox names (letters, digits, <code>_</code>, <code>.</code>, <code>-</code>, starting with a letter or digit,
 at most 63 characters). <code>ensure</code> returns the live context of that name, or starts one:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 58" data-copy>Copy</button></div><pre class="code"><code>ctx = sbx.code_contexts.ensure(&quot;analysis&quot;, cwd=&quot;/work&quot;)   # async: await ...ensure(...)
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 59" data-copy>Copy</button></div><pre class="code"><code>ctx = sbx.code_contexts.ensure(&quot;analysis&quot;, cwd=&quot;/work&quot;)   # async: await ...ensure(...)
 ctx.run(&quot;import pandas as pd\ndf = pd.read_csv(&#x27;sales.csv&#x27;)&quot;)
 print(ctx.name)                                           # analysis</code></pre></div>
 <ul>
@@ -2657,7 +2726,7 @@ call.</p></li>
 <li><p>A call on a context whose kernel is gone raises <code>NoContainer</code> (the sandbox is stopped) or
 <code>NotFound</code> (the context or the sandbox was deleted). <code>CONTEXT_GONE_ERRORS</code>, exported from the
 package root, is that pair <code>(NoContainer, NotFound)</code>, so one <code>except</code> covers both:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 59" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import CONTEXT_GONE_ERRORS
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 60" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import CONTEXT_GONE_ERRORS
 
 ctx = sbx.code_contexts.ensure(&quot;analysis&quot;, cwd=&quot;/work&quot;)
 if ctx.created:                      # a new, empty kernel: run the setup
@@ -2698,7 +2767,7 @@ may both succeed. Not tested: this race with more than one server process.</p></
 <p><code>ctx.run_stream(code, timeout_s=60)</code> runs a cell like <code>run</code>, but yields the output as it is
 written: an <code>OutputChunk</code> (<code>stream</code> is <code>&quot;stdout&quot;</code> or <code>&quot;stderr&quot;</code>, <code>data</code> is the text) for each
 output event, then the same <code>CellResult</code> that <code>run</code> returns as the last item.</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 60" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import CellResult
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 61" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import CellResult
 
 for event in ctx.run_stream(&quot;for i in range(3): print(i)\n42&quot;):
     if isinstance(event, CellResult):
@@ -2749,7 +2818,7 @@ both shows it twice; print one of them.</li>
 </ul>
 <p>A blocking <code>code_run</code> or <code>process_exec</code> has a default timeout of 60 s; <code>timeout_s</code> goes up to
 3600. For long jobs, start the command in the background and stream its output:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 61" data-copy>Copy</button></div><pre class="code"><code>job = box.process.start(&quot;python analyze.py&quot;, cwd=&quot;/work&quot;, timeout_s=3600)
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 62" data-copy>Copy</button></div><pre class="code"><code>job = box.process.start(&quot;python analyze.py&quot;, cwd=&quot;/work&quot;, timeout_s=3600)
 with job.follow() as stream:
     for event in stream:
         print(event.line, end=&quot;&quot;)
@@ -2866,7 +2935,7 @@ when the command exits non-zero; look at <code>exit_code</code>, <code>timed_out
 <li><p><strong>Followed logs (SSE).</strong> <code>GET .../process/sessions/{session}/commands/{command}/logs/follow</code>
 answers <code>text/event-stream</code>. Each frame is an <code>event:</code> line, an <code>id:</code> line, a <code>data:</code> line with
 compact JSON, and a blank line:</p>
-<div class="slab"><div class="rail"><button class="tool" type="button" aria-label="Copy code: text block 62" data-copy>Copy</button></div><pre class="code"><code>event: stdout
+<div class="slab"><div class="rail"><button class="tool" type="button" aria-label="Copy code: text block 63" data-copy>Copy</button></div><pre class="code"><code>event: stdout
 id: 12
 data: {&quot;stream&quot;:&quot;stdout&quot;,&quot;offset&quot;:6,&quot;line&quot;:&quot;hello\n&quot;}
 
@@ -3056,6 +3125,13 @@ the expiry. In REST, POST to the sandbox&#x27;s <code>preview-tokens</code> endp
 browser: it works as returned because it already carries the access token as a query parameter.
 Preview URLs are served under the wildcard preview domain over HTTPS and stop working at
 <code>expires_at</code>.</p>
+<p>Treat the <code>url</code> as a credential. Whoever holds it can open that port of the sandbox, as often as
+they like, until <code>expires_at</code>. The lifetime is <code>ttl_seconds</code>: 1 hour by default, at least 60
+seconds and at most 7 days. No endpoint revokes a token before it expires, so choose a short
+<code>ttl_seconds</code>. On the first open, the proxy takes the token out of the query, sets it as an
+<code>HttpOnly</code> cookie and does not forward it to your app. The URL as you opened it can still stay in
+browser history and in the access logs on the way. Do not share it and do not paste it into tickets
+or chat. Mint a new token for each person who needs one.</p>
 <p>The sandbox must be started to create a token. For a stopped or deleted sandbox the call answers 409
 <code>no_container</code>, with <code>details.state</code> and, when the sandbox is <code>stopping</code> or <code>stopped</code>,
 <code>details.stop_cause</code>. Start the sandbox and ask again.</p>
@@ -3137,7 +3213,7 @@ does not exist answers 422. If the server&#x27;s DNS lookup of your host only fa
 create answers 503 <code>DNS_UNAVAILABLE</code> with <code>Retry-After</code> and creates nothing: send it again.
 Create an
 endpoint with <code>url</code> and <code>event_types</code>; the secret is in the create answer only:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 63" data-copy>Copy</button></div><pre class="code"><code>curl -s &quot;$SANDFORT_BASE_URL/v1/webhooks&quot; \
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 64" data-copy>Copy</button></div><pre class="code"><code>curl -s &quot;$SANDFORT_BASE_URL/v1/webhooks&quot; \
   -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; -H &quot;Content-Type: application/json&quot; \
   -d &#x27;{&quot;url&quot;:&quot;https://hooks.example.com/sandfort&quot;,
        &quot;event_types&quot;:[&quot;sandbox.error&quot;,&quot;sandbox.stopped&quot;]}&#x27;</code></pre></div>
@@ -3190,7 +3266,7 @@ note is not printed with <code>--json</code>.</li>
 <code>webhook-id</code> header.</p>
 <p><strong>Webhooks from the CLI.</strong> The <code>sandfort webhook</code> group needs the <code>webhooks:write</code> scope.
 Add the global <code>--json</code> before the group name for machine-readable output.</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 64" data-copy>Copy</button></div><pre class="code"><code># Create: --event repeats (&#x27;*&#x27;, &#x27;group.*&#x27; or &#x27;group.name&#x27;). The server generates the secret
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 65" data-copy>Copy</button></div><pre class="code"><code># Create: --event repeats (&#x27;*&#x27;, &#x27;group.*&#x27; or &#x27;group.name&#x27;). The server generates the secret
 # and returns it once; it prints only with the global --json and --show-secret.
 sandfort --json webhook create https://hooks.example.com/sandfort \
   --event sandbox.error --event sandbox.stopped --show-secret
@@ -3303,7 +3379,7 @@ every other case: a filtered export, an empty one, or a server without a chain k
 names no row and is not signed.</li>
 </ul>
 <p>A consumer that parses each line as a row must skip the last line:</p>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 65" data-copy>Copy</button></div><pre class="code"><code>lines = [json.loads(x) for x in body.splitlines() if x.strip()]
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 66" data-copy>Copy</button></div><pre class="code"><code>lines = [json.loads(x) for x in body.splitlines() if x.strip()]
 rows, trailer = lines[:-1], lines[-1]   # trailer[&quot;type&quot;] is audit_head or export_summary</code></pre></div>
 <p><strong>Rows per call.</strong> A call can write more than one row, and the rows share its request id.
 <code>POST /v1/org/members</code> with an email that has no user yet writes <code>user.created</code> and then
@@ -3353,7 +3429,7 @@ head when the operator set <code>SANDFORT_AUDIT_SIGNING_KEY</code>. <code>GET /v
 returns the matching <code>audit_public_key</code>, an Ed25519 public key as urlsafe base64, or <code>null</code>
 when there is no signing key, and <code>audit_key_fingerprint</code>. Check the head with the public key
 alone:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 66" data-copy>Copy</button></div><pre class="code"><code>sandfort audit export --output audit.ndjson
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 67" data-copy>Copy</button></div><pre class="code"><code>sandfort audit export --output audit.ndjson
 # stderr: audit head signed with Ed25519 key fingerprint &lt;16 hex characters&gt; ...
 sandfort audit verify-head audit.ndjson                      # key from GET /v1/status
 sandfort audit verify-head audit.ndjson --public-key &lt;key&gt;   # a key you pinned earlier
@@ -3436,8 +3512,8 @@ error answer (see &quot;Reporting a problem&quot;). The full terms are in the
 <a href="https://docs.sandfort.dev/beta-terms">beta terms</a>.</p>
 <h3 id="status-and-incidents">Status and incidents<a class="anchor" href="#status-and-incidents" aria-label="Link to section: Status and incidents">#</a></h3>
 <p><code>GET /v1/status</code> needs no API key. Check it before you debug your own code:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 67" data-copy>Copy</button></div><pre class="code"><code>curl -s https://api.sandfort.dev/v1/status</code></pre></div>
-<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 68" data-copy>Copy</button></div><pre class="code"><code>info = client.status()          # also on AsyncClient; works without a valid key
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 68" data-copy>Copy</button></div><pre class="code"><code>curl -s https://api.sandfort.dev/v1/status</code></pre></div>
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 69" data-copy>Copy</button></div><pre class="code"><code>info = client.status()          # also on AsyncClient; works without a valid key
 print(info.status, info.version, info.build_sha, info.started_at)
 if info.notice:
     print(info.notice.message, info.notice.updated_at)</code></pre></div>
@@ -3498,7 +3574,7 @@ beta period; paid plans come after the beta, and no prices are quoted
       <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
     </div>
     <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
-    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="/audit-reviewers">Audit for reviewers</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
     <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
     <div class="legal">
       <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>

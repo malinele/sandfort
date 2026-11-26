@@ -64,11 +64,12 @@ you do not receive the source code at this stage.
   covers are in "Scopes and what they allow" below. The Python SDK has API key helpers
   (`create_api_key`, `list_api_keys`, `revoke_api_key`) and the CLI has `sandfort key create`, `key
   list` and `key revoke`. The REST calls and both clients are in "Managing API keys" below.
-- **Delivery package:** the Python SDK wheel is always included. The TypeScript SDK tarball, the
-  single-file MCP server and the CLI wheel are included according to your stack, so do not assume
-  all of them are present; use only the sections below that match the files you were sent. The
+- **Delivery package:** the Python SDK wheel is always included. The TypeScript SDK tarball and the
+  CLI wheel are included according to your stack, so do not assume all of them are present.
+  Use only the sections below that match the files you were sent. The MCP server is not a file: it
+  is the PyPI package `sandfort-mcp`, outside `SHA256SUMS` and `RELEASE.txt`. The delivered
   files come with a `SHA256SUMS` file and a plain-text release note, `RELEASE.txt`. The note
-  names the commit and the build time; from `v0.1.0-beta.38` on it also names the tag. Since
+  names the commit and the build time. From `v0.1.0-beta.38` on it also names the tag. Since
   beta 60 the files also come with `SHA256SUMS.sig`, an OpenSSH signature over `SHA256SUMS`, and
   the file `release-allowed-signers` (signer `release@sandfort.dev`). Check the files before you
   install, in the directory that holds them: first the signature, then the checksums.
@@ -433,11 +434,50 @@ with no TypeScript toolchain. It is delivered as a file during the beta, not fro
 npm install ./sandfort-sdk-0.1.1.tgz   # use the tarball you were sent
 ```
 
-### MCP server (if you received the server file)
+### MCP server
 
-The MCP server is delivered as a single Python file and runs with the Python SDK installed. In any
-MCP client, run `python` with the server file as its argument and set `SANDFORT_BASE_URL` and
-`SANDFORT_API_KEY` in the environment. The client can then use the sandbox tools.
+The MCP server is the PyPI package `sandfort-mcp` (Python 3.12 or newer), not a file in the
+delivery package. In an MCP client that takes a JSON config, run it with `uvx` and set
+`SANDFORT_BASE_URL` and `SANDFORT_API_KEY` in the environment:
+
+```json
+{
+  "mcpServers": {
+    "sandfort": {
+      "command": "uvx",
+      "args": ["sandfort-mcp"],
+      "env": {
+        "SANDFORT_BASE_URL": "<the base URL you were sent>",
+        "SANDFORT_API_KEY": "sf_..."
+      }
+    }
+  }
+}
+```
+
+`uvx sandfort-mcp` runs the newest release on PyPI. The tools and options below need
+`sandfort-mcp` 0.1.1 or newer. Version 0.1.0 has 14 tools, no `start_sandbox` or `stop_sandbox`,
+and a `create_sandbox` that takes only `name` and `snapshot`.
+
+From version 0.1.1 the server has 16 tools: create, start, stop, list and delete for sandboxes,
+`create_snapshot`, `run_code`, `run_command` and eight file tools (text and binary upload and
+download, `list_directory`, `stat_path`, `make_directory`, `delete_path`). What an agent needs to
+know:
+
+- `create_sandbox` takes the optional `auto_stop_minutes`, `auto_delete_minutes`, `labels`,
+  `block_network`, `egress_allowlist` and `isolation`. An option left out keeps the server default.
+- By default (no `auto_stop_minutes`), a sandbox created through MCP stops after 15 idle minutes
+  and is not deleted unless the agent passes `auto_delete_minutes` to `create_sandbox`. A stopped
+  sandbox keeps its files (see "What
+  stop, start, resize, reset and delete keep" below). `start_sandbox` starts it again and waits
+  until it is started, for 1 to 600 seconds (default 60). `stop_sandbox` returns at once, so the
+  state may still be `stopping`.
+- Without a `snapshot` the image is `python:3.12-slim`: Python and pip, no git. See "What the
+  default image contains" below.
+- Text and binary uploads and downloads are limited to 1 MiB. A text upload counts UTF-8 bytes,
+  not characters.
+- A tool error comes back as text in the form `error: <message>`. The server acts with the scopes
+  of the API key it is given.
 
 ### Command-line (if you received the CLI wheel)
 
@@ -1294,6 +1334,12 @@ finally:
 `labels=` lets you list your sandboxes later (`sandfort sandbox list --label purpose=walkthrough`),
 and `auto_delete_minutes=` removes one you forgot to delete. Use the two together.
 
+Left out, `auto_stop_minutes` is 15 (idle minutes) and `auto_delete_minutes` is -1, which never
+deletes. `auto_delete_minutes` counts minutes after the sandbox stopped, and 0 deletes it at the
+next scan after any stop. A stopped sandbox therefore stays, with its files and its disk, until you
+delete it. The MCP `create_sandbox` tool takes the same two options (`sandfort-mcp` 0.1.1 or
+newer).
+
 ### What the default image contains
 
 A sandbox created without a `snapshot` starts from `python:3.12-slim`. It has Python 3.12 and pip,
@@ -2050,6 +2096,34 @@ for group in client.usage.iter(from_=start, to=end, group_by="label:team"):
 # async: async for group in client.usage.iter(from_=start, to=end, group_by="label:team"): ...
 ```
 
+### What stop, start, resize, reset and delete keep
+
+What each action keeps or removes, checked against the code on 2026-11-26. "Image scratch
+volumes" are the volumes behind `image_mounts` (see "Volumes" below).
+
+| Action | Root filesystem | Processes | Image scratch volumes | Named volumes | Id, name, labels, timers |
+|---|---|---|---|---|---|
+| `stop` | Kept, all of it: `/root`, `/etc`, cron entries, SSH keys, shell profiles | End | Kept | Kept | Kept |
+| `start` (of a stopped sandbox) | Same container, same files | Start fresh | Kept | Kept | Kept |
+| `resize` (stopped only) | Kept (copied into the new container) | End | Kept | Kept | Kept |
+| `reset` | Replaced by the image's, everything written is gone | End | Emptied: new empty volumes | Kept | Kept, with resources, env, network policy, tier and volume mounts |
+| `delete` | Removed | End | Removed | Kept, they are separate objects | Gone |
+
+- `stop` is a plain stop of the same container: nothing is committed or removed
+  (`src/sandfort/drivers/docker/containers.py`, `stop_container`). A stopped sandbox gives back its
+  whole quota reservation (CPU, memory, disk and its count against the sandbox limit), while its
+  files keep using disk on the host until it is deleted. `start` reuses the container. Sandfort
+  rewrites `/etc/resolv.conf` on start where it manages DNS, removes stale pid files, and on
+  `gvisor` puts an empty `/tmp/.sandfort-keep`. With a disk quota, a stop empties the reserve file
+  `/.sandfort-reserve` and a start fills it again. Your own files are not touched.
+- On the hosted beta, files survive a stop on `gvisor` because the runtime is registered with
+  `--overlay2=none` (`deploy/node-setup.sh`). On a self-hosted node, register `runsc` the same way.
+  The server does not check it.
+- `reset` removes the container together with the image scratch volumes and creates new, empty
+  ones. Anything a `volumes` entry mounts is a named volume and is not touched.
+- `delete` removes the container, the image scratch volumes and the saved image a resize leaves
+  behind. Volumes you created through the volumes API stay until you delete them.
+
 ### Resizing a stopped sandbox
 
 `POST /v1/sandboxes/{id}/resize` changes the CPU and memory of a stopped sandbox. On a sandbox that
@@ -2072,7 +2146,8 @@ writable layer.
 replaces the sandbox's container with a fresh one made from the same image and spec. It is the
 clean slate: everything written to the old container is gone. The sandbox keeps its id, name,
 labels, resources, env, network policy, isolation tier, volume mounts and auto timers. Named
-volumes are separate objects and are kept, so a mounted volume is not cleaned.
+volumes (from `POST /v1/volumes`) are separate objects and are kept, so a mounted volume is not
+cleaned. The scratch volumes an image declares (`image_mounts`) are emptied.
 
 - Allowed from `started` (the sandbox ends `started`) and from `stopped` (it ends `stopped`).
   Any other state answers 409.
@@ -2277,9 +2352,10 @@ A sandbox has open outbound internet by default. Choose the mode when you create
   sandbox. DNS differs by tier:
   - On `gvisor` and `microvm`, direct DNS lookups fail immediately.
   - On the `container` tier, the sandbox's only DNS server is the egress proxy's sink
-    (since 2026-11-25 on the beta), which answers every query REFUSED and forwards nothing,
-    so direct lookups fail here too and only the proxy resolves names. A sandbox created
-    before 2026-11-25 keeps the old resolvers until it is reset or recreated.
+    (on the beta since the API restart at 2026-11-25T08:12:30Z), which answers every query
+    REFUSED and forwards nothing, so direct lookups fail here too and only the proxy resolves
+    names. A sandbox created before that instant, including one created earlier on
+    2026-11-25, keeps the old resolvers until it is reset or recreated.
 - **Blocked:** `block_network=True` in the SDK (`network: {"block_all": true}` in REST). There is no
   network and no DNS on any tier: the sandbox shows no DNS configuration from the host, and name
   lookups fail at once on every tier.
@@ -2290,11 +2366,13 @@ You choose the isolation boundary per sandbox, behind the same API. There are th
 
 - **`container`:** Linux namespaces, cgroups, a seccomp profile and a reduced capability set. The
   profile is Docker's default unless `SANDFORT_SECCOMP_PROFILE_PATH` names a file (empty by
-  default). The Kubernetes kit sets it in `deploy/k8s/configmap.yaml`, to the profile generated
-  from `deploy/seccomp.json`. `deploy/compose.prod.yml` does not set it, so a Compose deployment
-  uses Docker's default profile unless you add the variable to `deploy/sandfort.env` and
-  bind-mount the profile file into the container yourself (an unreadable path fails server
-  start; see the [security page](https://docs.sandfort.dev/security.html)). The Docker daemon passes
+  default). Two kits set it: the Kubernetes kit in `deploy/k8s/configmap.yaml`, to the profile
+  generated from `deploy/seccomp.json`, and the self-host Compose file
+  `deploy/selfhost/compose.yml`, which mounts `deploy/seccomp.json` read-only.
+  `deploy/compose.prod.yml` does not set it, so that Compose deployment uses Docker's default
+  profile unless you add the variable to `deploy/sandfort.env` and bind-mount the profile file into
+  the container yourself (an unreadable path fails server start; see the
+  [security page](https://docs.sandfort.dev/security.html)). The Docker daemon passes
   the profile under `runsc` (the `gvisor` tier), but `runsc` does not enforce it, so "Docker's
   default profile" is the container tier's wording only. All capabilities are
   dropped except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETGID`, `SETUID` and
@@ -2378,7 +2456,10 @@ How the `gvisor` tier behaves differently from `container`:
 - DNS: `gvisor` sandboxes resolve names through public resolvers (`1.1.1.1` and `8.8.8.8` by
   default on the hosted beta; a self-hosted operator can change them), because gVisor cannot reach
   Docker's internal resolver.
-- User namespaces (`unshare -U`) work inside `gvisor` and are refused on `container`.
+- User namespaces, measured on the hosted beta host on 2026-11-26 with the create options of a
+  sandbox (one run per tier, not a guarantee): on `container`, `unshare -U` is refused. On `gvisor`
+  and `microvm`, `unshare -U` succeeds, but writing `/proc/self/uid_map` is refused with `EPERM`,
+  so a process cannot map itself root in its new namespace.
 - Kernel introspection such as the kernel symbol table (`kallsyms`) is absent. `nproc` and
   `MemTotal` reflect the sandbox's limits.
 - The Docker daemon passes the seccomp profile for every runtime, but per gVisor's documentation
@@ -2433,7 +2514,7 @@ How the `microvm` tier behaves. These facts were checked on the hosted beta on 2
 - A fork bomb can stop the whole `microvm`, as on `gvisor`. The exec then reports exit code 137 with
   `sandbox_stopped` true and the message "the sandbox stopped while running this command ...". The
   sandbox is already `stopped` when the response arrives, with an `error_reason`, and starting it
-  again works at once (start takes about 4 s on `microvm`). Evaluator data: of 29 python fork bombs
+  again works at once (start takes about 4 s on `microvm`). On the beta, of 29 python fork bombs
   on `microvm`, 26 returned exit 137 with `sandbox_stopped` true within 6.1-12.7 s, and 3 returned
   124 `timed_out` with the sandbox already dead. A death before or at the deadline counts instead of
   the timeout, so that case is reported as exit 137 with `sandbox_stopped` true. Caveat: the classic
@@ -2716,8 +2797,9 @@ shown.
 **`image_mounts`.** Some images declare volume paths of their own. The sandbox view lists, in
 `image_mounts` (sorted; empty when there are none), the declared paths that none of your
 `volumes` covers. Each is backed by a per-sandbox scratch volume, mounted read-write, that lives
-outside `disk_gib` and is deleted with the sandbox. The soft size limit does not cover these
-volumes. Mount a volume of your own at such a path if the data must outlive the sandbox.
+outside `disk_gib`, is deleted with the sandbox and is emptied by a reset. The soft size limit
+does not cover these volumes. Mount a volume of your own at such a path if the data must outlive
+the sandbox.
 
 #### Exporting and restoring a volume
 
@@ -3586,6 +3668,14 @@ the expiry. In REST, POST to the sandbox's `preview-tokens` endpoint. Open the r
 browser: it works as returned because it already carries the access token as a query parameter.
 Preview URLs are served under the wildcard preview domain over HTTPS and stop working at
 `expires_at`.
+
+Treat the `url` as a credential. Whoever holds it can open that port of the sandbox, as often as
+they like, until `expires_at`. The lifetime is `ttl_seconds`: 1 hour by default, at least 60
+seconds and at most 7 days. No endpoint revokes a token before it expires, so choose a short
+`ttl_seconds`. On the first open, the proxy takes the token out of the query, sets it as an
+`HttpOnly` cookie and does not forward it to your app. The URL as you opened it can still stay in
+browser history and in the access logs on the way. Do not share it and do not paste it into tickets
+or chat. Mint a new token for each person who needs one.
 
 The sandbox must be started to create a token. For a stopped or deleted sandbox the call answers 409
 `no_container`, with `details.state` and, when the sandbox is `stopping` or `stopped`,

@@ -7,6 +7,7 @@ without a preview token for its org, sandbox and port (``TOKEN_PARAM`` query or 
 ``websockets`` client; upstream failures answer 502. A valid query token is stripped and set
 as a cookie (never forwarded). Cookie auth needs consistent Origin and Sec-Fetch-Site; upstream
 cookies lose their Domain. ``GET /terminal`` on a non-preview host serves the terminal.
+The token is also cut from a forwarded Referer and from uvicorn's log lines (``hygiene``).
 """
 
 import json
@@ -28,6 +29,12 @@ from sandfort.domain.sandbox import Sandbox, SandboxState
 from sandfort.drivers.base import EndpointDriver
 from sandfort.drivers.errors import DriverError
 from sandfort.proxy import routing, terminal
+from sandfort.proxy.hygiene import (
+    PROXY_RESPONSE_HEADERS,
+    install_log_redaction,
+    strip_referer_token,
+    with_token_response_headers,
+)
 from sandfort.proxy.streaming import (
     HOP_BY_HOP,
     WS_INTERNAL_ERROR,
@@ -79,6 +86,7 @@ class _Upstream:
     port: int
     query: bytes  # the client's query string without the preview token
     token_from_query: str | None  # set as a cookie on the response
+    token_in_query: bool = False  # the request URL named TOKEN_PARAM, valid or not
 
 
 @dataclass(eq=False)  # exceptions keep identity semantics (and stay hashable)
@@ -110,6 +118,10 @@ def _request_headers(scope: Scope, *, websocket: bool = False) -> list[tuple[str
         (key.decode("latin-1"), value.decode("latin-1"))
         for key, value in _headers(scope)
         if key.decode("latin-1").lower() not in skipped
+    ]
+    headers = [
+        (key, strip_referer_token(value) if key.lower() == "referer" else value)
+        for key, value in headers
     ]
     _, cookies = split_cookie_token(_cookie_headers(scope))
     if cookies:
@@ -144,7 +156,11 @@ def _upstream_url(scheme: str, upstream: _Upstream, scope: Scope) -> str:
 
 async def _reject(scope: Scope, send: Send, rejected: _Rejected) -> None:
     body = json.dumps(fail(rejected.code, rejected.message).model_dump(mode="json")).encode()
-    headers = [(b"content-type", b"application/json"), (b"content-length", b"%d" % len(body))]
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", b"%d" % len(body)),
+        *PROXY_RESPONSE_HEADERS,
+    ]
     start = {"status": rejected.status, "headers": headers}
     if scope["type"] == "http":
         await send({"type": "http.response.start", **start})
@@ -246,7 +262,13 @@ class PreviewProxy:
             logger.warning("preview endpoint for %s unavailable: %s", sandbox.id, exc.message)
             raise _Rejected(502, BAD_GATEWAY, UNREACHABLE_MESSAGE) from exc
         granted = query_token if grant is not None else None  # only a grant earns a cookie
-        return _Upstream(host=host, port=port, query=query, token_from_query=granted)
+        return _Upstream(
+            host=host,
+            port=port,
+            query=query,
+            token_from_query=granted,
+            token_in_query=query_token is not None,
+        )
 
     async def _authorize(self, sandbox: Sandbox, port: int, tok: str | None) -> PreviewGrant | None:
         try:
@@ -280,6 +302,8 @@ class PreviewProxy:
         cookie = None if token is None else token_cookie(token, secure=secure)  # None: malformed
         try:
             headers = _response_headers(response, cookie)
+            if upstream.token_in_query:  # the URL still carries the token in the browser
+                headers = with_token_response_headers(headers)
             status = response.status_code
             await send({"type": "http.response.start", "status": status, "headers": headers})
             async for chunk in response.aiter_raw():
@@ -334,6 +358,7 @@ def create_proxy_app(
     """
     if lookup is None or driver is None:
         raise NotImplementedError("create_proxy_app needs a lookup and a driver (WP 5.1)")
+    install_log_redaction()  # both server paths build the proxy here
     resolved, store = settings or Settings.from_env(), tokens or InMemoryPreviewTokenStore()
     return PreviewProxy(
         resolved, store, lookup, driver, http_client=http_client, on_shutdown=on_shutdown

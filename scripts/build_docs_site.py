@@ -111,6 +111,7 @@ MARKDOWN_PAGES = (
     MarkdownPage("docs/release.md", "release.html"),
     MarkdownPage("docs/governance.md", "governance.html"),
     MarkdownPage("docs/connect-guide.md", "guide.html"),
+    MarkdownPage("docs/audit-for-reviewers.md", "audit-reviewers.html"),
 )
 
 SANS = (

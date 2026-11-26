@@ -63,6 +63,7 @@ DOC_LINKS = (
     ("beta-terms.html", "Beta terms"),
     ("release.html", "Releases"),
     ("governance.html", "Governance page"),
+    ("audit-reviewers.html", "Audit for reviewers"),
 )
 
 STYLESHEET_FILE = "docs.css"

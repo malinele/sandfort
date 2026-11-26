@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading and verifying the audit log - Sandfort docs</title>
+<meta name="description" content="For security and compliance reviewers who read an organization&#x27;s audit log and verify it themselves. It covers the key, the routes, the signed head and its limits.">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d11">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<link rel="canonical" href="https://docs.sandfort.dev/audit-reviewers">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d11'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%23e0a458' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="docs.css?v=5f3b09034a09">
+<script defer src="https://umami.sandfort.dev/script.js" data-website-id="f88825f1-b3cc-441a-b5e8-e7ff35c9e74c" data-domains="docs.sandfort.dev"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="in">
+    <a class="brand" href="https://sandfort.dev/" aria-label="Sandfort home"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li>
+        <li><a href="https://sandfort.dev/#two-ways">Run it</a></li>
+        <li><a href="https://sandfort.dev/#isolation">Isolation</a></li>
+        <li><a href="https://sandfort.dev/#governance">Governance</a></li>
+        <li><a href="https://sandfort.dev/#limits">Limits</a></li>
+      </ul>
+    </nav>
+    <span class="sp"></span>
+    <a class="docs" href="/">API reference</a>
+    <a class="btn btn-p" data-umami-event="beta_request" data-umami-event-placement="nav"
+      href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a>
+  </div>
+</header>
+<div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a><a href="/audit-reviewers" aria-current="page">Audit for reviewers</a></nav></div>
+<main id="main">
+<div class="frame"><div class="doc has-toc">
+<details class="toc"><summary>On this page</summary><ul><li><a href="#who-this-is-for">Who this is for</a></li><li><a href="#what-you-need">What you need</a><ul><li><a href="#mint-an-audit-only-key">Mint an audit-only key</a></li></ul></li><li><a href="#reading-events">Reading events</a><ul><li><a href="#with-the-cli">With the CLI</a></li><li><a href="#with-the-api">With the API</a></li><li><a href="#what-a-row-holds">What a row holds</a></li></ul></li><li><a href="#exporting-and-verifying">Exporting and verifying</a><ul><li><a href="#export">Export</a></li><li><a href="#get-the-public-key-from-a-second-channel">Get the public key from a second channel</a></li><li><a href="#verify-the-head">Verify the head</a></li><li><a href="#verify-the-chain-on-the-server">Verify the chain on the server</a></li></ul></li><li><a href="#what-the-chain-proves-and-does-not-prove">What the chain proves and does not prove</a></li><li><a href="#what-is-not-recorded">What is not recorded</a></li><li><a href="#getting-events-out-continuously">Getting events out continuously</a></li><li><a href="#windows">Windows</a></li><li><a href="#open-questions-for-the-operator">Open questions for the operator</a></li><li><a href="#checklist">Checklist</a></li></ul></details>
+<article class="prose">
+<h1 id="reading-and-verifying-the-audit-log">Reading and verifying the audit log<a class="anchor" href="#reading-and-verifying-the-audit-log" aria-label="Link to section: Reading and verifying the audit log">#</a></h1>
+<p>For security and compliance reviewers who read an organization&#x27;s audit log and verify it themselves.
+It covers the key, the routes, the signed head and its limits.</p>
+<p>The statements here were read from the server package (<code>src/sandfort/</code>), the CLI
+(<code>cli/src/sandfort_cli/</code>) and the Python SDK (<code>sdk/python/src/sandfort_sdk/</code>). Where a statement
+comes from reading the source and was not run, the text says so. Where a limit matters for a
+decision, it is stated next to the feature. Environment variables carry the <code>SANDFORT_</code> prefix. The
+server side of the audit trail is described in <a href="https://docs.sandfort.dev/governance">the governance
+page</a>, section Audit.</p>
+<h2 id="who-this-is-for">Who this is for<a class="anchor" href="#who-this-is-for" aria-label="Link to section: Who this is for">#</a></h2>
+<p>You are a reviewer, an auditor or a security engineer. You do not run the sandboxes. You want to
+answer three questions with evidence you can recheck, within the limits listed below:</p>
+<ul>
+<li>What did the callers of this organization do, and what was refused?</li>
+<li>Was the recorded history changed after the fact?</li>
+<li>What can this log not tell me?</li>
+</ul>
+<p>The audit log is per organization. Rows are kept in a hash chain. When the operator has set both
+the chain key and the signing key, an export ends in a head that the server signs with an Ed25519
+key, and you can check that signature with a public key and no secret.</p>
+<h2 id="what-you-need">What you need<a class="anchor" href="#what-you-need" aria-label="Link to section: What you need">#</a></h2>
+<p>Three routes serve the audit log: <code>GET /v1/audit-events</code> (list), <code>GET /v1/audit-events/export</code> and
+<code>GET /v1/audit-events/verify</code>. All three need:</p>
+<ul>
+<li>the scope <code>audit:read</code>, and</li>
+<li>an organization-wide key. A key that carries <code>sandbox_labels</code> gets <code>403</code>, with the message that
+audit events are org-wide.</li>
+</ul>
+<p>No human role is read-only plus audit. The <code>admin</code> role holds every scope. The <code>developer</code> role
+holds every scope except <code>api_keys:admin</code> and <code>audit:read</code>. The <code>viewer</code> role holds only <code>org:read</code>,
+<code>sandboxes:read</code>, <code>snapshots:read</code>, <code>volumes:read</code> and <code>usage:read</code> (<code>src/sandfort/domain/user.py</code>).
+A reviewer therefore gets an API key that holds only <code>audit:read</code>.</p>
+<h3 id="mint-an-audit-only-key">Mint an audit-only key<a class="anchor" href="#mint-an-audit-only-key" aria-label="Link to section: Mint an audit-only key">#</a></h3>
+<p>The caller must hold <code>api_keys:admin</code> and <code>audit:read</code>, which in practice means an org admin. The
+creating key must itself be org-wide. A key with <code>sandbox_labels</code> can only mint keys that keep those
+labels, and such a key cannot read the audit log. A key can only grant scopes its creator holds, so
+a request for any scope the creator lacks is refused with <code>403</code>. If the creating key has an expiry,
+the new key cannot outlive it.</p>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 1" data-copy>Copy</button></div><pre class="code"><code>curl -sS -X POST &quot;$SANDFORT_BASE_URL/v1/api-keys&quot; \
+  -H &quot;Authorization: Bearer $ADMIN_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;name&quot;:&quot;audit-review&quot;,&quot;scopes&quot;:[&quot;audit:read&quot;],&quot;expires_at&quot;:&quot;&lt;ISO 8601 timestamp, about a week ahead&gt;&quot;}&#x27;</code></pre></div>
+<p>The body takes <code>name</code> (1 to 255 characters), <code>scopes</code> (at least one), and the optional fields
+<code>expires_at</code> (a timestamp with a timezone, in the future), <code>sandbox_labels</code>, <code>max_sandboxes</code> and
+<code>shared_volume_labels</code>. Leave <code>sandbox_labels</code> out, or the key cannot read the audit log. The
+plaintext key is in <code>data.key</code> of the response. It is shown once and cannot be read back later. The
+mint itself writes an <code>api_key.created</code> row with the name, prefix, scopes and expiry
+(<code>src/sandfort/api/routes/api_keys.py</code>).</p>
+<p>The CLI equivalent is:</p>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 2" data-copy>Copy</button></div><pre class="code"><code>sandfort key create audit-review --scope audit:read --expires-at &quot;&lt;ISO 8601 timestamp&gt;&quot;</code></pre></div>
+<p>The timestamp must carry a timezone and lie in the future. Give the reviewer a short expiry. Hand
+over the key through a channel you trust, and let the reviewer keep it in a private file. Give the
+reviewer the organization id and the public key from the operator as well, not from the export under
+review. The CLI reads it from <code>SANDFORT_API_KEY_FILE</code>, or from <code>SANDFORT_API_KEY</code>, which wins when
+both are set, with the server address in <code>SANDFORT_BASE_URL</code>.</p>
+<h2 id="reading-events">Reading events<a class="anchor" href="#reading-events" aria-label="Link to section: Reading events">#</a></h2>
+<h3 id="with-the-cli">With the CLI<a class="anchor" href="#with-the-cli" aria-label="Link to section: With the CLI">#</a></h3>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 3" data-copy>Copy</button></div><pre class="code"><code>export SANDFORT_BASE_URL=&quot;https://sandfort.example.com&quot;
+export SANDFORT_API_KEY_FILE=&quot;$HOME/.sandfort-audit-key&quot;
+
+sandfort audit list --outcome denied --from 2026-11-01 --order oldest --limit 100
+sandfort audit list --action sandbox.create --json
+sandfort audit list --all --json</code></pre></div>
+<p><code>sandfort audit list</code> takes these options:</p>
+<p><strong>CLI filters for audit list</strong></p>
+<div class="tbl-wrap" role="region" aria-label="Table: CLI filters for audit list" tabindex="0"><table><caption>CLI filters for audit list</caption><thead><tr><th scope="col">Option</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td><code>--actor</code></td><td>Exact actor id.</td></tr><tr><td><code>--action</code></td><td>Exact action name, for example <code>sandbox.create</code>.</td></tr><tr><td><code>--target</code></td><td>Exact target id.</td></tr><tr><td><code>--request-id</code></td><td>The <code>X-Request-ID</code> of the request that wrote the row.</td></tr><tr><td><code>--outcome</code></td><td><code>success</code>, <code>denied</code> or <code>error</code>.</td></tr><tr><td><code>--from</code></td><td>At or after this moment (inclusive). ISO 8601. A date alone is midnight UTC.</td></tr><tr><td><code>--to</code></td><td>Before this moment (exclusive). ISO 8601. <code>--to</code> must be after <code>--from</code>.</td></tr><tr><td><code>--order</code></td><td><code>newest</code> (the CLI default) or <code>oldest</code>. <code>desc</code> and <code>asc</code> are aliases.</td></tr><tr><td><code>--limit</code></td><td>Events per page, 1 to 100, default 50.</td></tr><tr><td><code>--cursor</code></td><td>Continue after a cursor.</td></tr><tr><td><code>--all</code></td><td>Page through every event. Not with <code>--cursor</code>.</td></tr></tbody></table></div>
+<p>Filters combine with AND. Repeating an option is a usage error. With <code>--json</code>, a single page prints
+<code>{&quot;events&quot;: [...], &quot;next_cursor&quot;: ...}</code>, and <code>--all</code> prints a plain list.</p>
+<h3 id="with-the-api">With the API<a class="anchor" href="#with-the-api" aria-label="Link to section: With the API">#</a></h3>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 4" data-copy>Copy</button></div><pre class="code"><code>curl -sS &quot;$SANDFORT_BASE_URL/v1/audit-events?outcome=denied&amp;from=2026-11-01&amp;order=desc&amp;limit=100&quot; \
+  -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot;</code></pre></div>
+<p>The query parameters are <code>actor_id</code>, <code>action</code>, <code>target_id</code>, <code>request_id</code>, <code>outcome</code>, <code>from</code>, <code>to</code>,
+<code>order</code>, <code>cursor</code> and <code>limit</code>. Any other parameter is rejected with <code>422</code> and named. The page of
+rows is in <code>data</code>. When more rows exist, <code>meta.next_cursor</code> holds the cursor for the next page.</p>
+<p>Two details that catch people out:</p>
+<ul>
+<li>The REST route lists oldest first by default (<code>order=asc</code>). The CLI lists newest first by default.
+Send the same <code>order</code> on every page, because a cursor is bound to the filters and the order that
+issued it. A mismatch is a <code>422</code>.</li>
+<li>A row in the list has no hash. Only export rows carry <code>prev_hash</code> and <code>hash</code>.</li>
+</ul>
+<h3 id="what-a-row-holds">What a row holds<a class="anchor" href="#what-a-row-holds" aria-label="Link to section: What a row holds">#</a></h3>
+<p><strong>Fields of an audit row</strong></p>
+<div class="tbl-wrap" role="region" aria-label="Table: Fields of an audit row" tabindex="0"><table><caption>Fields of an audit row</caption><thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td><code>id</code></td><td>Row id. Ids follow creation order.</td></tr><tr><td><code>org_id</code></td><td>The organization. Every row of a chain has the same one.</td></tr><tr><td><code>actor_type</code></td><td><code>api_key</code>, <code>system</code> or <code>platform_admin</code>.</td></tr><tr><td><code>actor_id</code></td><td>The key id (or the SSO session token id) for <code>api_key</code> rows, <code>sandfort-admin</code> for <code>platform_admin</code> rows, and <code>null</code> for <code>system</code> rows.</td></tr><tr><td><code>action</code></td><td>What was done, for example <code>sandbox.create</code> or <code>request.denied</code>.</td></tr><tr><td><code>target_type</code>, <code>target_id</code></td><td>The object the action was about.</td></tr><tr><td><code>outcome</code></td><td><code>success</code>, <code>denied</code> or <code>error</code>.</td></tr><tr><td><code>request_id</code></td><td>The <code>X-Request-ID</code> of the request that wrote the row.</td></tr><tr><td><code>ip</code></td><td>The socket peer as the ASGI server reports it. <code>X-Forwarded-For</code> counts only when the peer is in <code>SANDFORT_FORWARDED_ALLOW_IPS</code>.</td></tr><tr><td><code>user_agent</code></td><td>The client&#x27;s user agent.</td></tr><tr><td><code>details</code></td><td>Redacted detail of the call.</td></tr><tr><td><code>occurred_at</code></td><td>When the row was written.</td></tr></tbody></table></div>
+<p>Notes on reading these fields:</p>
+<ul>
+<li><code>outcome</code> is <code>success</code> for an accepted call. A refusal after the key was resolved is <code>denied</code>. The
+statuses are <code>401</code> for a revoked or expired key, <code>403</code>, <code>404</code> from a route that matched, <code>409</code>,
+<code>413</code> raised by a route, <code>422</code> from field validation, <code>429</code> with the code <code>QUOTA_EXCEEDED</code> and
+<code>503</code> with the code <code>CAPACITY</code> (a full host, or an organization&#x27;s cap on terminals or async
+commands). A <code>400</code> is recorded the same way in two narrow cases, a <code>Last-Event-ID</code> that is not a
+byte offset on the command log follow route and a blank SCIM token name.</li>
+<li>The action of a refusal is usually <code>request.denied</code>, with <code>details.status</code> and
+<code>details.error_code</code>. Two cases write another action and carry no <code>details.status</code> or
+<code>details.error_code</code>. A create or start refused for host capacity (<code>503</code>) is
+<code>sandbox.create_refused</code> or <code>sandbox.start_refused</code>, with <code>details.reason</code> <code>capacity</code>. A create
+refused by the key&#x27;s own <code>max_sandboxes</code> cap (<code>429</code> <code>QUOTA_EXCEEDED</code>) is <code>sandbox.create_refused</code>,
+with <code>details.reason</code> <code>key_cap</code>, <code>details.limit</code> <code>key_max_sandboxes</code>, <code>details.max</code> and
+<code>details.current</code>, and the target is the organization. A refusal can also be recorded under the
+call&#x27;s own action, for example <code>toolbox.fs.upload</code> for a refused or failed upload and
+<code>sandbox.exec.replay</code> for a keyed exec replay whose output was not kept (<code>409</code>, <code>details.reason</code>
+<code>result_unavailable</code>). Such a call leaves no <code>request.denied</code> row. For an upload, a <code>success</code> row
+can come first, and a later <code>denied</code> or <code>error</code> row names it in <code>details.supersedes</code>. Filter on
+<code>outcome</code> <code>denied</code> and on <code>error</code> without an action filter, not on <code>request.denied</code> alone.</li>
+<li>A <code>5xx</code> other than a <code>503</code> with the code <code>CAPACITY</code> is <code>error</code>. It is the action <code>request.failed</code>
+when no service row was written for the request. A call that was accepted and then failed in the
+background writes <code>error</code> rows under other actions, for example <code>sandbox.failed</code>,
+<code>sandbox.reset_failed</code>, <code>sandbox.drift_detected</code>, <code>snapshot.create</code>, <code>image.build.complete</code> and
+<code>volume.create</code>. A <code>404</code> is stored as <code>denied</code> too, so <code>outcome</code> alone does not mean a permission
+was refused. For <code>request.denied</code> and <code>request.failed</code> rows, read <code>details.status</code> and
+<code>details.error_code</code>.</li>
+<li><code>actor_type</code> is <code>api_key</code> for a person who signed in through SSO. The actor id is then the id of
+the session token, not a user id.</li>
+<li><code>ip</code> and <code>user_agent</code> are stored as received and are not part of the row hash. Anyone with
+<code>audit:read</code> can read them.</li>
+<li>In <code>details</code>, <code>env</code> keeps only the sorted key names and a value count. The keys <code>stdin</code>, <code>code</code>,
+<code>command</code>, <code>args</code>, <code>cmd</code> and <code>token</code> keep only <code>redacted-sha256:</code> and the byte length. These
+digests are unsalted, so a guessable value can be confirmed by hashing a guess
+(<code>src/sandfort/services/audit.py</code>).</li>
+<li>The server also writes rows for itself: auto-stop, auto-delete, the reconciler and garbage
+collection use <code>actor_type</code> <code>system</code>. Operator commands such as <code>create-key</code> use <code>platform_admin</code>.</li>
+</ul>
+<h2 id="exporting-and-verifying">Exporting and verifying<a class="anchor" href="#exporting-and-verifying" aria-label="Link to section: Exporting and verifying">#</a></h2>
+<h3 id="export">Export<a class="anchor" href="#export" aria-label="Link to section: Export">#</a></h3>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 5" data-copy>Copy</button></div><pre class="code"><code>sandfort audit export --output audit.ndjson</code></pre></div>
+<p>The file has one JSON row per line, in chain order, and a trailer on the last line. <code>--output</code>
+writes mode 600 and replaces an existing file only with <code>--force</code>. The file is written through a
+temporary file and put in place only when the export is complete. Options <code>--from</code>, <code>--to</code>,
+<code>--request-id</code> and <code>--outcome</code> narrow it. Without the CLI, call <code>GET /v1/audit-events/export</code> with
+the same parameters.</p>
+<p>An export row has the 13 fields above plus <code>prev_hash</code> and <code>hash</code>. The trailer is told apart by its
+<code>type</code> field:</p>
+<ul>
+<li><code>audit_head</code> when the server has an audit chain key and the export holds at least one row. It
+names the last row (<code>row_id</code>, <code>hash</code>) and binds the content with <code>row_count</code>, <code>first_row_id</code> and
+<code>export_sha256</code> (SHA-256 over the exact bytes of every row line, each with its newline). When the
+server also has a signing key, the head carries <code>alg</code> (<code>ed25519</code>), <code>public_key</code>, <code>signature</code> and
+<code>signed_at</code>.</li>
+<li><code>export_summary</code> otherwise: an empty export, or a server with no chain key. It is not signed and
+<code>verify-head</code> cannot use it.</li>
+</ul>
+<p>An export cut by <code>--request-id</code> or <code>--outcome</code> is marked <code>filtered</code>. Its rows are not a contiguous
+run of the chain, so the link between neighbouring rows is not checked. Do not treat a filtered
+export as complete.</p>
+<p>A file that ends without a trailer may have been cut short. The CLI then warns on stderr and exits
+3.</p>
+<h3 id="get-the-public-key-from-a-second-channel">Get the public key from a second channel<a class="anchor" href="#get-the-public-key-from-a-second-channel" aria-label="Link to section: Get the public key from a second channel">#</a></h3>
+<p>Anyone can read the public key and its fingerprint without a key:</p>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 6" data-copy>Copy</button></div><pre class="code"><code>curl -sS &quot;$SANDFORT_BASE_URL/v1/status&quot;</code></pre></div>
+<p>The response carries <code>data.audit_public_key</code> (urlsafe base64) and <code>data.audit_key_fingerprint</code> (the
+first 16 hex characters of the SHA-256 of the raw key). Both are <code>null</code> unless the server has both
+<code>SANDFORT_AUDIT_CHAIN_KEY</code> and <code>SANDFORT_AUDIT_SIGNING_KEY</code> set.</p>
+<p>That route belongs to the same server whose export you are checking. By default <code>verify-head</code>
+fetches the key from that route, so a server that fabricated an export could publish a matching key
+and the check would pass. This is the weak point, and the fix is a second channel:</p>
+<ol>
+<li>Ask the operator for the public key or the fingerprint over a different channel than the one that
+gave you the export, such as a signed message or a change record. Better, record it once and keep
+it.</li>
+<li>Pass the key to <code>verify-head</code> with <code>--public-key</code>. There is no <code>--fingerprint</code> option. If you
+only hold the fingerprint, compare it by eye with the <code>fingerprint</code> field that <code>verify-head</code>
+prints for the key it used, and with the stderr note that <code>sandfort audit export</code> prints when the
+trailer is a signed head.</li>
+<li>Treat the key in the trailer itself as untrusted. <code>verify-head</code> never uses it.</li>
+</ol>
+<h3 id="verify-the-head">Verify the head<a class="anchor" href="#verify-the-head" aria-label="Link to section: Verify the head">#</a></h3>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 7" data-copy>Copy</button></div><pre class="code"><code>sandfort audit verify-head audit.ndjson --public-key &quot;$PINNED_KEY&quot; --expect-org &quot;$ORG_ID&quot;</code></pre></div>
+<p>The command checks the signature and <code>signed_at</code>. Then, when the head binds the content (newer
+servers do, older ones sign only the last row), it checks that the file&#x27;s rows are the ones the
+server signed: their SHA-256, their count and the first row. It also checks that every row has an
+id, a timestamp, an action and the head&#x27;s org, that the last row is the row the head names, and that
+each row&#x27;s <code>prev_hash</code> is the <code>hash</code> of the row before it. A file name of <code>-</code> reads standard input.</p>
+<p>Options:</p>
+<p><strong>Options of verify-head</strong></p>
+<div class="tbl-wrap" role="region" aria-label="Table: Options of verify-head" tabindex="0"><table><caption>Options of verify-head</caption><thead><tr><th scope="col">Option</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td><code>--public-key</code></td><td>A 32-byte Ed25519 key, urlsafe or standard base64.</td></tr><tr><td><code>--expect-org</code></td><td>The head must name this org id, or the check fails with <code>expected_org_mismatch</code>. Without it, a genuine export of another org verifies.</td></tr><tr><td><code>--previous</code></td><td>An earlier export. Its rows must be an exact byte prefix of this file&#x27;s rows. The command reports the count of new rows.</td></tr><tr><td><code>--head-only</code></td><td>Check the signature alone.</td></tr><tr><td><code>--allow-unchained</code></td><td>Accept rows without hashes.</td></tr></tbody></table></div>
+<p>Verify the file byte for byte as downloaded. A copy with changed line endings fails with
+<code>content_mismatch</code>.</p>
+<p><strong>Exit codes of verify-head</strong></p>
+<div class="tbl-wrap" role="region" aria-label="Table: Exit codes of verify-head" tabindex="0"><table><caption>Exit codes of verify-head</caption><thead><tr><th scope="col">Exit code</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td>0</td><td>Every check passed.</td></tr><tr><td>3</td><td>A check failed. The reason is printed, and <code>--json</code> carries it as <code>reason</code>.</td></tr><tr><td>2</td><td>The check could not run: the file or <code>--previous</code> is unreadable or empty, the file ends in an unsigned <code>export_summary</code>, or it has neither a usable trailer nor any valid row, <code>--public-key</code> is not 32 bytes, or no key is available.</td></tr><tr><td>1</td><td>Another CLI failure, for example a request that failed.</td></tr></tbody></table></div>
+<p>Reasons that exit 3 can name: <code>unsigned</code>, <code>signature</code>, <code>key_mismatch</code>, <code>undated</code>,
+<code>future_signed_at</code>, <code>expected_org_mismatch</code>, <code>truncated</code>, <code>head_mismatch</code>, <code>chain_break</code>,
+<code>content_mismatch</code>, <code>count_mismatch</code>, <code>first_row_mismatch</code>, <code>org_mismatch</code>, <code>not_a_continuation</code>,
+<code>malformed_row</code>, <code>misplaced_trailer</code>, <code>unchained_rows</code> and <code>no_trailer</code> (event rows with no trailer
+line after them). A row whose text was edited fails as <code>content_mismatch</code>, because the content
+digest is checked before the links. A removed row fails as <code>count_mismatch</code>. A wrong key fails as
+<code>key_mismatch</code>.</p>
+<p>On success, without <code>--json</code>, the command prints one stderr line that says what was proven and what
+was not.</p>
+<h3 id="verify-the-chain-on-the-server">Verify the chain on the server<a class="anchor" href="#verify-the-chain-on-the-server" aria-label="Link to section: Verify the chain on the server">#</a></h3>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 8" data-copy>Copy</button></div><pre class="code"><code>sandfort audit verify</code></pre></div>
+<p>This calls <code>GET /v1/audit-events/verify</code>. The server walks the org&#x27;s chain, recomputes every hash
+and reports <code>ok</code>, <code>checked</code>, <code>first_id</code>, <code>last_id</code>, <code>last_hash</code> and <code>findings</code>. The command exits 3
+when the chain is broken. <code>--from-id</code> starts the walk at an anchor row, and then history before that
+row is not checked. Read what this proves in the next section, because a reviewer runs this check on
+the server being audited.</p>
+<p>The Python SDK offers the same checks: <code>client.audit.list</code>, <code>iter</code>, <code>verify</code>, <code>export</code>,
+<code>export_lines</code> and <code>public_key</code>, and the top-level functions <code>sandfort_sdk.verify_export</code> and
+<code>sandfort_sdk.verify_head</code>. The SDK also refuses to trust the key named in the head.</p>
+<h2 id="what-the-chain-proves-and-does-not-prove">What the chain proves and does not prove<a class="anchor" href="#what-the-chain-proves-and-does-not-prove" aria-label="Link to section: What the chain proves and does not prove">#</a></h2>
+<p>Each row&#x27;s hash covers the previous row&#x27;s hash and the canonical form of the row. With
+<code>SANDFORT_AUDIT_CHAIN_KEY</code> set (at least 32 bytes), the hash is HMAC-SHA256 with that key. Without
+it, the hash is a plain SHA-256 and anyone who can write the database can rewrite history and
+recompute every hash. In the <code>prod</code> environment the server refuses to start with no chain key unless
+the operator sets <code>SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true</code>.</p>
+<p>Rows written before the chain key was set stay unkeyed. Verify accepts them before the first keyed
+row while <code>SANDFORT_AUDIT_CHAIN_ACCEPT_UNKEYED</code> is true (the default). That early part of the trail
+is rewritable by a database writer. An unkeyed row after a keyed one is a finding.</p>
+<p>With a signed head and a key you pinned, <code>verify-head</code> proves:</p>
+<ul>
+<li>the file is exactly the sequence of rows the server signed at <code>signed_at</code>, so a change made to the
+file after it was signed is detected,</li>
+<li>every row belongs to the head&#x27;s org, the last row is the head&#x27;s row, and the rows link to each
+other.</li>
+</ul>
+<p>It does not prove:</p>
+<ul>
+<li><strong>That the database was unchanged before this export.</strong> The server signs the rows it holds at
+export time and does not recompute the keyed row hashes while exporting. A single export therefore
+shows that the file is intact, not that history was never edited. To detect earlier edits, keep
+every export and run <code>verify-head --previous &lt;earlier file&gt;</code>. A row edited after the earlier
+export was taken makes the earlier lines fail to match as an exact prefix. Also ask the operator
+to run <code>sandfort audit verify</code> with the chain key.</li>
+<li><strong>The keyed row hashes.</strong> Only the holder of the chain key can recompute them. <code>sandfort audit verify</code> does, but it runs on the server, so you trust the server for that check. A server that
+holds both keys can sign a fabricated export, and <code>verify-head</code> accepts it.</li>
+<li><strong>That the export is the newest.</strong> An older genuine export still verifies. Read <code>signed_at</code>, ask
+for a fresh export, and use <code>--previous</code> to show that a later export extends an earlier one.</li>
+<li><strong>Completeness of a filtered export.</strong></li>
+<li><strong>Who changed anything.</strong> The chain shows that a row was changed, removed or reordered. It does
+not name the person. Access to the database or the Docker socket on the host leaves no row.</li>
+<li><strong>Anything before the last row, on a legacy head.</strong> Older servers sign only the last row. If the
+CLI notes a legacy head, ask for a fresh export.</li>
+</ul>
+<p>Retention can shorten the trail. When <code>SANDFORT_AUDIT_RETENTION_DAYS</code> is above 0 (the default is 0,
+keep forever), the server prunes only the oldest rows, never the newest, and verification starts
+from the first remaining row. An operator can also acknowledge past chain findings with
+<code>audit-reanchor</code>. That adds a row and hides nothing. The <code>operator</code> and the <code>note</code> it stores are
+free text chosen by the person running the command. The <code>reason_code</code> is one of
+<code>incident_acknowledged</code>, <code>migration</code> or <code>other</code>. The command checks none of them against an
+identity.</p>
+<h2 id="what-is-not-recorded">What is not recorded<a class="anchor" href="#what-is-not-recorded" aria-label="Link to section: What is not recorded">#</a></h2>
+<p>Check this list against your control objectives before you rely on the log.</p>
+<ul>
+<li><strong>Successful reads.</strong> Listing, exporting and verifying audit events, and listing or reading
+sandboxes, snapshots, volumes, jobs and usage, write no row. A few reads are recorded because they
+expose sandbox, volume or snapshot content: <code>sandbox.logs.read</code>, <code>toolbox.fs.list</code>,
+<code>toolbox.fs.stat</code>, <code>toolbox.fs.download</code>, <code>toolbox.git.status</code>, <code>volume.export</code> and
+<code>snapshot.exported</code>. A read that is refused after a valid key and after the route matched does
+write a <code>request.denied</code> row, for example a <code>404</code> for an unknown sandbox. A path that matches no
+route does not. A key without <code>audit:read</code> that tries to read the log leaves a <code>request.denied</code>
+row.</li>
+<li><strong>Most failed sign-ins.</strong> A missing, malformed or unknown key, or a wrong secret, leaves no row. A
+revoked or expired key whose secret is correct leaves a <code>request.denied</code> row, at most one per key
+per 60 seconds per server process. A <code>429</code> with the code <code>RATE_LIMITED</code> leaves no row, while a
+<code>429</code> with the code <code>QUOTA_EXCEEDED</code> does (see the notes on <code>outcome</code> above for the action). A
+request body that is not valid JSON is answered with <code>422</code> and leaves no row, with or without a
+valid key, because the body is rejected before the key is resolved. The same holds for every
+refusal by the request text guard (<code>src/sandfort/api/text_guard.py</code>): a lone surrogate or NUL
+character in the body, the path or the query string, a body that is not valid UTF-8, an integer
+with too many digits, a repeated object key and a body nested too deep. It also holds for a
+non-JSON content type (<code>415</code>), a body over the size limit (<code>413</code> from the body limit), a path
+that matches no route (<code>404</code>), a wrong method (<code>405</code>) and every refusal on the <code>/scim/v2</code> routes.
+Repeated refusals of a create or a start for host capacity, and of a create by the per-key
+<code>max_sandboxes</code> cap, are merged into one <code>sandbox.create_refused</code> or <code>sandbox.start_refused</code> row
+per action, key and reason per 60 seconds per server process, and the next row counts the
+suppressed ones in <code>refusals_coalesced</code>. The refusal row is written on a best effort basis and
+never changes the response. If that write fails, the server tries a generic <code>request.denied</code> row
+for the same answer instead, and if the audit store is unavailable, the refusal leaves no row.</li>
+<li><strong>Organization creation and the first key.</strong> <code>create-org</code> and <code>bootstrap</code> write the org, an
+optional default quota and the first key without an audit row. <code>create-key</code> and <code>revoke-key</code> do
+write rows, as <code>platform_admin</code> with the actor id <code>sandfort-admin</code>.</li>
+<li><strong>Host-level access.</strong> Operator commands such as <code>migrate</code>, <code>create-org</code>, <code>bootstrap</code>,
+<code>audit-verify</code>, <code>audit-export</code>, <code>repair-labels</code> and <code>doctor</code>, and any direct access to the
+database or the Docker socket, leave no row. The exceptions are <code>create-key</code>, <code>revoke-key</code> and
+<code>audit-reanchor</code>.</li>
+<li><strong>Command text, stdin and output.</strong> A <code>toolbox.process.execute</code> row holds a digest and byte length
+of the command, the arguments and stdin, the names of the environment variables and no values, and
+<code>cwd</code> and <code>timeout_s</code> in clear. A <code>toolbox.process.code_run</code> row does the same for the code and
+the arguments. The text of the command and of stdin is not stored, and neither is the output.
+Terminal sessions record only create, resize and close, not keystrokes or output.</li>
+<li><strong>Sandbox traffic.</strong> Outbound network attempts of a sandbox are not in the audit log. The egress
+proxy and the preview proxy write no audit rows.</li>
+<li><strong>Some mutating routes.</strong> Rows are tested per feature. We have no test that walks every route. Two
+routes are known to write no row: minting a preview token (<code>POST /v1/sandboxes/{id}/preview-tokens</code>) and updating a webhook (<code>PATCH /v1/webhooks/{id}</code>). The
+governance page lists the main actions, but the list is not complete. Take the action names that
+actually occur from your own export (<code>sandfort audit list --all --json</code>, then count the distinct
+<code>action</code> values). Ask the operator about any mutating call you expect that never appears, or check
+a route you rely on by calling it with a test key and reading the row it writes.</li>
+<li><strong>Person-level identity.</strong> A row names a key id or a session token id, not a person.</li>
+</ul>
+<h2 id="getting-events-out-continuously">Getting events out continuously<a class="anchor" href="#getting-events-out-continuously" aria-label="Link to section: Getting events out continuously">#</a></h2>
+<p>There is no audit webhook. The 13 webhook event types are lifecycle only: <code>sandbox.created</code>,
+<code>sandbox.started</code>, <code>sandbox.stopped</code>, <code>sandbox.deleted</code>, <code>sandbox.error</code>, <code>sandbox.auto_stopped</code>,
+<code>snapshot.created</code>, <code>snapshot.active</code>, <code>snapshot.error</code>, <code>snapshot.deleted</code>, <code>volume.created</code>,
+<code>volume.deleted</code> and <code>quota.exceeded</code>. None of them is an audit row.</p>
+<p>To pull events into your own store, poll:</p>
+<ul>
+<li>For a feed, call <code>GET /v1/audit-events</code> with <code>order=asc</code>. Follow <code>meta.next_cursor</code> until it is
+<code>null</code>. Then store the <code>occurred_at</code> and the <code>id</code> of the last row. On the next run, start with
+<code>from=&lt;that occurred_at minus a safety margin such as 5 minutes&gt;</code> (inclusive) and drop rows whose
+<code>id</code> you already stored. A row committed late by a concurrent request can carry a lower <code>id</code> than
+a row you already read, so keep the set of ids seen in the overlap instead of a single last id.
+Use the same filters and <code>order</code> on every page.</li>
+<li>For evidence, take a full <code>sandfort audit export</code> on a schedule, run <code>verify-head</code> with your
+pinned key and <code>--previous</code> on the earlier file, and keep both. The export has no pagination, and
+the server reads the whole chain of the organization on each call (the <code>from</code> and <code>to</code> filters are
+applied after the read). This page has no measured timing, so test one export at a quiet time
+before you schedule them.</li>
+</ul>
+<p>Both calls need only the audit-only key. Neither writes an audit row.</p>
+<h2 id="windows">Windows<a class="anchor" href="#windows" aria-label="Link to section: Windows">#</a></h2>
+<p>Reading the source shows that the <code>sandfort</code> CLI imports the Unix-only standard library modules
+<code>termios</code> and <code>tty</code> when it loads, so it should not start on native Windows. This was not run on
+Windows. WSL2 is not tested. On native Windows use <code>curl</code> for the routes above, and the Python SDK
+for the checks. The SDK has no such import. This sketch follows the signatures in
+<code>sdk/python/src/sandfort_sdk/audit_export.py</code> and was not run against a server:</p>
+<div class="slab"><div class="rail"><span class="tab static">python</span><button class="tool" type="button" aria-label="Copy code: python block 9" data-copy>Copy</button></div><pre class="code"><code>from sandfort_sdk import verify_export
+
+# Read the file byte for byte, so that line endings stay as the server wrote them.
+with open(&quot;audit.ndjson&quot;, encoding=&quot;utf-8&quot;, newline=&quot;&quot;) as handle:
+    body = handle.read()
+
+result = verify_export(body, &quot;&lt;pinned public key&gt;&quot;, expected_org_id=&quot;&lt;org id&gt;&quot;)
+print(result.ok, result.reason)</code></pre></div>
+<p><code>result.ok</code> is true when every check passed. Otherwise <code>result.reason</code> carries one of the reasons
+listed above. Pass <code>previous=</code> with an earlier export to check that this one extends it.</p>
+<h2 id="open-questions-for-the-operator">Open questions for the operator<a class="anchor" href="#open-questions-for-the-operator" aria-label="Link to section: Open questions for the operator">#</a></h2>
+<p>This page does not answer these, so ask:</p>
+<ul>
+<li><strong>Key rotation.</strong> This page does not describe how the signing key is rotated. A head signed with a
+retired key fails against a different key with <code>key_mismatch</code>, so ask for the old public keys and
+the dates they were in use.</li>
+<li><strong>Retention.</strong> If <code>SANDFORT_AUDIT_RETENTION_DAYS</code> is above 0, rows pruned from the start of the
+trail make <code>--previous</code> against an older export fail with <code>not_a_continuation</code>. Ask for the
+retention setting.</li>
+</ul>
+<h2 id="checklist">Checklist<a class="anchor" href="#checklist" aria-label="Link to section: Checklist">#</a></h2>
+<ul>
+<li>[ ] The audit-only key has only <code>audit:read</code>, no <code>sandbox_labels</code> and a short expiry. The org id
+and the public key came from the operator, not from the export.</li>
+<li>[ ] <code>GET /v1/status</code> shows an <code>audit_public_key</code>. If both fields are <code>null</code>, exports are not
+signed and <code>verify-head</code> cannot run. Ask the operator whether <code>SANDFORT_AUDIT_CHAIN_KEY</code> is
+set, because without it anyone who can write the database can rewrite the chain.</li>
+<li>[ ] The public key or fingerprint came from a channel other than the server, and is passed with
+<code>--public-key</code>.</li>
+<li>[ ] The export was taken by you, and you checked <code>signed_at</code>.</li>
+<li>[ ] <code>sandfort audit verify-head</code> exited 0 with <code>--public-key</code> and <code>--expect-org</code>.</li>
+<li>[ ] A later export verifies with <code>--previous</code> against an earlier one.</li>
+<li>[ ] The operator showed you a <code>sandfort audit verify</code> run on the server and the chain is not
+broken, or each finding is explained. Count this as the operator&#x27;s statement, not your own
+proof.</li>
+<li>[ ] Every row with outcome <code>denied</code> or <code>error</code> was reviewed for the periods that matter,
+whatever its action. Examples are <code>request.denied</code>, <code>request.failed</code>,
+<code>sandbox.create_refused</code>, <code>sandbox.start_refused</code>, <code>toolbox.fs.upload</code> and <code>sandbox.failed</code>.</li>
+<li>[ ] The list of what is not recorded was checked against your control objectives.</li>
+</ul>
+</article>
+</div></div>
+</main>
+<div class="sr" id="copy-status" role="status" aria-live="polite" aria-atomic="true"></div>
+<footer>
+  <div class="in">
+    <div class="about">
+      <a class="brand" href="https://sandfort.dev/"><span class="mark" aria-hidden="true">$</span>Sandfort</a>
+      <p>Sandboxes for AI-generated code, on infrastructure you control.</p>
+    </div>
+    <div><p class="fh" id="footer-product">Product</p><ul aria-labelledby="footer-product"><li><a href="https://sandfort.dev/#agent-loop">Agent loop</a></li><li><a href="https://sandfort.dev/#two-ways">Run it</a></li><li><a href="https://sandfort.dev/#isolation">Isolation</a></li><li><a href="https://sandfort.dev/#governance">Governance</a></li></ul></div>
+    <div><p class="fh" id="footer-developers">Developers</p><ul aria-labelledby="footer-developers"><li><a href="/">API reference</a></li><li><a href="/quickstart">Quickstart</a></li><li><a href="/guide">Connect guide</a></li><li><a href="/operations">Runbook</a></li><li><a href="/security">Security</a></li><li><a href="/isolation-tiers">Isolation tiers</a></li><li><a href="/beta-terms">Beta terms</a></li><li><a href="/release">Releases</a></li><li><a href="/governance">Governance page</a></li><li><a href="/audit-reviewers">Audit for reviewers</a></li><li><a href="https://sandfort.dev/#deploy">Deployment</a></li><li><a href="https://sandfort.dev/#limits">Limits</a></li><li><a href="https://sandfort.dev/#measured">How we measured</a></li></ul></div>
+    <div><p class="fh" id="footer-contact">Contact</p><ul aria-labelledby="footer-contact"><li><a data-umami-event="beta_request" data-umami-event-placement="footer" href="mailto:office@sandfort.dev?subject=Sandfort%20beta%20access&amp;body=Team%20%2F%20company%3A%0AWhat%20your%20agent%20runs%3A%0AHosted%20beta%20or%20self-hosted%3A%0AStack%20(Python%2C%20TypeScript%2C%20MCP%2C%20CLI)%3A%0A">Request beta access</a></li><li><a href="mailto:office@sandfort.dev">office@sandfort.dev</a></li></ul></div>
+    <div class="legal">
+      <span>&#169; 2026 Polygon Consulting doo, Beograd, Serbia</span>
+      <span>Polygon Consulting d.o.o. Beograd-Savski Venac, Kozara 1, Beograd, Serbia
+      &#183; APR mati&#269;ni broj 21466352 &#183; PIB 111345107 &#183; office@sandfort.dev</span>
+      <span>Sandfort 0.1.0, source-available under FSL-1.1-Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+<script src="docs.js"></script>
+
+</body>
+</html>

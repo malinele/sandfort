@@ -3,7 +3,17 @@ name: CI
 on:
   push:
     branches: [main]
+    # Paths no test reads (checked with grep over tests/ on 2026-11-25). docs/, site/ and
+    # README.md stay in: tests read them. A push that touches only these paths skips CI.
+    paths-ignore:
+      - "CHANGELOG.md"
   pull_request:
+
+# A newer push to the same ref cancels the run still in progress: on busy days commits land
+# minutes apart and each full run takes about half an hour of runner time.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:

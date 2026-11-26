@@ -47,11 +47,15 @@ curl -s https://api.sandfort.dev/v1/status
 
 - Sandboxes are ephemeral: nothing in a sandbox survives its deletion, and a stopped sandbox is
   not guaranteed to be restartable after a host change. Do not keep state in a sandbox you
-  cannot recreate. Until it is deleted, a stopped sandbox keeps its files and its environment
-  values.
-- `auto_delete_minutes` defaults to never (`-1`), and `auto_stop_minutes` defaults to 15. Set
-  `auto_delete_minutes` (and `auto_stop_minutes`) on every sandbox you do not want to keep, so
-  stopped sandboxes do not pile up.
+  cannot recreate. Stopping a sandbox keeps its files and its environment values until you
+  delete it. A reset replaces the container with a fresh one from the same image and spec, so
+  everything written to the old container is gone. The env, labels and timers are kept.
+  Volumes you created with `POST /v1/volumes` are kept. The scratch volumes behind
+  `image_mounts` are emptied.
+- `auto_stop_minutes` defaults to 15, so an idle sandbox is stopped after 15 minutes.
+  `auto_delete_minutes` defaults to never (`-1`), so nothing is deleted automatically. Set
+  `auto_delete_minutes` on every sandbox you do not want to keep, so stopped sandboxes do not
+  pile up.
 - Snapshots and volumes persist until you delete them.
 - An organisation's data is deleted on request within five business days. Audit events are
   deleted together with the organisation's data, so export them first with

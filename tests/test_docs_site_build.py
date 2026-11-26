@@ -26,6 +26,7 @@ PAGES = (
     "beta-terms.html",
     "release.html",
     "governance.html",
+    "audit-reviewers.html",
 )
 MARKDOWN_PAGES = tuple(name for name in PAGES if name != "index.html")
 MD_LINK = re.compile(r"""href=["'][^"']*\.md(?:#[^"']*)?["']""")
