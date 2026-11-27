@@ -95,14 +95,16 @@ at the next start, the private in-memory <code>/tmp</code> comes back. gVisor sa
 <code>runc</code> applies it (gVisor&#x27;s documentation). gVisor&#x27;s Sentry filters those calls itself, and the
 host-side <code>runsc</code> processes run under gVisor&#x27;s own seccomp filters. gVisor is the system-call
 boundary.</li>
-<li>Exceeding the memory or process limit usually stops the whole sandbox (the limits count
-gVisor&#x27;s own host processes). After such an unexpected stop the command reports &quot;the sandbox
+<li>Hitting the process limit (an <code>nproc</code> ulimit of 512, per uid) makes new process creation
+fail with <code>EAGAIN</code> and keeps the sandbox running (see &quot;Process limits per tier&quot;). Exceeding
+the memory limit, or the host <code>pids_limit</code> of 1536 after uid changes via <code>CAP_SETUID</code>,
+usually stops the whole sandbox (those limits count gVisor&#x27;s own host processes). After
+such an unexpected stop the command reports &quot;the sandbox
 stopped while running this command: it exceeded its memory or process limit; start it again&quot;
 with exit code 137, the sandbox moves to state <code>stopped</code> with an <code>error_reason</code> that explains
 it, its files are kept, and starting it again works. Sometimes only the offending process is
-killed (exit code 137 with empty stderr, sandbox still <code>started</code>), and hitting the process
-limit can also just make new process creation fail (fork errors such as ENOMEM) without
-stopping anything. Advice: after any exit code 137, check <code>sandbox_stopped</code> in the exec
+killed (exit code 137 with empty stderr, sandbox still <code>started</code>).
+Advice: after any exit code 137, check <code>sandbox_stopped</code> in the exec
 result before continuing. When it is true, the sandbox state is already <code>stopped</code> when the
 response arrives (the server settles it first), so <code>start()</code> can follow at once and the next
 exec works; no polling is needed. Verified on the beta at commit 6a4bcd8 (gvisor,
@@ -127,27 +129,54 @@ refused (EPERM), so a process cannot map itself to root. See &quot;User namespac
 down, and re-read the sandbox state. It moves to <code>stopped</code> within a few seconds after an exec
 sees the sandbox die.</p>
 <h2 id="process-limits-per-tier">Process limits per tier<a class="anchor" href="#process-limits-per-tier" aria-label="Link to section: Process limits per tier">#</a></h2>
-<p>The driver passes <code>pids_limit=512</code> to Docker for every tier. What that limit bounds depends on
-the runtime. Measured on the hosted beta host on 2026-11-26 with one throwaway container per
-runtime, the create options of a sandbox (1 CPU, 512 MiB memory without swap, <code>pids_limit=512</code>,
-the capability set above, <code>no-new-privileges</code>) and a loop that forks up to 1500 sleeping
-children. The host was unaffected in all three cases. These are single measurements on a shared
+<p>The driver passes <code>pids_limit=512</code> to Docker for the <code>container</code> and <code>microvm</code> tiers, and
+<code>pids_limit=1536</code> plus an <code>nproc</code> ulimit of 512 for <code>gvisor</code>. What the limits bound depends on
+the runtime. Measured on the hosted beta host with one throwaway container per runtime, the
+create options of a sandbox (1 CPU, 512 MiB memory without swap, the capability set above,
+<code>no-new-privileges</code>) and a loop that forks up to 1500 sleeping children (<code>container</code> and
+<code>microvm</code> on 2026-11-26 with <code>pids_limit=512</code>, <code>gvisor</code> on 2026-11-27 with the options above).
+The host was unaffected in all three cases. These are single measurements on a shared
 instance, not a benchmark:</p>
-<div class="tbl-wrap" role="region" aria-label="Table: Process limits per tier" tabindex="0"><table><thead><tr><th scope="col">Tier</th><th scope="col"><code>pids.max</code> inside</th><th scope="col">Fork loop</th></tr></thead><tbody><tr><td>container (runc)</td><td>512</td><td>stopped at 511 children with <code>EAGAIN</code></td></tr><tr><td>gvisor (runsc)</td><td>cgroup files not visible</td><td>the 512 MiB memory limit ended it before 100 children: the sandbox was OOM-killed (exit 137)</td></tr><tr><td>microvm (Kata)</td><td><code>max</code></td><td>passed 1300 children, then the whole VM ended</td></tr></tbody></table></div>
+<div class="tbl-wrap" role="region" aria-label="Table: Process limits per tier" tabindex="0"><table><thead><tr><th scope="col">Tier</th><th scope="col"><code>pids.max</code> inside</th><th scope="col">Fork loop</th></tr></thead><tbody><tr><td>container (runc)</td><td>512</td><td>stopped at 511 children with <code>EAGAIN</code></td></tr><tr><td>gvisor (runsc)</td><td>cgroup files not visible, <code>ulimit -u</code> reads 512</td><td>stopped at 509 children with <code>EAGAIN</code>, the sandbox kept running</td></tr><tr><td>microvm (Kata)</td><td><code>max</code></td><td>passed 1300 children, then the whole VM ended</td></tr></tbody></table></div>
 <ul>
-<li>Only on the <code>container</code> tier does the guest see a process-count limit (<code>pids.max</code> 512). On
-<code>gvisor</code> Docker applies the limit to the host cgroup that holds the <code>runsc</code> processes, and the
-guest does not see it. In the measurement the memory limit ended the fork loop first, and fork
-can also fail with an error such as <code>ENOMEM</code> (&quot;gVisor: verified behavior&quot; item 3). On <code>microvm</code>
-the guest kernel does not take the limit over, and the measured loop ended with the whole VM.</li>
-<li>On <code>gvisor</code> and <code>microvm</code> the measured fork loops ended with the sandbox or VM, not with a
-refusal of the 513th process. Exec reports it as described under &quot;gVisor: verified behavior&quot;
-item 3 and &quot;microVM (Kata): verified behavior&quot;.</li>
-<li>The one live fork-bomb test, <code>test_fork_bomb_exhausts_its_pid_budget_and_spares_the_host</code> in
-<code>tests/test_docker_hardening_phase5.py</code>, builds its driver from default <code>Settings()</code>, which
-sets no tier runtime, so it runs on the Docker daemon&#x27;s default runtime (<code>runc</code>, unless the
-daemon is configured otherwise). The <code>gvisor</code> and <code>microvm</code> rows above are not covered by a
-test in the repository.</li>
+<li>On the <code>container</code> tier the guest sees a process-count limit (<code>pids.max</code> 512). On <code>gvisor</code>
+the guest has a process cap too: an <code>nproc</code> ulimit of 512, enforced by the Sentry per uid on
+fork and clone. There is no root exemption, because only <code>CAP_SYS_ADMIN</code> and
+<code>CAP_SYS_RESOURCE</code> are exempt and the driver drops both. Measured on 2026-11-27: the fork
+loop stops at 509 with <code>EAGAIN</code> and the sandbox keeps running, for root and uid 1000, at
+512 MiB and at 2 GiB. The host <code>pids_limit</code> for <code>gvisor</code> sandboxes is 1536. It bounds the
+Sentry&#x27;s own host threads, about 2 per guest task. Before this change the limit was 512 and
+the whole sandbox died at about 238 children. Caveats: the cap is per uid inside the sandbox
+and counts threads. Code with <code>CAP_SETUID</code> can switch uid, and each uid gets its own 512,
+so with more than one uid the sandbox can again reach the host <code>pids_limit</code> of 1536 (about
+2 host threads per guest task, about 750 guest tasks) and die as a whole. When the cap is
+full, Sandfort&#x27;s exec helper also gets <code>EAGAIN</code>, as on runc.</li>
+<li>On <code>microvm</code> the guest kernel does not take the pids limit over, and the measured loop ended
+with the whole VM, not with a refusal of the 513th process. Exec reports it as described
+under &quot;microVM (Kata): verified behavior&quot;. <code>--ulimit nproc</code> is visible in the Kata guest but
+not enforced for root (measured 2026-11-27), so <code>microvm</code> stays without a guest process cap
+for now.</li>
+<li>Why it differs. Upstream sources were read on 2026-11-27 at gVisor commit <code>cc5b7474</code> and
+Kata commit <code>004c81d9</code>, not at the installed versions. <code>runsc</code> writes the OCI pids limit
+only to the host cgroup that holds the sandbox&#x27;s own processes
+(https://github.com/google/gvisor/blob/cc5b7474bf134432a4f41a47d37022fc4f05ede6/runsc/cgroup/cgroup.go).
+gVisor&#x27;s compatibility guide says resource limits are not enforced inside the sandbox
+(https://gvisor.dev/docs/user_guide/compatibility/). Kata&#x27;s runtime-rs clears the pids
+limit before the spec reaches the guest, with the comment &quot;Only CPU and Memory constraints
+are supported in the guest&quot;
+(https://github.com/kata-containers/kata-containers/blob/004c81d9b861982a89d304c9d3cebc2ca6a4955e/src/runtime-rs/crates/runtimes/virt_container/src/container_manager/container.rs).
+No runsc flag or Kata setting that caps guest processes was found.</li>
+<li>Live tests: <code>tests/test_docker_process_cap_tiers_b14.py</code> runs the same fork loop through
+<code>docker exec</code> once per tier, in a container built as the driver builds it:
+<code>test_container_tier_caps_the_fork_loop_with_eagain_below_the_pids_limit</code>,
+<code>test_gvisor_tier_nproc_caps_the_fork_loop_with_the_sandbox_alive</code> and
+<code>test_gvisor_tier_cap_is_independent_of_the_memory_limit</code> (both skipped without <code>runsc</code>; the
+second runs at 2 GiB) and
+<code>test_microvm_tier_guest_sees_pids_max_unbounded_and_passes_the_pids_limit</code> (skipped without
+<code>kata</code>). The gvisor and microvm tests run on the beta host, not in CI. The create options are
+pinned without a daemon in <code>tests/test_hardening_guest_nproc_b14.py</code>.
+<code>test_fork_bomb_exhausts_its_pid_budget_and_spares_the_host</code> in
+<code>tests/test_docker_hardening_phase5.py</code> still covers the daemon default runtime.</li>
 </ul>
 <h2 id="user-namespaces-per-tier">User namespaces per tier<a class="anchor" href="#user-namespaces-per-tier" aria-label="Link to section: User namespaces per tier">#</a></h2>
 <p>Measured on the same host, date and create options as above: a process calls
@@ -179,6 +208,13 @@ and on the beta), and <code>/tmp/.sandfort-keep</code> on <code>gvisor</code> (s
 <code>/tmp/.sf-pty-&lt;id&gt;.pid</code> files while an exec or a PTY runs.</li>
 <li>on an egress allowlist sandbox, the <code>http_proxy</code> and <code>https_proxy</code> variables, whose URL
 carries the sandbox id.</li>
+<li>on <code>gvisor</code>, runtime traces checked on the beta host on 2026-11-27 (a <code>runsc</code> container
+with all capabilities dropped): <code>/.dockerenv</code> exists, the root filesystem is a <code>9p</code> mount,
+the first <code>dmesg</code> line reads <code>Starting gVisor...</code>, the <code>/dev/fuse</code> node exists (the
+<code>mount</code> call it would need is refused), <code>/proc/sysrq-trigger</code> exists, and
+<code>/proc/sys/kernel/yama/ptrace_scope</code> reads <code>1</code>. A beta evaluation reported that a write to
+<code>ptrace_scope</code> is accepted. The sentry emulates these files, so neither the node nor such a
+write reaches the host kernel, and <code>ptrace</code> stays inside the sandbox&#x27;s own PID namespace.</li>
 </ul>
 <p>These traces do work (disk reserve, process kill, keepalive, egress), and Sandfort has no layer
 that masks them. Detonating or analysing malware that checks for sandbox traces is therefore not
@@ -247,7 +283,9 @@ give the sandbox an interface and weaken the no-network guarantee.</li>
 with empty stderr (the guest kernel logs &quot;Out of memory: Killed process&quot;). The sandbox keeps
 running and <code>sandbox_stopped</code> is false. A single huge allocation can instead fail with
 <code>MemoryError</code> (exit code 1).</li>
-<li>A fork bomb can stop the whole microvm, as on gvisor. The exec then reports exit code 137 with
+<li>A fork bomb can stop the whole microvm (on gvisor, since round 98, a single-uid fork loop
+instead stops at the <code>nproc</code> cap with the sandbox alive, see Process limits per tier). The
+exec then reports exit code 137 with
 <code>sandbox_stopped</code> true and the message &quot;the sandbox stopped while running this command ...&quot;;
 the sandbox is already <code>stopped</code> when the response arrives, with an <code>error_reason</code>, and
 starting it again works at once (start takes about 4 s on microvm). Measured on the
@@ -311,8 +349,8 @@ their own kernel, so the host does not see those kills). Limit: Docker keeps the
 after an out-of-memory kill the container survived, so a container that survived one and is
 later SIGKILLed by something else still reads <code>oom_killed</code>.</li>
 <li>Exec results include <code>sandbox_stopped</code> (REST field; SDK <code>ExecResult.sandbox_stopped</code>): true
-when the command&#x27;s sandbox stopped (a gvisor limit overrun, or a fork bomb on gvisor or
-microvm). The CLI then prints a hint to
+when the command&#x27;s sandbox stopped (a gvisor memory or host-thread overrun, or a fork bomb
+on microvm). The CLI then prints a hint to
 start the sandbox again. Use it instead of re-reading the state right after an exit code 137.
 The sandbox state is already <code>stopped</code> when such a response arrives, so calling <code>start()</code>
 right away is safe and the exec after it works; no polling is needed. A sandbox that dies

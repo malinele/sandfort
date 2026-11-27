@@ -2336,7 +2336,11 @@ carries, for example `{"share": "cs101-data"}`, and give the student keys
 
 ### Network
 
-A sandbox has open outbound internet by default. Choose the mode when you create it:
+A sandbox has open outbound internet by default. The hosted beta does not change that default
+(it sets neither `SANDFORT_DEFAULT_BLOCK_NETWORK` nor `SANDFORT_ENFORCE_BLOCK_NETWORK`, checked
+2026-11-27), so code in an open sandbox can send data out over DNS and HTTPS. For code you do
+not trust, use **Blocked**, or **Allowlist** when it needs a package index. Choose the mode
+when you create it:
 
 - **Open (default):** no network argument; outbound traffic is not restricted. Names resolve on all
   tiers (`gvisor` and `microvm` resolve through `1.1.1.1` and `8.8.8.8`).

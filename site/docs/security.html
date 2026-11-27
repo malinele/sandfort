@@ -84,26 +84,15 @@ compromised Docker daemon, and anyone who already holds control of a sandbox nod
 <h2 id="2-sandbox-isolation-as-configured-by-the-docker-driver">2. Sandbox isolation as configured by the Docker driver<a class="anchor" href="#2-sandbox-isolation-as-configured-by-the-docker-driver" aria-label="Link to section: 2. Sandbox isolation as configured by the Docker driver">#</a></h2>
 <p>The container settings are built in <code>src/sandfort/drivers/docker/hardening.py</code> and asserted
 by unit tests. Every sandbox gets:</p>
-<div class="tbl-wrap" role="region" aria-label="Table: 2. Sandbox isolation as configured by the Docker driver" tabindex="0"><table><thead><tr><th scope="col">Control</th><th scope="col">Setting</th></tr></thead><tbody><tr><td>Capabilities</td><td><code>cap_drop=ALL</code></td></tr><tr><td>Added back</td><td><code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>, <code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>, <code>NET_BIND_SERVICE</code></td></tr><tr><td>Privilege</td><td><code>privileged=False</code>, <code>no-new-privileges:true</code>, <code>init=True</code></td></tr><tr><td>Processes</td><td><code>pids_limit=512</code>, a Docker host cgroup limit, and what it bounds differs per tier (see below)</td></tr><tr><td>CPU</td><td><code>nano_cpus</code> from the requested millicores</td></tr><tr><td>Memory</td><td><code>mem_limit</code> from the request, <code>memswap_limit</code> equal to it (no swap)</td></tr><tr><td>Shared memory</td><td><code>shm_size</code> is the smaller of 64 MiB and a quarter of memory</td></tr><tr><td>Open files</td><td><code>nofile</code> soft and hard limit 4096</td></tr><tr><td>Logs</td><td><code>local</code> log driver, 10 MB per file, 3 files</td></tr><tr><td>Docker socket</td><td>not mounted into sandboxes</td></tr></tbody></table></div>
+<div class="tbl-wrap" role="region" aria-label="Table: 2. Sandbox isolation as configured by the Docker driver" tabindex="0"><table><thead><tr><th scope="col">Control</th><th scope="col">Setting</th></tr></thead><tbody><tr><td>Capabilities</td><td><code>cap_drop=ALL</code></td></tr><tr><td>Added back</td><td><code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>, <code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>, <code>NET_BIND_SERVICE</code></td></tr><tr><td>Privilege</td><td><code>privileged=False</code>, <code>no-new-privileges:true</code>, <code>init=True</code></td></tr><tr><td>Processes</td><td><code>pids_limit=512</code> (<code>container</code>, <code>microvm</code>) or 1536 plus an <code>nproc</code> ulimit of 512 (<code>gvisor</code>), and what they bound differs per tier (see below)</td></tr><tr><td>CPU</td><td><code>nano_cpus</code> from the requested millicores</td></tr><tr><td>Memory</td><td><code>mem_limit</code> from the request, <code>memswap_limit</code> equal to it (no swap)</td></tr><tr><td>Shared memory</td><td><code>shm_size</code> is the smaller of 64 MiB and a quarter of memory</td></tr><tr><td>Open files</td><td><code>nofile</code> soft and hard limit 4096</td></tr><tr><td>Logs</td><td><code>local</code> log driver, 10 MB per file, 3 files</td></tr><tr><td>Docker socket</td><td>not mounted into sandboxes</td></tr></tbody></table></div>
 <p>What the table does not say:</p>
 <ul>
-<li><strong>The process limit bounds guest processes on the <code>container</code> tier only.</strong> The driver
-passes <code>pids_limit=512</code> to Docker for every tier (<code>hardening.py</code>), and the tier changes only
-the runtime. Measured on the hosted beta host on 2026-11-26, with the create options of a
-sandbox (512 MiB memory, no swap) and one probe per tier. These are single measurements, not
-a benchmark or a guarantee:
-<ul>
-<li><code>container</code> (runc): <code>pids.max</code> reads 512 inside the sandbox, and a fork loop stopped at 511
-children with <code>EAGAIN</code>.</li>
-<li><code>gvisor</code> (runsc): Docker applies the limit to the host cgroup that holds the <code>runsc</code>
-processes. The cgroup files are not visible inside, and a fork loop was ended by the memory
-limit: the sandbox was OOM-killed (exit 137).</li>
-<li><code>microvm</code> (Kata): <code>pids.max</code> reads <code>max</code> in the guest, and a fork loop passed 1300
-processes before the whole VM ended.</li>
-<li>The host was unaffected in all three cases. On <code>gvisor</code> and <code>microvm</code> the memory limit and
-the end of the sandbox contain a fork loop, not a refusal of the 513th process. Details
-and the exec results: [isolation-tiers], &quot;Process limits per tier&quot;.</li>
-</ul></li>
+<li><strong>The process limit bounds guest processes on the <code>container</code> and <code>gvisor</code> tiers (<code>microvm</code>
+has none).</strong> On <code>gvisor</code> it is an <code>nproc</code> ulimit of 512 per uid, and a fork loop stops with
+<code>EAGAIN</code> while the sandbox keeps running (measured on the hosted beta on 2026-11-27). On
+<code>microvm</code> a fork loop ends the whole VM, not refused at the 513th process (measured
+2026-11-26). The measurement, the caveats, the upstream reasons and the live tests are in
+[isolation-tiers], &quot;Process limits per tier&quot;.</li>
 <li><strong>Seccomp is optional, and two kits set it.</strong> <code>deploy/seccomp.json</code> is
 derived from the moby v28.3.3 default profile, with some syscalls removed and extra rules
 on <code>clone</code> arguments (see its <code>_comment</code>). The driver passes it as a <code>security_opt</code> only
@@ -209,7 +198,17 @@ Desktop is out of scope.</li>
 the script removes the protection while passing the check.</li>
 <li>IPv6 is filtered only for <code>fe80::/10</code> and <code>fc00::/7</code>, and only if <code>ip6tables</code> exists.
 Public IPv6 destinations are not filtered.</li>
-<li>A sandbox without <code>block_all</code> and without an allowlist can reach the public internet.</li>
+<li>A sandbox without <code>block_all</code> and without an allowlist can reach the public internet. On a
+host where <code>deploy/host-setup.sh</code> ran (round 98 or later), each such sandbox address on
+<code>sf-net</code> holds at most <code>SF_SANDBOX_CONN_LIMIT</code> tracked flows at once (default 512). TCP, UDP
+and ICMP count together, and IPv4 and IPv6 count separately. The next new flow is rejected
+with a TCP reset (<code>Connection refused</code>) or ICMP admin-prohibited. Half-open, closing and
+recent UDP flows, DNS included, count until conntrack expires them.</li>
+<li>Image builds on <code>docker0</code> and sandboxes on <code>sf-egress-net</code> get no host connection cap. The
+egress proxy bounds only concurrent CONNECT tunnels on <code>sf-egress-net</code>, not the rate of new
+flows and not DNS packets to the sink, so neither bridge has a host conntrack bound.</li>
+<li>An address that a deleted sandbox used can start with that sandbox&#x27;s flows still counted,
+for up to the conntrack timeouts (about two minutes for half-open and closing flows).</li>
 <li>The default <code>SF_EGRESS_PROXY</code> is <code>127.0.0.1</code>, which admits no real destination. Set it to
 the proxy host&#x27;s address. A proxy on the Docker host itself needs its own INPUT rule.</li>
 </ul>

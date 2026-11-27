@@ -44,6 +44,7 @@ EXPECTED_PATHS = {
     "INSTALL.md",
     "deploy/host-setup.sh",
     "deploy/egress-dns-sink.sh",
+    "deploy/egress-conn-cap.sh",
     "deploy/node-setup.sh",
     "deploy/seccomp.json",
     "deploy/selfhost/Dockerfile",
@@ -192,6 +193,7 @@ def test_shipped_files_match_the_checkout_and_keep_exec_bits(bundle: dict[str, P
     for rel in (
         "deploy/host-setup.sh",
         "deploy/egress-dns-sink.sh",
+        "deploy/egress-conn-cap.sh",
         "deploy/node-setup.sh",
         "deploy/seccomp.json",
         "deploy/selfhost/Dockerfile",

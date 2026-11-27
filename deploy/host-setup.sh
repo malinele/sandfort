@@ -90,6 +90,13 @@
 # tcp port 53 to that address. The rules come from deploy/egress-dns-sink.sh, which this script
 # sources. Unset means nothing is added (the dry run says so).
 #
+# Connection cap. SANDFORT-CONNCAP (deploy/egress-conn-cap.sh, sourced like the DNS sink file)
+# rejects a new flow from a sandbox address on sf-br0 once it holds SF_SANDBOX_CONN_LIMIT tracked
+# flows (default 512, 1 to 100000, 0 = off, read from the environment only). One rule per family
+# sits in SANDFORT-EGRESS before the final RETURN, keyed by the sandbox address (TCP, UDP and
+# ICMP together, IPv4 and IPv6 apart). A probe chain checks xt_connlimit, xt_limit and xt_LOG
+# before any flush and stops with the fix. sf-br0 only: docker0 builds and sf-br1 are not covered.
+#
 # Production. The server cannot observe these rules from inside its process; prod start
 # requires SANDFORT_EGRESS_ACKNOWLEDGED=true after you ran this script on the node.
 
@@ -113,6 +120,7 @@ EGRESS_PROXY=""  # the only destination the egress network reaches (resolved in 
 EGRESS_PROXY_PORT=""  # the one tcp port opened on INPUT and FORWARD (resolved in main)
 PROXY_SOURCE=""  # where the proxy endpoint came from (named in the output)
 EGRESS_NETWORK_ENSURED=0  # 1 once the egress network exists (or its creation was printed)
+SANDBOX_IFACE=""  # the sf-net bridge interface the connection cap matches (set in main)
 DEFAULT_PROXY_PORT="3128"  # used with a derived address when no port is given
 # Dry run on a fresh host only: the egress network is printed, not created, so it has no
 # gateway yet. Docker's default address pool gives docker0 172.17.0.0/16 and the next bridge
@@ -167,6 +175,21 @@ else
     add_dns_sink_exception() {
         return 0
     }
+fi
+
+# The connection cap lives in a sibling file; without it the cap is skipped (the output says so).
+if [ -r "$SCRIPT_DIR/egress-conn-cap.sh" ]; then
+    # shellcheck disable=SC1091 # path is computed at run time
+    . "$SCRIPT_DIR/egress-conn-cap.sh"
+else
+    CONN_CAP=0
+    resolve_conn_cap() {
+        say "egress-conn-cap.sh not found next to host-setup.sh: connection cap skipped"
+    }
+    probe_conn_cap() { return 0; }
+    build_conn_cap_chains() { return 0; }
+    add_conn_cap() { return 0; }
+    report_conn_cap() { say "connection cap: off (egress-conn-cap.sh not found)"; }
 fi
 
 # require_interface IFACE: die unless the interface exists (dry run: warn only).
@@ -458,6 +481,7 @@ build_egress_chain() {
     for range in $BLOCKED_SPECIAL_RANGES $PRIVATE_RANGES; do
         run iptables -A "$chain" -d "$range" -j REJECT --reject-with icmp-admin-prohibited
     done
+    if [ "$chain" = "$EGRESS_CHAIN" ]; then add_conn_cap iptables "$chain" 32; fi
     run iptables -A "$chain" -j RETURN
 }
 
@@ -477,6 +501,7 @@ build_egress_chain_v6() {
     for range in $BLOCKED_RANGES_V6; do
         run ip6tables -A "$EGRESS_CHAIN" -d "$range" -j REJECT --reject-with icmp6-adm-prohibited
     done
+    add_conn_cap ip6tables "$EGRESS_CHAIN" 128
     run ip6tables -A "$EGRESS_CHAIN" -j RETURN
 }
 
@@ -582,9 +607,12 @@ main() {
     require_prerequisites
     resolve_proxy_endpoint
     resolve_dns_sink
+    resolve_conn_cap
+    probe_conn_cap
     ensure_network "$NETWORK" "$BRIDGE_IFACE"
     ensure_egress_network
     iface="$(bridge_interface "$NETWORK" "$BRIDGE_IFACE")"
+    SANDBOX_IFACE="$iface"
     egress_iface="$(bridge_interface "$EGRESS_NETWORK" "$EGRESS_BRIDGE_IFACE")"
     require_interface "$iface"
     require_interface "$egress_iface"
@@ -600,6 +628,7 @@ main() {
     fi
     say "sandbox bridge interface: $iface"
     say "egress proxy bridge interface: $egress_iface (proxy $EGRESS_PROXY)"
+    build_conn_cap_chains
     build_egress_chain "$EGRESS_CHAIN"
     if [ -n "$default_ifaces" ]; then
         # shellcheck disable=SC2086 # BUILD_DNS is a space-separated address list
@@ -624,6 +653,7 @@ main() {
     if [ -n "$default_ifaces" ]; then
         say "default bridge $default_ifaces: port 53 allowed to ${BUILD_DNS:-no resolvers}"
     fi
+    report_conn_cap
     say "not closed: IPv6 INPUT has no host guard, and the Docker nftables backend is" \
         "unsupported; do not treat allowlist sandboxes as reaching only the proxy yet"
 }

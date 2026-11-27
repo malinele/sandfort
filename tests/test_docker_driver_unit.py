@@ -245,11 +245,16 @@ def test_gvisor_options_map_a_user_volume_at_tmp_like_any_other() -> None:
     assert "mounts" not in config
 
 
-def test_gvisor_create_kwargs_differ_from_runc_only_by_the_runtime() -> None:
+def test_gvisor_create_kwargs_differ_from_runc_by_runtime_nproc_and_pids() -> None:
     gvisor = build_host_config(make_spec(volumes=RUNC_VOLUMES), SETTINGS, GVISOR)
     runc = build_host_config(make_spec(volumes=RUNC_VOLUMES), SETTINGS)
 
-    assert {key: value for key, value in gvisor.items() if key != "runtime"} == runc
+    varying = ("runtime", "ulimits", "pids_limit")
+    assert {k: v for k, v in gvisor.items() if k not in varying} == {
+        k: v for k, v in runc.items() if k not in varying
+    }
+    assert gvisor["ulimits"] == runc["ulimits"] + [{"Name": "nproc", "Soft": 512, "Hard": 512}]
+    assert (runc["pids_limit"], gvisor["pids_limit"]) == (512, 1536)
 
 
 @pytest.mark.parametrize("volumes", [(), RUNC_VOLUMES])

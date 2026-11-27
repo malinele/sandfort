@@ -105,7 +105,7 @@ Isolation is chosen per sandbox with the `isolation` field of `POST /v1/sandboxe
 | Tier | Runtime | Boundary | What it costs |
 |---|---|---|---|
 | `container` | runc | Linux namespaces, cgroups, seccomp, a reduced capability set | Shares the host kernel |
-| `gvisor` | runsc (gVisor) | A user-space kernel handles the sandbox's system calls; not a hardware boundary | Spawn-heavy and small-file-heavy work measured about 3x to about 9x slower, and about 40x for a fork-heavy bash loop (`docs/isolation-tiers.md`); exceeding a memory or process limit usually stops the whole sandbox; large writes count toward memory |
+| `gvisor` | runsc (gVisor) | A user-space kernel handles the sandbox's system calls; not a hardware boundary | Spawn-heavy and small-file-heavy work measured about 3x to about 9x slower, and about 40x for a fork-heavy bash loop (`docs/isolation-tiers.md`); exceeding the memory limit usually stops the whole sandbox, while the process cap (`nproc` 512, per uid) fails fork with `EAGAIN` and keeps it running; large writes count toward memory |
 | `microvm` | Kata Containers behind the same Docker driver | Hardware virtualization, a guest kernel per sandbox | Needs KVM; create to started about 4 s on the hosted beta, which runs it on nested KVM |
 
 Sandfort does not claim stronger isolation than microVM-based products. The Firecracker driver in `src/sandfort/drivers/firecracker/` is a skeleton tested against a mock agent and is not offered. Details: `docs/isolation-tiers.md`.

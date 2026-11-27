@@ -49,6 +49,56 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 98 (after tag v0.1.0-beta.87, process limits per tier, host connection cap)
+- **docker: the gvisor tier gets a real guest process cap (B14 98b, 2026-11-27).** For the
+  runsc family the driver now passes an `nproc` ulimit of 512 and a host `pids_limit` of 1536
+  (3 x 512). Measured on the beta VM on 2026-11-27: a fork loop through `docker exec` stops at
+  509 children with `EAGAIN` and the sandbox keeps running, for root and uid 1000, at 512 MiB
+  and 2 GiB; with the previous host pids limit of 512 the whole sandbox died at about 238
+  children, because that limit counts the sentry's host threads. gVisor's Sentry enforces
+  `RLIMIT_NPROC` per uid with no root exemption, and the two exempt capabilities are dropped.
+  `container` and `microvm` keep `pids_limit=512` and no `nproc`: the Kata guest shows the
+  ulimit but does not enforce it for root, so `microvm` stays without a guest cap until a
+  Kata-side step. The cap is per uid and counts threads; code with `CAP_SETUID` can switch
+  uid, and with more than one uid the host `pids_limit` of 1536 (about 2 host threads per
+  guest task) can still end the whole sandbox at about 750 guest tasks. (`src/sandfort/drivers/docker/hardening.py`, `tests/test_hardening_guest_nproc_b14.py`,
+  `tests/test_docker_process_cap_tiers_b14.py`, `tests/test_docker_driver_unit.py`, this
+  commit; the hash is recorded in the next round)
+- **docker: live tests pin the process limit on each isolation tier (B14 98a, 2026-11-27).**
+  A new docker-marked test file runs the same fork loop through `docker exec` once per
+  tier, in a container built by `build_host_config` as the driver builds it (1 CPU, 512 MiB,
+  no swap): on `container` the loop stops below 512 with `EAGAIN`, and the `gvisor` and
+  `microvm` outcomes it pins are the ones the 98b entry above describes. The `gvisor` and
+  `microvm` tests skip without `runsc` or `kata`, so they run on the beta host only. No
+  product code changes in this step. `docs/isolation-tiers.md` names the upstream reasons
+  (`runsc` writes the pids limit only to the host cgroup, gVisor does not enforce limits inside
+  the sandbox, Kata clears the pids limit before the guest), and `docs/security.md` links there
+  instead of repeating the measurement.
+  (`tests/test_docker_process_cap_tiers_b14.py`, `docs/isolation-tiers.md`, `docs/security.md`,
+  `docs/architecture.md`, this commit; the hash is recorded in the next round)
+- **deploy: a host connection cap for open-network sandboxes (B16, 2026-11-27).**
+  `deploy/host-setup.sh` now sources `deploy/egress-conn-cap.sh`, which adds one rule to
+  `SANDFORT-EGRESS` before its final RETURN. A new flow from a sandbox address on `sf-br0` is
+  rejected once that address already holds `SF_SANDBOX_CONN_LIMIT` tracked flows (default 512,
+  1 to 100000, 0 turns it off). TCP, UDP and ICMP share one counter per address, and IPv4 and
+  IPv6 count separately. The rejected flow gets a TCP reset, seen as `Connection refused` in the
+  sandbox, or ICMP admin-prohibited, after a kernel log line `sandfort-conncap:` limited to one
+  a minute. Before any chain is flushed, the script checks that the kernel accepts the
+  `connlimit`, `limit` and `LOG` rules, and stops with the fix when it does not. Image builds
+  on `docker0` and allowlist sandboxes on `sf-br1` (the egress proxy bounds only concurrent
+  tunnels there, so neither bridge has a host conntrack bound) are not
+  covered. The cap exists only on hosts where the script ran, and the live per-tier test runs on
+  the beta host. Applied on the beta VM 2026-11-27 and confirmed live on all three tiers
+  (`tests/test_docker_conn_cap_r98.py`, 3 passed); the counter includes half-open and
+  recently reset flows conntrack still tracks, so refusals begin a few tens of flows below
+  the limit (measured: first refusal at 487-489 admitted with limit 512), and the test
+  asserts the exact upper bound with a documented lower slack of 64.
+  (`deploy/egress-conn-cap.sh`, `deploy/host-setup.sh`,
+  `deploy/release-bundle.sh`, `deploy/selfhost/INSTALL.md`,
+  `tests/test_host_setup_conn_cap_r98.py`, `tests/test_docker_conn_cap_r98.py`,
+  `docs/security.md`, `docs/operations.md`, this commit; the hash is recorded in the next
+  round)
+
 #### Round 97 (after tag v0.1.0-beta.86, egress decision counters, gvisor out-of-memory verdict)
 - **egress: the proxy counts its decisions and serves them on an opt-in loopback listener
   (2026-11-27).** Every CONNECT answer is counted in `sandfort_egress_decisions_total`
@@ -67,7 +117,7 @@ round replaces that description with the real hash from `git log`.
   `src/sandfort/egress/proxy.py`, `src/sandfort/egress/proxy_limits.py`,
   `tests/test_egress_metrics_b21.py`, `tests/test_egress_metrics_proxy_b21.py`,
   `tests/test_egress_metrics_listener_b21.py`,
-  `tests/test_egress_metrics_listener2_b21.py`, this commit; the hash is recorded in the next round)
+  `tests/test_egress_metrics_listener2_b21.py`, 93f0ed7e and 10be6130)
 - **docker: the daemon's out-of-memory verdict is read for gvisor, with an exit-137 check (B20,
   2026-11-27).** Measured on 2026-11-27 on the beta VM (Docker 29.10.0, cgroup v2, `alpine:3.20`,
   512 MiB, the Sandfort hardening flags, `--init`): a memory death read `State.OOMKilled` true,
@@ -91,8 +141,8 @@ round replaces that description with the real hash from `git log`.
   (`src/sandfort/drivers/docker/oom.py`, `src/sandfort/drivers/base.py`,
   `src/sandfort/workers/stop_facts.py`, `src/sandfort/api/schemas/sandboxes.py`,
   `src/sandfort/api/schemas/toolbox_process.py`, `src/sandfort/api/openapi.py`,
-  `tests/test_oom_verdict_tiers_b20.py`, `tests/test_oom_stop_reason_r62.py`, this commit; the
-  hash is recorded in the next round)
+  `tests/test_oom_verdict_tiers_b20.py`, `tests/test_oom_stop_reason_r62.py`,
+  86c0efda and 309506d2)
 
 #### Round 96 (after tag v0.1.0-beta.85, audit coverage of every mutating route, org genesis rows, stop facts, egress deny log)
 - **audit: the preview-token mint and the webhook update write audit rows, and a test walks every

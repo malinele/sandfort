@@ -1321,7 +1321,7 @@ process at startup.
 |---|---|---|
 | `SANDFORT_EGRESS_DENIED_CIDRS` | `127.0.0.0/8`, `::1/128`, `169.254.0.0/16`, `fe80::/10`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7` | Comma-separated networks the proxy refuses after it resolves a name (403). The node's own interface addresses are always added. |
 | `SANDFORT_EGRESS_ALLOWED_PORTS` | `443,80` | CONNECT target ports; any other port is refused (403). |
-| `SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX` | `64` (1 to 100000) | Concurrent tunnels one sandbox may hold; the next one gets 429. |
+| `SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX` | `64` (1 to 100000) | Concurrent tunnels one sandbox may hold; the next one gets 429. Allowlist sandboxes only. Open-network sandboxes are capped on the host by `SF_SANDBOX_CONN_LIMIT` (`deploy/host-setup.sh`). |
 | `SANDFORT_EGRESS_IDLE_TIMEOUT_S` | `300` (1 to 86400) | An idle tunnel is closed after this many seconds. |
 | `SANDFORT_EGRESS_TOKEN_TTL_S` | `604800`, 7 days (60 to 34560000) | Lifetime of the egress token minted for a sandbox. The proxy refuses a longer-lived token, except tokens that earlier releases minted for up to 400 days: those are accepted until they expire. An inline-mode reset mints a fresh token (and revokes the previous one through the credential epoch); jobs mode has no reset, see "Egress in jobs mode and multi-node". |
 | `SANDFORT_EGRESS_POLICY_URL` | unset | Base URL of an api instance on the private network. Unset: v2 tokens get 503, v1 tokens follow their claims with no lookup and no revocation, and the proxy logs a startup warning. |
@@ -1480,6 +1480,38 @@ flush) rebuilds its own chains from scratch, so re-running is safe.
 - **The summary names the endpoint and the gateway.** If the rules admit an address other than
   the egress network gateway, it prints a warning with the `SF_EGRESS_PROXY` value to rerun with.
   Ignore it only when the proxy really is on the other address.
+- **Connection cap for open-network sandboxes.** `SF_SANDBOX_CONN_LIMIT` sets how many tracked
+  flows one sandbox address on `sf-net` may hold at once. The default is `512`, the range is a
+  whole number from 1 to 100000, and `0` turns the cap off. The script reads it from the
+  environment only, never from the env file. The helper `deploy/egress-conn-cap.sh` (keep it
+  beside `host-setup.sh`) adds one rule to `SANDFORT-EGRESS` per IP family. It needs the kernel
+  modules `xt_connlimit`, `xt_limit` and `xt_LOG`. Before it flushes any chain, the script tries
+  those rules in a throwaway chain. If the kernel refuses them, it stops with
+  `connlimit, limit or LOG rule refused by the kernel`. The two fixes are `modprobe xt_connlimit`
+  (and `xt_limit`, `xt_LOG`), or running with `SF_SANDBOX_CONN_LIMIT=0`. `docker0` (image builds)
+  and `sf-br1` are not covered: the egress proxy caps only concurrent tunnels on `sf-br1`, not
+  the rate of new flows or DNS packets to the sink, so neither bridge has a host conntrack
+  bound. The summary line
+  `connection cap: N tracked flows per sandbox address on sf-br0` is followed, where the kernel
+  exposes the table, by `conntrack: max X, in use Y`.
+- **What a capped sandbox sees.** A new TCP connection to a public host and port fails with
+  `Connection refused` while the flows the sandbox already holds keep working. A UDP or ICMP
+  flow over the cap gets ICMP admin-prohibited (`No route to host`), the same error a blocked
+  private range gives, so the journal line `sandfort-conncap:` is what tells the two apart.
+  The kernel logs each rejection as
+  `sandfort-conncap:` with the sandbox address, limited host-wide to one line a minute with a
+  burst of 5:
+
+  ```sh
+  sudo journalctl -k | grep 'sandfort-conncap:'
+  docker network inspect sf-net \
+    --format '{{range .Containers}}{{.Name}} {{.IPv4Address}}{{println}}{{end}}'
+  sudo iptables -L SANDFORT-CONNCAP -v -n
+  ```
+
+  The second command maps an address to its `sf-<sbx_id>` container, and the third shows the
+  counters. To roll back, rerun the script with `SF_SANDBOX_CONN_LIMIT=0`. The chain stays but
+  nothing references it.
 
 The incident behind this: the script used to default to `127.0.0.1`. After a bare run on the
 beta VM, the rules admitted loopback only, and every sandbox with an egress allowlist got
@@ -1617,7 +1649,8 @@ Two settings let the operator constrain what tenants can ask for. Both are read 
 - `SANDFORT_ENFORCE_BLOCK_NETWORK` (default `false`). When `true`, a create that asks for
   `block_all` false, or for an egress allowlist, is refused with 403. Without it, a create may
   choose; `SANDFORT_DEFAULT_BLOCK_NETWORK=true` only changes the default for a create that names
-  no network policy.
+  no network policy. The open network stays open by default, but each sandbox address is capped
+  on hosts where `host-setup.sh` ran (`SF_SANDBOX_CONN_LIMIT`, see "Egress rules on the host").
 - Default org quota: `SANDFORT_DEFAULT_ORG_MAX_SANDBOXES`, `SANDFORT_DEFAULT_ORG_MAX_VCPUS`,
   `SANDFORT_DEFAULT_ORG_MAX_MEMORY_MIB` and `SANDFORT_DEFAULT_ORG_MAX_DISK_GIB`. They set the
   quota a new organization starts with, when `admin_cli` bootstraps or creates it. An unset

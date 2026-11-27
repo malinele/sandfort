@@ -1107,7 +1107,7 @@ refusal in jobs mode is unchanged.</p>
 <p>The proxy process and the api read the same variables (<code>egress_limits_from</code> in
 <code>src/sandfort/config.py</code>). An unset variable takes the default; an invalid value stops the
 process at startup.</p>
-<div class="tbl-wrap" role="region" aria-label="Table: Egress proxy limits" tabindex="0"><table><thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">What it limits</th></tr></thead><tbody><tr><td><code>SANDFORT_EGRESS_DENIED_CIDRS</code></td><td><code>127.0.0.0/8</code>, <code>::1/128</code>, <code>169.254.0.0/16</code>, <code>fe80::/10</code>, <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>, <code>fc00::/7</code></td><td>Comma-separated networks the proxy refuses after it resolves a name (403). The node&#x27;s own interface addresses are always added.</td></tr><tr><td><code>SANDFORT_EGRESS_ALLOWED_PORTS</code></td><td><code>443,80</code></td><td>CONNECT target ports; any other port is refused (403).</td></tr><tr><td><code>SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX</code></td><td><code>64</code> (1 to 100000)</td><td>Concurrent tunnels one sandbox may hold; the next one gets 429.</td></tr><tr><td><code>SANDFORT_EGRESS_IDLE_TIMEOUT_S</code></td><td><code>300</code> (1 to 86400)</td><td>An idle tunnel is closed after this many seconds.</td></tr><tr><td><code>SANDFORT_EGRESS_TOKEN_TTL_S</code></td><td><code>604800</code>, 7 days (60 to 34560000)</td><td>Lifetime of the egress token minted for a sandbox. The proxy refuses a longer-lived token, except tokens that earlier releases minted for up to 400 days: those are accepted until they expire. An inline-mode reset mints a fresh token (and revokes the previous one through the credential epoch); jobs mode has no reset, see &quot;Egress in jobs mode and multi-node&quot;.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_URL</code></td><td>unset</td><td>Base URL of an api instance on the private network. Unset: v2 tokens get 503, v1 tokens follow their claims with no lookup and no revocation, and the proxy logs a startup warning.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_CACHE_S</code></td><td><code>5</code> (2 to 60)</td><td>How long a fetched policy is used, counted from when the request was sent; also the sweep interval.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_TIMEOUT_S</code></td><td><code>2</code> (1 to 10, and less than the cache setting)</td><td>Timeout of one policy lookup.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_MAX_STALE_S</code></td><td><code>60</code> (at least the cache setting)</td><td>Open tunnels of a sandbox whose policy cannot be refreshed are closed after this long.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_PIN_S</code></td><td><code>30</code> (0 to 300)</td><td>How long the proxy reuses the addresses it resolved for a name, per sandbox and name, so a CONNECT inside the window dials the same set without a new query. <code>0</code> resolves on every CONNECT. At most 256 pins per sandbox and 65536 per proxy. A failed, empty or unreachable answer is never pinned, and a pin is dropped when the sandbox&#x27;s policy no longer admits the name.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_SINK_LISTEN</code></td><td>unset</td><td>Proxy only. The IPv4 address the proxy binds the DNS sink to, udp and tcp port 53 (below). <code>addr</code> or <code>addr:53</code>; any other port, IPv6, a hostname or a list is refused at startup. Unset: no sink.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_SINK_ADDRESS</code></td><td>unset</td><td>Api and driver. The sink address given as the only DNS server to sandboxes on <code>sf-egress-net</code> (below). Same accepted forms as the listen setting. It must name the address the proxy listens on.</td></tr><tr><td><code>SANDFORT_EGRESS_METRICS_LISTEN</code></td><td>unset</td><td>Proxy only. A loopback IPv4 address and port, such as <code>127.0.0.1:9464</code>, where the proxy serves <code>GET /metrics</code> with its egress counters (below). A wildcard, any other address, IPv6, a hostname, the proxy port and port 53 are refused at startup. Unset: no listener.</td></tr></tbody></table></div>
+<div class="tbl-wrap" role="region" aria-label="Table: Egress proxy limits" tabindex="0"><table><thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">What it limits</th></tr></thead><tbody><tr><td><code>SANDFORT_EGRESS_DENIED_CIDRS</code></td><td><code>127.0.0.0/8</code>, <code>::1/128</code>, <code>169.254.0.0/16</code>, <code>fe80::/10</code>, <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>, <code>fc00::/7</code></td><td>Comma-separated networks the proxy refuses after it resolves a name (403). The node&#x27;s own interface addresses are always added.</td></tr><tr><td><code>SANDFORT_EGRESS_ALLOWED_PORTS</code></td><td><code>443,80</code></td><td>CONNECT target ports; any other port is refused (403).</td></tr><tr><td><code>SANDFORT_EGRESS_MAX_CONNECTIONS_PER_SANDBOX</code></td><td><code>64</code> (1 to 100000)</td><td>Concurrent tunnels one sandbox may hold; the next one gets 429. Allowlist sandboxes only. Open-network sandboxes are capped on the host by <code>SF_SANDBOX_CONN_LIMIT</code> (<code>deploy/host-setup.sh</code>).</td></tr><tr><td><code>SANDFORT_EGRESS_IDLE_TIMEOUT_S</code></td><td><code>300</code> (1 to 86400)</td><td>An idle tunnel is closed after this many seconds.</td></tr><tr><td><code>SANDFORT_EGRESS_TOKEN_TTL_S</code></td><td><code>604800</code>, 7 days (60 to 34560000)</td><td>Lifetime of the egress token minted for a sandbox. The proxy refuses a longer-lived token, except tokens that earlier releases minted for up to 400 days: those are accepted until they expire. An inline-mode reset mints a fresh token (and revokes the previous one through the credential epoch); jobs mode has no reset, see &quot;Egress in jobs mode and multi-node&quot;.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_URL</code></td><td>unset</td><td>Base URL of an api instance on the private network. Unset: v2 tokens get 503, v1 tokens follow their claims with no lookup and no revocation, and the proxy logs a startup warning.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_CACHE_S</code></td><td><code>5</code> (2 to 60)</td><td>How long a fetched policy is used, counted from when the request was sent; also the sweep interval.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_TIMEOUT_S</code></td><td><code>2</code> (1 to 10, and less than the cache setting)</td><td>Timeout of one policy lookup.</td></tr><tr><td><code>SANDFORT_EGRESS_POLICY_MAX_STALE_S</code></td><td><code>60</code> (at least the cache setting)</td><td>Open tunnels of a sandbox whose policy cannot be refreshed are closed after this long.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_PIN_S</code></td><td><code>30</code> (0 to 300)</td><td>How long the proxy reuses the addresses it resolved for a name, per sandbox and name, so a CONNECT inside the window dials the same set without a new query. <code>0</code> resolves on every CONNECT. At most 256 pins per sandbox and 65536 per proxy. A failed, empty or unreachable answer is never pinned, and a pin is dropped when the sandbox&#x27;s policy no longer admits the name.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_SINK_LISTEN</code></td><td>unset</td><td>Proxy only. The IPv4 address the proxy binds the DNS sink to, udp and tcp port 53 (below). <code>addr</code> or <code>addr:53</code>; any other port, IPv6, a hostname or a list is refused at startup. Unset: no sink.</td></tr><tr><td><code>SANDFORT_EGRESS_DNS_SINK_ADDRESS</code></td><td>unset</td><td>Api and driver. The sink address given as the only DNS server to sandboxes on <code>sf-egress-net</code> (below). Same accepted forms as the listen setting. It must name the address the proxy listens on.</td></tr><tr><td><code>SANDFORT_EGRESS_METRICS_LISTEN</code></td><td>unset</td><td>Proxy only. A loopback IPv4 address and port, such as <code>127.0.0.1:9464</code>, where the proxy serves <code>GET /metrics</code> with its egress counters (below). A wildcard, any other address, IPv6, a hostname, the proxy port and port 53 are refused at startup. Unset: no listener.</td></tr></tbody></table></div>
 <p>This release has no setting for a process-wide ceiling on proxy connections and none for a limit
 on connections that have not authenticated yet. The only configurable cap is the per-sandbox one
 above. The request-read timeout (15 s) and the upstream connect timeout (10 s) are constants in
@@ -1236,6 +1236,34 @@ the script then prints a warning. Use it only where nothing proxies for sandboxe
 <li><p><strong>The summary names the endpoint and the gateway.</strong> If the rules admit an address other than
 the egress network gateway, it prints a warning with the <code>SF_EGRESS_PROXY</code> value to rerun with.
 Ignore it only when the proxy really is on the other address.</p></li>
+<li><p><strong>Connection cap for open-network sandboxes.</strong> <code>SF_SANDBOX_CONN_LIMIT</code> sets how many tracked
+flows one sandbox address on <code>sf-net</code> may hold at once. The default is <code>512</code>, the range is a
+whole number from 1 to 100000, and <code>0</code> turns the cap off. The script reads it from the
+environment only, never from the env file. The helper <code>deploy/egress-conn-cap.sh</code> (keep it
+beside <code>host-setup.sh</code>) adds one rule to <code>SANDFORT-EGRESS</code> per IP family. It needs the kernel
+modules <code>xt_connlimit</code>, <code>xt_limit</code> and <code>xt_LOG</code>. Before it flushes any chain, the script tries
+those rules in a throwaway chain. If the kernel refuses them, it stops with
+<code>connlimit, limit or LOG rule refused by the kernel</code>. The two fixes are <code>modprobe xt_connlimit</code>
+(and <code>xt_limit</code>, <code>xt_LOG</code>), or running with <code>SF_SANDBOX_CONN_LIMIT=0</code>. <code>docker0</code> (image builds)
+and <code>sf-br1</code> are not covered: the egress proxy caps only concurrent tunnels on <code>sf-br1</code>, not
+the rate of new flows or DNS packets to the sink, so neither bridge has a host conntrack
+bound. The summary line
+<code>connection cap: N tracked flows per sandbox address on sf-br0</code> is followed, where the kernel
+exposes the table, by <code>conntrack: max X, in use Y</code>.</p></li>
+<li><p><strong>What a capped sandbox sees.</strong> A new TCP connection to a public host and port fails with
+<code>Connection refused</code> while the flows the sandbox already holds keep working. A UDP or ICMP
+flow over the cap gets ICMP admin-prohibited (<code>No route to host</code>), the same error a blocked
+private range gives, so the journal line <code>sandfort-conncap:</code> is what tells the two apart.
+The kernel logs each rejection as
+<code>sandfort-conncap:</code> with the sandbox address, limited host-wide to one line a minute with a
+burst of 5:</p>
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 17" data-copy>Copy</button></div><pre class="code"><code>sudo journalctl -k | grep &#x27;sandfort-conncap:&#x27;
+docker network inspect sf-net \
+  --format &#x27;{{range .Containers}}{{.Name}} {{.IPv4Address}}{{println}}{{end}}&#x27;
+sudo iptables -L SANDFORT-CONNCAP -v -n</code></pre></div>
+<p>The second command maps an address to its <code>sf-&lt;sbx_id&gt;</code> container, and the third shows the
+counters. To roll back, rerun the script with <code>SF_SANDBOX_CONN_LIMIT=0</code>. The chain stays but
+nothing references it.</p></li>
 </ul>
 <p>The incident behind this: the script used to default to <code>127.0.0.1</code>. After a bare run on the
 beta VM, the rules admitted loopback only, and every sandbox with an egress allowlist got
@@ -1243,7 +1271,7 @@ beta VM, the rules admitted loopback only, and every sandbox with an egress allo
 affected. The fix is to rerun the script with the proxy address; it rebuilds its chains.</p>
 <h2 id="doctor-python--m-sandfortadmin_cli-doctor">Doctor: <code>python -m sandfort.admin_cli doctor</code><a class="anchor" href="#doctor-python--m-sandfortadmin_cli-doctor" aria-label="Link to section: Doctor: python -m sandfort.admin_cli doctor">#</a></h2>
 <p><code>doctor</code> prints one line per production-readiness check for the node it runs on:</p>
-<div class="slab"><div class="rail"><span class="tab static">text</span><button class="tool" type="button" aria-label="Copy code: text block 17" data-copy>Copy</button></div><pre class="code"><code>PASS docker daemon: ...
+<div class="slab"><div class="rail"><span class="tab static">text</span><button class="tool" type="button" aria-label="Copy code: text block 18" data-copy>Copy</button></div><pre class="code"><code>PASS docker daemon: ...
 WARN userns remap: ...
 FAIL egress probe: ...
 summary: 8 pass, 1 warn, 1 fail</code></pre></div>
@@ -1353,7 +1381,8 @@ probe checks the result at every start.</li>
 <li><code>SANDFORT_ENFORCE_BLOCK_NETWORK</code> (default <code>false</code>). When <code>true</code>, a create that asks for
 <code>block_all</code> false, or for an egress allowlist, is refused with 403. Without it, a create may
 choose; <code>SANDFORT_DEFAULT_BLOCK_NETWORK=true</code> only changes the default for a create that names
-no network policy.</li>
+no network policy. The open network stays open by default, but each sandbox address is capped
+on hosts where <code>host-setup.sh</code> ran (<code>SF_SANDBOX_CONN_LIMIT</code>, see &quot;Egress rules on the host&quot;).</li>
 <li>Default org quota: <code>SANDFORT_DEFAULT_ORG_MAX_SANDBOXES</code>, <code>SANDFORT_DEFAULT_ORG_MAX_VCPUS</code>,
 <code>SANDFORT_DEFAULT_ORG_MAX_MEMORY_MIB</code> and <code>SANDFORT_DEFAULT_ORG_MAX_DISK_GIB</code>. They set the
 quota a new organization starts with, when <code>admin_cli</code> bootstraps or creates it. An unset
@@ -1402,7 +1431,7 @@ changing the pepper also invalidates every SCIM token.</p>
 with <code>developer</code> cannot create or promote an admin, and the minting key must itself hold the
 scopes of that role (otherwise 403). The plaintext is in the <code>token</code> field of the response,
 exactly once; only a salted hash is stored and it cannot be recovered.</p>
-<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 18" data-copy>Copy</button></div><pre class="code"><code>curl -sS -X POST &quot;$SANDFORT_BASE_URL/v1/org/scim-tokens&quot; \
+<div class="slab"><div class="rail"><span class="tab static">sh</span><button class="tool" type="button" aria-label="Copy code: sh block 19" data-copy>Copy</button></div><pre class="code"><code>curl -sS -X POST &quot;$SANDFORT_BASE_URL/v1/org/scim-tokens&quot; \
   -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; -H &quot;Content-Type: application/json&quot; \
   -d &#x27;{&quot;name&quot;: &quot;okta-prod&quot;, &quot;max_role&quot;: &quot;developer&quot;}&#x27;
 # data.id (stk_...), data.prefix, data.max_role, data.token (sf_scim_..., shown once)
@@ -1578,14 +1607,14 @@ cause is hidden.</li>
 <code>stop_cause</code> value as a server-side filter (an enum in <code>openapi/sandfort.v1.json</code>; an unknown
 value answers 422). It combines with <code>state</code>, <code>label</code>, <code>order</code> and <code>cursor</code>, so no client-side
 filtering is needed:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 19" data-copy>Copy</button></div><pre class="code"><code>export SANDFORT_BASE_URL=https://api.sandfort.dev   # or your own base URL
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 20" data-copy>Copy</button></div><pre class="code"><code>export SANDFORT_BASE_URL=https://api.sandfort.dev   # or your own base URL
 curl -s &quot;$SANDFORT_BASE_URL/v1/sandboxes?stop_cause=container_exited&quot; \
   -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot;</code></pre></div>
 <p>To find repeat container exits for one sandbox, list its <code>sandbox.drift_detected</code> audit rows
 (an org-wide key with <code>audit:read</code>). <code>sandbox.drift_detected</code> is also written for a container that
 is gone or was never started, so several rows alone do not mean repeat exits: count only the rows
 whose <code>details.stop_cause</code> equals <code>container_exited</code> (or that carry <code>details.stopped_unexpectedly</code>):</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 20" data-copy>Copy</button></div><pre class="code"><code>SANDBOX_ID=sbx_...
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 21" data-copy>Copy</button></div><pre class="code"><code>SANDBOX_ID=sbx_...
 curl -s &quot;$SANDFORT_BASE_URL/v1/audit-events?action=sandbox.drift_detected&amp;target_id=$SANDBOX_ID&quot; \
   -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot;</code></pre></div>
 <p>When a toolbox call hits a sandbox without a container, the 409 <code>CONFLICT</code> with reason
@@ -1631,7 +1660,7 @@ so tell clients to use a fresh value per call, or leave it unset. In a multi-nod
 passes through the hop to the node that owns the sandbox, so one id spans both nodes.</p>
 <p>Each server log line is one JSON object, and every line logged while a request is served has a
 <code>request_id</code> field (<code>src/sandfort/logging.py</code>):</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 21" data-copy>Copy</button></div><pre class="code"><code># REQUEST_ID is the x-request-id header of the response (or error.request_id), whatever its form:
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 22" data-copy>Copy</button></div><pre class="code"><code># REQUEST_ID is the x-request-id header of the response (or error.request_id), whatever its form:
 # a plain 32-hex id as below, or a server-minted req_ + 32 hex.
 REQUEST_ID=0123456789abcdef0123456789abcdef
 kubectl -n sandfort logs deploy/sandfort-api \
@@ -1660,7 +1689,7 @@ shows the sentence, use the <code>x-request-id</code> of the call that showed th
 exposes it as <code>SandboxFailedError.request_id</code>); a failure that happened in a background job may
 have no <code>request_id</code> in its log line, because lines logged outside a request carry none. Then
 filter the logs as above, adding the logger name:</p>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 22" data-copy>Copy</button></div><pre class="code"><code>kubectl -n sandfort logs deploy/sandfort-api \
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 23" data-copy>Copy</button></div><pre class="code"><code>kubectl -n sandfort logs deploy/sandfort-api \
   | jq -R -c --arg id &quot;$REQUEST_ID&quot; \
       &#x27;fromjson? | select(.request_id == $id and (.logger | startswith(&quot;sandfort.drivers&quot;)))&#x27;</code></pre></div>
 <p>For a job without a <code>request_id</code>, search the worker logs by the <code>ref</code> (the container name or the
@@ -1730,7 +1759,7 @@ still set, empty it and clear the marker; each recovery is an audit row <code>vo
 start tries again. While a volume carries the marker, an export of it and a sandbox create that mounts it answer 409 <code>CONFLICT</code> with <code>details.reason</code> <code>restore_unrecovered</code>; a new restore of it is still accepted and replaces the contents. Recovery clears the marker only where it still holds the value it read, so it never erases the marker of a newer restore. The marker names no process, so a server that starts while another one is mid-restore on the same
 volume empties it: run one API process per node that holds volumes. A second process sharing the daemon would not only have its marked volumes emptied by the other&#x27;s recovery, it could also have its live exports and restores destroyed, because the orphan-helper sweep cannot see another process&#x27;s in-flight transfers.</p>
 <h3 id="examples">Examples<a class="anchor" href="#examples" aria-label="Link to section: Examples">#</a></h3>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 23" data-copy>Copy</button></div><pre class="code"><code># Export: scope volumes:read. The file name is &lt;volume name&gt;.tar.gz.
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 24" data-copy>Copy</button></div><pre class="code"><code># Export: scope volumes:read. The file name is &lt;volume name&gt;.tar.gz.
 curl -fsS -o dataset.tar.gz -H &quot;Authorization: Bearer $SANDFORT_API_KEY&quot; \
   &quot;$SANDFORT_BASE_URL/v1/volumes/$VOLUME_ID/export&quot;
 sandfort volume export dataset -o dataset.tar.gz          # prints: exported vol_... to dataset.tar.gz: N bytes
@@ -1806,7 +1835,7 @@ body, for uptime probes; it is not listed in the OpenAPI document.</p>
 <li>A file that exists but cannot be read (for example a permission error) is logged as a warning
 and treated as no notice.</li>
 </ul>
-<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 24" data-copy>Copy</button></div><pre class="code"><code>echo &quot;degraded: upgrading the node, sandboxes restart between 14:00 and 14:30 UTC&quot; \
+<div class="slab"><div class="rail"><span class="tab static">bash</span><button class="tool" type="button" aria-label="Copy code: bash block 25" data-copy>Copy</button></div><pre class="code"><code>echo &quot;degraded: upgrading the node, sandboxes restart between 14:00 and 14:30 UTC&quot; \
   &gt; /etc/sandfort/notice/notice.txt        # post
 : &gt; /etc/sandfort/notice/notice.txt        # clear (or delete the file)</code></pre></div>
 <p>The path is the container path used on the hosted beta (next paragraphs); set
@@ -1881,7 +1910,7 @@ extra) and two environment variables:</p>
 </ul>
 <p>The server exits with an error on stderr if either is missing. Register it with a client
 using the command line below (adjust paths), for example in an <code>mcpServers</code> entry:</p>
-<div class="slab"><div class="rail"><span class="tab static">json</span><button class="tool" type="button" aria-label="Copy code: json block 25" data-copy>Copy</button></div><pre class="code"><code>{
+<div class="slab"><div class="rail"><span class="tab static">json</span><button class="tool" type="button" aria-label="Copy code: json block 26" data-copy>Copy</button></div><pre class="code"><code>{
   &quot;mcpServers&quot;: {
     &quot;sandfort&quot;: {
       &quot;command&quot;: &quot;/path/to/sandfort/.venv/bin/python&quot;,

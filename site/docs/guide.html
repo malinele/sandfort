@@ -1938,7 +1938,11 @@ every student can list and mount every other student&#x27;s volume. Use a label 
 carries, for example <code>{&quot;share&quot;: &quot;cs101-data&quot;}</code>, and give the student keys
 <code>--shared-volume-label share=cs101-data</code>. Keep <code>course</code> and <code>student</code> for the private volumes.</p>
 <h3 id="network">Network<a class="anchor" href="#network" aria-label="Link to section: Network">#</a></h3>
-<p>A sandbox has open outbound internet by default. Choose the mode when you create it:</p>
+<p>A sandbox has open outbound internet by default. The hosted beta does not change that default
+(it sets neither <code>SANDFORT_DEFAULT_BLOCK_NETWORK</code> nor <code>SANDFORT_ENFORCE_BLOCK_NETWORK</code>, checked
+2026-11-27), so code in an open sandbox can send data out over DNS and HTTPS. For code you do
+not trust, use <strong>Blocked</strong>, or <strong>Allowlist</strong> when it needs a package index. Choose the mode
+when you create it:</p>
 <ul>
 <li><strong>Open (default):</strong> no network argument; outbound traffic is not restricted. Names resolve on all
 tiers (<code>gvisor</code> and <code>microvm</code> resolve through <code>1.1.1.1</code> and <code>8.8.8.8</code>).</li>

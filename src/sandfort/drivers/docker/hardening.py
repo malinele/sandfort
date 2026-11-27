@@ -16,6 +16,9 @@ remapping) get ``userns_mode="host"``; every other tier keeps the daemon's setti
 
 A spec may name an isolation tier (``domain.isolation``); the tier's runtime from the options'
 tier map decides the ``runtime`` kwarg and the gVisor mode flag.
+
+The runsc family also gets a pair of process limits: an ``nproc`` ulimit of 512 for the guest
+and a host ``pids_limit`` of 1536 that leaves room for the sentry's own threads.
 """
 
 import json
@@ -28,6 +31,7 @@ from typing import Any
 from sandfort.config import (
     DEFAULT_GVISOR_DNS,
     DEFAULT_USERNS_HOST_TIERS,
+    GVISOR_RUNTIME_PREFIX,
     PROD_ENVIRONMENT,
     Settings,
     brings_own_network_stack,
@@ -44,6 +48,15 @@ BYTES_PER_MIB = 1024 * 1024
 BYTES_PER_GIB = 1024 * BYTES_PER_MIB
 NANO_CPUS_PER_MILLICORE = 1_000_000
 PIDS_LIMIT = 512
+# gvisor tier (B14 98b), measured 2026-11-27 on the beta VM: the host pids limit counts the
+# sentry's own host threads, about 2 per guest task, so at 512 the whole sandbox died at about
+# 238 children. With an ``nproc`` ulimit of 512 and a host limit of 1536 the fork loop stops at
+# 509 with EAGAIN and the sandbox keeps running, for root and uid 1000. The Kata guest shows
+# the ulimit but does not enforce it for root, so only the runsc family gets the pair. The
+# nproc cap is per uid: with more than one uid (CAP_SETUID) the host limit of 1536 can still
+# end the whole sandbox at about 750 guest tasks.
+NPROC_LIMIT = PIDS_LIMIT
+GVISOR_PIDS_LIMIT = 3 * PIDS_LIMIT
 NOFILE_LIMIT = 4096
 SHM_MAX_BYTES = 64 * BYTES_PER_MIB
 SHM_MEMORY_DIVISOR = 4
@@ -167,6 +180,24 @@ def _runtime_for(spec: SandboxSpec, options: HardeningOptions) -> tuple[str | No
     return runtime, runtime == GVISOR_RUNTIME
 
 
+def _is_runsc_family(runtime: str | None) -> bool:
+    """True for a runsc runtime name; the rule ``config.check_tier_families`` applies."""
+    return runtime is not None and runtime.strip().lower().startswith(GVISOR_RUNTIME_PREFIX)
+
+
+def _guest_pids_limit(runtime: str | None) -> int:
+    """The host pids limit: raised for the runsc family so the sentry outlives the guest cap."""
+    return GVISOR_PIDS_LIMIT if _is_runsc_family(runtime) else PIDS_LIMIT
+
+
+def _guest_ulimits(runtime: str | None) -> list[dict[str, Any]]:
+    """``nofile`` for every tier, plus ``nproc`` for the runsc family."""
+    limits: list[dict[str, Any]] = [{"Name": "nofile", "Soft": NOFILE_LIMIT, "Hard": NOFILE_LIMIT}]
+    if _is_runsc_family(runtime):
+        limits.append({"Name": "nproc", "Soft": NPROC_LIMIT, "Hard": NPROC_LIMIT})
+    return limits
+
+
 def _security_opt(options: HardeningOptions) -> list[str]:
     if options.seccomp_profile is None:
         return [NO_NEW_PRIVILEGES]
@@ -211,19 +242,20 @@ def build_host_config(
     chosen = options or HardeningOptions()
     resources = spec.resources
     memory_bytes = resources.memory_mib * BYTES_PER_MIB
+    runtime, _ = _runtime_for(spec, chosen)
 
     kwargs: dict[str, Any] = {
         "nano_cpus": resources.cpu_millicores * NANO_CPUS_PER_MILLICORE,
         "mem_limit": memory_bytes,
         "memswap_limit": memory_bytes,  # equal to mem_limit: no swap
-        "pids_limit": PIDS_LIMIT,
+        "pids_limit": _guest_pids_limit(runtime),
         "shm_size": min(SHM_MAX_BYTES, memory_bytes // SHM_MEMORY_DIVISOR),
         "cap_drop": ["ALL"],
         "cap_add": list(CAPS_ADDED),
         "security_opt": _security_opt(chosen),
         "init": True,
         "privileged": False,
-        "ulimits": [{"Name": "nofile", "Soft": NOFILE_LIMIT, "Hard": NOFILE_LIMIT}],
+        "ulimits": _guest_ulimits(runtime),
         "log_config": {
             "Type": LOG_DRIVER,
             "Config": {"max-size": LOG_MAX_SIZE, "max-file": LOG_MAX_FILES},
@@ -234,7 +266,6 @@ def build_host_config(
         kwargs["user"] = chosen.user
     if chosen.cgroup_parent is not None:
         kwargs["cgroup_parent"] = chosen.cgroup_parent
-    runtime, _ = _runtime_for(spec, chosen)
     if runtime is not None:
         kwargs["runtime"] = runtime
     dns = _dns_sink(kwargs["network_mode"], runtime, settings)

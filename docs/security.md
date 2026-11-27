@@ -60,7 +60,7 @@ by unit tests. Every sandbox gets:
 | Capabilities | `cap_drop=ALL` |
 | Added back | `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID`, `SETGID`, `KILL`, `NET_BIND_SERVICE` |
 | Privilege | `privileged=False`, `no-new-privileges:true`, `init=True` |
-| Processes | `pids_limit=512`, a Docker host cgroup limit, and what it bounds differs per tier (see below) |
+| Processes | `pids_limit=512` (`container`, `microvm`) or 1536 plus an `nproc` ulimit of 512 (`gvisor`), and what they bound differs per tier (see below) |
 | CPU | `nano_cpus` from the requested millicores |
 | Memory | `mem_limit` from the request, `memswap_limit` equal to it (no swap) |
 | Shared memory | `shm_size` is the smaller of 64 MiB and a quarter of memory |
@@ -70,21 +70,12 @@ by unit tests. Every sandbox gets:
 
 What the table does not say:
 
-- **The process limit bounds guest processes on the `container` tier only.** The driver
-  passes `pids_limit=512` to Docker for every tier (`hardening.py`), and the tier changes only
-  the runtime. Measured on the hosted beta host on 2026-11-26, with the create options of a
-  sandbox (512 MiB memory, no swap) and one probe per tier. These are single measurements, not
-  a benchmark or a guarantee:
-  - `container` (runc): `pids.max` reads 512 inside the sandbox, and a fork loop stopped at 511
-    children with `EAGAIN`.
-  - `gvisor` (runsc): Docker applies the limit to the host cgroup that holds the `runsc`
-    processes. The cgroup files are not visible inside, and a fork loop was ended by the memory
-    limit: the sandbox was OOM-killed (exit 137).
-  - `microvm` (Kata): `pids.max` reads `max` in the guest, and a fork loop passed 1300
-    processes before the whole VM ended.
-  - The host was unaffected in all three cases. On `gvisor` and `microvm` the memory limit and
-    the end of the sandbox contain a fork loop, not a refusal of the 513th process. Details
-    and the exec results: [isolation-tiers], "Process limits per tier".
+- **The process limit bounds guest processes on the `container` and `gvisor` tiers (`microvm`
+  has none).** On `gvisor` it is an `nproc` ulimit of 512 per uid, and a fork loop stops with
+  `EAGAIN` while the sandbox keeps running (measured on the hosted beta on 2026-11-27). On
+  `microvm` a fork loop ends the whole VM, not refused at the 513th process (measured
+  2026-11-26). The measurement, the caveats, the upstream reasons and the live tests are in
+  [isolation-tiers], "Process limits per tier".
 - **Seccomp is optional, and two kits set it.** `deploy/seccomp.json` is
   derived from the moby v28.3.3 default profile, with some syscalls removed and extra rules
   on `clone` arguments (see its `_comment`). The driver passes it as a `security_opt` only
@@ -189,7 +180,17 @@ Limits of the network controls, stated in `deploy/host-setup.sh` and [operations
   the script removes the protection while passing the check.
 - IPv6 is filtered only for `fe80::/10` and `fc00::/7`, and only if `ip6tables` exists.
   Public IPv6 destinations are not filtered.
-- A sandbox without `block_all` and without an allowlist can reach the public internet.
+- A sandbox without `block_all` and without an allowlist can reach the public internet. On a
+  host where `deploy/host-setup.sh` ran (round 98 or later), each such sandbox address on
+  `sf-net` holds at most `SF_SANDBOX_CONN_LIMIT` tracked flows at once (default 512). TCP, UDP
+  and ICMP count together, and IPv4 and IPv6 count separately. The next new flow is rejected
+  with a TCP reset (`Connection refused`) or ICMP admin-prohibited. Half-open, closing and
+  recent UDP flows, DNS included, count until conntrack expires them.
+- Image builds on `docker0` and sandboxes on `sf-egress-net` get no host connection cap. The
+  egress proxy bounds only concurrent CONNECT tunnels on `sf-egress-net`, not the rate of new
+  flows and not DNS packets to the sink, so neither bridge has a host conntrack bound.
+- An address that a deleted sandbox used can start with that sandbox's flows still counted,
+  for up to the conntrack timeouts (about two minutes for half-open and closing flows).
 - The default `SF_EGRESS_PROXY` is `127.0.0.1`, which admits no real destination. Set it to
   the proxy host's address. A proxy on the Docker host itself needs its own INPUT rule.
 
