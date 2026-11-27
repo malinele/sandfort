@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -142,6 +143,59 @@ def test_docs_dry_run_builds_both_configmaps_and_patches_the_volume() -> None:
     assert "rollout restart deploy/sandfort-docs" in out
     assert "https://docs.sandfort.dev/index.html" in out
     assert "https://docs.sandfort.dev/openapi.json" in out
+
+
+def _docs_dry_run_output(script: Path) -> str:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; DRY_RUN=1; BACKUP_DIR=/nonexistent; deploy_docs',
+            "_",
+            str(script),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def _docs_build_line(script: Path) -> str:
+    """The build command that a dry run of deploy_docs prints."""
+    out = _docs_dry_run_output(script)
+    return next(line for line in out.splitlines() if "build_docs_site.py" in line)
+
+
+@needs_private_ops
+@needs_bash
+def test_docs_deploy_builds_outside_the_tracked_tree() -> None:
+    # A build into site/docs rewrote the tracked release.html, so the next target's
+    # clean-tree preflight refused to run (beta.85, 2026-11-26).
+    out = _docs_dry_run_output(DEPLOY_SCRIPT)
+    build = next(line for line in out.splitlines() if "build_docs_site.py" in line)
+    match = re.search(r"--out '([^']+)'", build)
+    assert match is not None, build
+    built = match.group(1)
+    assert "site/docs" not in built
+    # Every published file and every live check reads the directory the build wrote.
+    assert f"--from-file=index.html={built}/index.html" in out
+    assert f"--from-file=openapi.json={built}/openapi.json" in out
+    assert f"would wait for https://docs.sandfort.dev/llms.txt to serve {built}/llms.txt" in out
+    assert "site/docs/" not in out
+
+
+@needs_private_ops
+@needs_bash
+def test_docs_deploy_runs_without_a_virtualenv(tmp_path: Path) -> None:
+    # The builder needs only the standard library; a fresh public clone has no .venv.
+    (tmp_path / "deploy").mkdir()
+    script = tmp_path / "deploy" / DEPLOY_SCRIPT.name
+    shutil.copy(DEPLOY_SCRIPT, script)
+    build = _docs_build_line(script)
+    assert ".venv/bin/python" not in build
+    assert "python3" in build
 
 
 @needs_private_ops

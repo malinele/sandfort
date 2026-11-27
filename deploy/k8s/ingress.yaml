@@ -19,6 +19,14 @@
 # (allow-snippet-annotations); if yours does, block /metrics another way (for example a
 # separate deny rule in the controller configuration) and keep monitoring on the cluster
 # network only.
+#
+# Access logs: the pty websocket on the api host carries a single use connect `token`, a
+# preview URL carries `sandfort_preview_token`, and so does the web terminal URL
+# (`GET /terminal?token=`) wherever you route it. The server never logs these values (its
+# lines show REDACTED), but the controller logs the raw request line and the server cannot
+# change that. Both Ingresses below turn the controller's access log off
+# (`enable-access-log: "false"`); the server still logs one line per request. Do the same on
+# any Ingress that routes `/terminal`.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -35,6 +43,7 @@ metadata:
     # server's own, a 257-512 MiB upload is streamed to the server and gets no answer for
     # seconds, and a body past the edge limit gets nginx's HTML 413 page.
     nginx.ingress.kubernetes.io/proxy-body-size: "257m"
+    nginx.ingress.kubernetes.io/enable-access-log: "false"
     nginx.ingress.kubernetes.io/server-snippet: |
       location = /metrics { return 404; }
       error_page 413 @sandfort_payload_too_large;
@@ -75,6 +84,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/enable-access-log: "false"
 spec:
   ingressClassName: nginx
   tls:

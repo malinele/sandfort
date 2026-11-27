@@ -304,12 +304,15 @@ per action, key and reason per 60 seconds per server process, and the next row c
 suppressed ones in <code>refusals_coalesced</code>. The refusal row is written on a best effort basis and
 never changes the response. If that write fails, the server tries a generic <code>request.denied</code> row
 for the same answer instead, and if the audit store is unavailable, the refusal leaves no row.</li>
-<li><strong>Organization creation and the first key.</strong> <code>create-org</code> and <code>bootstrap</code> write the org, an
-optional default quota and the first key without an audit row. <code>create-key</code> and <code>revoke-key</code> do
-write rows, as <code>platform_admin</code> with the actor id <code>sandfort-admin</code>.</li>
-<li><strong>Host-level access.</strong> Operator commands such as <code>migrate</code>, <code>create-org</code>, <code>bootstrap</code>,
-<code>audit-verify</code>, <code>audit-export</code>, <code>repair-labels</code> and <code>doctor</code>, and any direct access to the
-database or the Docker socket, leave no row. The exceptions are <code>create-key</code>, <code>revoke-key</code> and
+<li><strong>Organization creation and the first key.</strong> <code>create-org</code> and <code>bootstrap</code> write two rows into
+the new org&#x27;s own chain, in the same transaction that creates the org, an optional default quota
+and the first key: <code>org.created</code> (name, slug, the command, and the default quota when one is
+set) and <code>api_key.created</code> (key name, prefix, scopes, never the key). Both are recorded as
+<code>platform_admin</code> with the actor id <code>sandfort-admin</code>, as <code>create-key</code> and <code>revoke-key</code> do. Orgs
+created before this change have no such rows: their chain starts at the first API call.</li>
+<li><strong>Host-level access.</strong> Operator commands such as <code>migrate</code>, <code>audit-verify</code>, <code>audit-export</code>,
+<code>repair-labels</code> and <code>doctor</code>, and any direct access to the database or the Docker socket, leave
+no row. The exceptions are <code>create-org</code>, <code>bootstrap</code>, <code>create-key</code>, <code>revoke-key</code> and
 <code>audit-reanchor</code>.</li>
 <li><strong>Command text, stdin and output.</strong> A <code>toolbox.process.execute</code> row holds a digest and byte length
 of the command, the arguments and stdin, the names of the environment variables and no values, and
@@ -318,9 +321,11 @@ the arguments. The text of the command and of stdin is not stored, and neither i
 Terminal sessions record only create, resize and close, not keystrokes or output.</li>
 <li><strong>Sandbox traffic.</strong> Outbound network attempts of a sandbox are not in the audit log. The egress
 proxy and the preview proxy write no audit rows.</li>
-<li><strong>Some mutating routes.</strong> Rows are tested per feature. We have no test that walks every route. Two
-routes are known to write no row: minting a preview token (<code>POST /v1/sandboxes/{id}/preview-tokens</code>) and updating a webhook (<code>PATCH /v1/webhooks/{id}</code>). The
-governance page lists the main actions, but the list is not complete. Take the action names that
+<li><strong>Some mutating routes.</strong> A test walks every mutating route the app registers and requires an
+audited case or a reasoned exemption. The exemptions are the internal egress policy read, the PTY
+WebSocket attach, and a member update that changes nothing. Several routes are covered by the
+test of their own feature rather than by a call in the walking test. The governance page lists
+the main actions, but the list is not complete. Take the action names that
 actually occur from your own export (<code>sandfort audit list --all --json</code>, then count the distinct
 <code>action</code> values). Ask the operator about any mutating call you expect that never appears, or check
 a route you rely on by calling it with a test key and reading the row it writes.</li>

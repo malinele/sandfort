@@ -222,7 +222,7 @@ This section is for people who maintain the skill. It adds no instructions for t
 Claims in this file come from:
 
 - mcp_server/sandfort_mcp.py and mcp_server/README.md (the 16 tools, parameters, defaults, 1 MiB limit, error format, env variables, exit status 2)
-- mcp_server/pyproject.toml and PyPI (sandfort-mcp 0.1.1 in mcp_server/pyproject.toml, PyPI listed only sandfort-mcp 0.1.0 on 2026-11-26, sandfort-sdk 0.1.0b83 checked 2026-11-25. 0.1.0b83 has create-time egress_allowlist and set_egress_allowlist)
+- mcp_server/pyproject.toml and PyPI (sandfort-mcp 0.1.1 in mcp_server/pyproject.toml and on PyPI, checked 2026-11-26, sandfort-sdk 0.1.0b83 checked 2026-11-25. 0.1.0b83 has create-time egress_allowlist and set_egress_allowlist)
 - README.md (Quickstart commands, Limits, isolation tiers, Hosted evaluation instance, contact)
 - sdk/python/src/sandfort_sdk/client.py (create_sandbox arguments, set_egress_allowlist), sandbox.py, process.py
 - src/sandfort/toolbox/code_run.py (supported languages), src/sandfort/domain/isolation.py (DEFAULT_TIER = container)

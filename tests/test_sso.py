@@ -231,6 +231,21 @@ async def test_exchange_route_session_authenticates_requests(
     assert [member["email"] for member in members.json()["data"]] == [ADA_EMAIL]
 
 
+async def test_exchange_route_writes_a_session_created_audit_row(
+    world: World, provider: respx.MockRouter
+) -> None:
+    token = identity_token(issued=datetime.now(UTC))
+
+    exchanged = await world.client.post(EXCHANGE, json={"id_token": token})
+
+    assert exchanged.status_code == 200, exchanged.text
+    session_token = exchanged.json()["data"]["session_token"]
+    created = [r for r in await audit_rows(world, world.org_id) if r.action == "session.created"]
+    assert len(created) == 1
+    assert created[0].target_id == ADA_ID
+    assert session_token not in str(created[0].details)
+
+
 async def test_exchange_flood_is_answered_429_after_the_burst(
     world: World, provider: respx.MockRouter
 ) -> None:

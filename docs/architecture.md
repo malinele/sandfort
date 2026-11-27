@@ -132,7 +132,7 @@ calls it after the workers stop and before the engine is disposed; see the shutd
   - Recounts the quota ledger and alerts on drift.
 - **Autostop.** Stops sandboxes idle past `auto_stop_minutes` (measured from `last_activity_at`). Deletes stopped sandboxes past `auto_delete_minutes`.
 - **Metering.** Usage intervals are opened and closed on transitions. A worker rolls them up into `usage_daily` every 5 minutes. Storage (GiB-hours) is sampled hourly for disk, snapshots and volumes.
-- **Audit.** `AuditRecorder.record(...)` writes inside the unit of work. Details are redacted: no request bodies, no stdin, commands truncated to 512 chars, credentials dropped. Most non-GET routes write an audit row. `POST /v1/sandboxes/{id}/preview-tokens` and `PATCH /v1/webhooks/{id}` write none, and no test walks every route.
+- **Audit.** `AuditRecorder.record(...)` writes inside the unit of work. Details are redacted: no request bodies, no stdin, commands truncated to 512 chars, credentials dropped. Every non-GET route writes an audit row except the few on the exemption list of `tests/test_audit_route_coverage_r96.py`, which walks every registered mutating route.
 - **Webhook dispatcher.** Reads the outbox and fans out to matching endpoints. Delivery:
   - Signed with Standard-Webhooks headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`).
   - SSRF guard re-checked at delivery time, no redirects, 5 s timeout.

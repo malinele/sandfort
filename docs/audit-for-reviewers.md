@@ -375,12 +375,15 @@ Check this list against your control objectives before you rely on the log.
   suppressed ones in `refusals_coalesced`. The refusal row is written on a best effort basis and
   never changes the response. If that write fails, the server tries a generic `request.denied` row
   for the same answer instead, and if the audit store is unavailable, the refusal leaves no row.
-- **Organization creation and the first key.** `create-org` and `bootstrap` write the org, an
-  optional default quota and the first key without an audit row. `create-key` and `revoke-key` do
-  write rows, as `platform_admin` with the actor id `sandfort-admin`.
-- **Host-level access.** Operator commands such as `migrate`, `create-org`, `bootstrap`,
-  `audit-verify`, `audit-export`, `repair-labels` and `doctor`, and any direct access to the
-  database or the Docker socket, leave no row. The exceptions are `create-key`, `revoke-key` and
+- **Organization creation and the first key.** `create-org` and `bootstrap` write two rows into
+  the new org's own chain, in the same transaction that creates the org, an optional default quota
+  and the first key: `org.created` (name, slug, the command, and the default quota when one is
+  set) and `api_key.created` (key name, prefix, scopes, never the key). Both are recorded as
+  `platform_admin` with the actor id `sandfort-admin`, as `create-key` and `revoke-key` do. Orgs
+  created before this change have no such rows: their chain starts at the first API call.
+- **Host-level access.** Operator commands such as `migrate`, `audit-verify`, `audit-export`,
+  `repair-labels` and `doctor`, and any direct access to the database or the Docker socket, leave
+  no row. The exceptions are `create-org`, `bootstrap`, `create-key`, `revoke-key` and
   `audit-reanchor`.
 - **Command text, stdin and output.** A `toolbox.process.execute` row holds a digest and byte length
   of the command, the arguments and stdin, the names of the environment variables and no values, and
@@ -389,10 +392,11 @@ Check this list against your control objectives before you rely on the log.
   Terminal sessions record only create, resize and close, not keystrokes or output.
 - **Sandbox traffic.** Outbound network attempts of a sandbox are not in the audit log. The egress
   proxy and the preview proxy write no audit rows.
-- **Some mutating routes.** Rows are tested per feature. We have no test that walks every route. Two
-  routes are known to write no row: minting a preview token (`POST
-  /v1/sandboxes/{id}/preview-tokens`) and updating a webhook (`PATCH /v1/webhooks/{id}`). The
-  governance page lists the main actions, but the list is not complete. Take the action names that
+- **Some mutating routes.** A test walks every mutating route the app registers and requires an
+  audited case or a reasoned exemption. The exemptions are the internal egress policy read, the PTY
+  WebSocket attach, and a member update that changes nothing. Several routes are covered by the
+  test of their own feature rather than by a call in the walking test. The governance page lists
+  the main actions, but the list is not complete. Take the action names that
   actually occur from your own export (`sandfort audit list --all --json`, then count the distinct
   `action` values). Ask the operator about any mutating call you expect that never appears, or check
   a route you rely on by calling it with a test key and reading the row it writes.

@@ -1335,6 +1335,18 @@ above. The request-read timeout (15 s) and the upstream connect timeout (10 s) a
 `src/sandfort/egress/proxy.py`. Bound the proxy from outside, with the host firewall or the
 process's file-descriptor limit.
 
+The proxy logs denied connections at a limited rate, so a sandbox that keeps hitting its
+connection cap or a denied host cannot flood the log of a shared host. The first refusal per
+sandbox and reason is logged at once. After that the proxy writes at most one line per sandbox and
+reason every 60 s, and that line ends with `suppressed=<n>`, the number of refusals it held back
+since the previous line. A refusal under a new policy generation (`gen=`) is logged at once, so a
+narrowed allowlist still shows up in the log within the policy bound. Suppressed refusals keep only
+a count, not the host name. The table holds at most 4096 sandbox and reason pairs. When it evicts a
+pair, or when a burst stops and no further refusal follows, the held-back count is never written, so
+the log can undercount. Every refusal still gets its answer (403, 407, 429). The interval is a
+constant (`DENY_LOG_INTERVAL_S` in `src/sandfort/egress/deny_log.py`), not a setting. The proxy has
+no `/metrics` endpoint, so there are no counters for egress decisions.
+
 ### Controlled DNS: the sink
 
 A sandbox on `sf-egress-net` that shares the host's network stack gets its names from Docker's
@@ -1694,6 +1706,16 @@ is reachable solely through the proxy. The Python SDK also upgrades a plain ws U
 the client's base URL is https on the same host. Preview URLs have their own setting,
 `SANDFORT_PUBLIC_PREVIEW_URL`.
 
+Three URLs carry a secret in the query: a preview URL (`sandfort_preview_token`), the web
+terminal (`GET /terminal?token=`) and the pty websocket (`token`, single use). At the default
+INFO level the server never logs these values: uvicorn's access and handshake lines show
+`REDACTED`, and the api's own request line has no query. A proxy or ingress in
+front logs the raw request line, and the server cannot change that. Turn its access log off for
+the api host and the preview host, or log the path without the query. On ingress-nginx this is
+the annotation `nginx.ingress.kubernetes.io/enable-access-log: "false"`, which
+`deploy/k8s/ingress.yaml` sets on both Ingresses; the server's access log still has one line per
+request with the client address.
+
 ## Client-facing errors
 
 What a caller reports from the API, and what to do about it. The same vocabulary is in the
@@ -1806,7 +1828,7 @@ a tenant never sees is logged at `WARNING` by the logger `sandfort.drivers.docke
 | `timeout` | Yes | create or start: a driver operation ran past its deadline | A slow or hung Docker daemon, host load or disk I/O, a first pull of a large image on a slow link. Repeat once the daemon answers promptly; a steady stream means the node is overloaded (see "Capacity and sizing"). |
 | `reset_failed` | No for that sandbox; create a new one | reset: the driver failed after the old container was removed | The `sandbox.reset_failed` audit row and the server log. A reset builds the new container from the sandbox's image, so check that the image is still on the node or can be pulled. What was in the old container is gone; named volumes are kept. |
 | `container_missing` | No for that sandbox; create a new one | reconciler: the container of a `started` sandbox is gone, or exists but was never started | The `sandbox.drift_detected` audit row (`reason`, `driver_ref`). Whether something removed containers on the node (a manual `docker rm`, a prune, a Docker root that did not survive a node restart) and whether the daemon restarted. The container's files are lost. |
-| `container_exited` | Yes: `start` the sandbox | reconciler, or an exec that saw the container die: the sandbox is moved to `stopped` with this code and a reason | The `sandbox.drift_detected` audit row (`stopped_unexpectedly`) and the node's kernel log for an out-of-memory kill. The sandbox exceeded its memory or process limit; its files are kept and a successful start clears the code. |
+| `container_exited` | Yes: `start` the sandbox | reconciler, or an exec that saw the container die: the sandbox is moved to `stopped` with this code and a reason | The `sandbox.drift_detected` audit row (`stopped_unexpectedly`, `exit_code`, `oom_killed`). `oom_killed` is `true` when the runtime flagged a memory kill and `null` when it did not report one, which is the usual answer on `gvisor` and `microvm`, so check the node's kernel log there. The sandbox exceeded its memory or process limit; its files are kept and a successful start clears the code. |
 | `node_lost` | Not applicable today | Reserved for a lost node; no code path sets it | Nothing, as the code never appears. A node that is down shows as 503 `NODE_UNAVAILABLE` on calls routed to it (see "Cross-node toolbox routing"). If a `node_lost` row ever appears, treat it as `container_missing` and report it. |
 | `internal` | Once, with a new sandbox; if it repeats, no | Anything the server does not classify | The server log for the request id. A repeating `internal` is a bug to report with that log line. |
 
@@ -1865,7 +1887,10 @@ Rules that hold for all values:
 - The audit rows of the three paths carry it in `details.stop_cause`: `sandbox.stop` (value
   `requested`), `sandbox.auto_stopped` (value `auto_stop`, next to `auto_stop_minutes` and
   `idle_seconds`) and `sandbox.drift_detected` with `stopped_unexpectedly` (value
-  `container_exited`).
+  `container_exited`, or `oom_killed` when the runtime flagged the kill). For an exited container
+  that row also carries `details.exit_code` (the daemon's `State.ExitCode`, `null` when the driver
+  cannot read it) and `details.oom_killed` (`true`, or `null` for unknown, never `false`). The
+  `sandbox.stopped` webhook payload does not carry these two keys.
 - The `sandbox.stopped` webhook payload carries `stop_cause` next to `reason` and `error_code`. The
   other sandbox events carry the key too, with `null`, because they are sent in states where the
   cause is hidden.

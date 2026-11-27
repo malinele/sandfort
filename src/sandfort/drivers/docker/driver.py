@@ -39,6 +39,7 @@ from sandfort.drivers.docker import (
     build,
     capabilities,
     containers,
+    exit_status,
     image_export,
     images,
     lanes,
@@ -136,6 +137,9 @@ class DockerDriver:
 
     async def container_oom_killed(self, ref: str) -> bool:
         return await oom.container_oom_killed(self._client, ref)
+
+    async def container_exit_code(self, ref: str) -> int | None:
+        return await exit_status.container_exit_code(self._client, ref)
 
     async def list_managed(self, *, org_id: str | None = None) -> list[InstanceInfo]:
         return await containers.list_managed_containers(self._client, org_id)

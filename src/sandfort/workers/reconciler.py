@@ -72,13 +72,13 @@ from sandfort.drivers.base import (
     InstanceState,
     InventoryDriver,
     InventoryInstance,
-    OomObservableDriver,
     SandboxDriver,
 )
 from sandfort.drivers.docker.labels import LABEL_ORG_ID, LABEL_SANDBOX_ID
 from sandfort.drivers.errors import DriverNotFound
 from sandfort.errors import Conflict, InternalError
 from sandfort.services.audit import AuditRecorder
+from sandfort.workers.stop_facts import StopFacts, gather_stop_facts
 
 logger = logging.getLogger(__name__)
 
@@ -404,11 +404,15 @@ class Reconciler:
         ``False`` when the row is no longer started, or, with ``require_same_ref``, when its
         ``driver_ref`` is no longer the one of ``row`` (the container was replaced meanwhile).
         A container that exited is settled with ``stop_cause`` ``oom_killed`` when the driver
-        can see that the runtime killed it for its memory (``_exited_of_oom``), else with
-        ``container_exited``.
+        can see that the runtime killed it for its memory, else with ``container_exited``. Its
+        audit row also carries ``oom_killed`` and ``exit_code`` (``None`` when unknown, see
+        ``stop_facts``), read from the driver before the transaction opens.
         """
-        if drift.stopped and await self._exited_of_oom(row):
-            drift = replace(drift, reason=OOM_KILLED_REASON, oom_killed=True)
+        facts: StopFacts | None = None
+        if drift.stopped:
+            facts = await gather_stop_facts(self._driver, row.driver_ref, row.id)
+            if facts.oom_killed:
+                drift = replace(drift, reason=OOM_KILLED_REASON, oom_killed=True)
         async with self._uow_factory() as uow:
             current = await uow.sandboxes.get(row.org_id, row.id)
             if current is None or current.state not in CHECKED_STATES:
@@ -433,6 +437,8 @@ class Reconciler:
                 )
                 details["stopped_unexpectedly"] = True
                 details["stop_cause"] = cause
+                if facts is not None:
+                    details.update(facts.as_details())
             await uow.sandboxes.update(
                 row.org_id, current.model_copy(update=changes), expected_version=current.version
             )
@@ -450,21 +456,6 @@ class Reconciler:
             await uow.commit()
         await self._notify_stopped(row)
         return True
-
-    async def _exited_of_oom(self, row: Sandbox) -> bool:
-        """``True`` when the driver says the row's exited container was OOM-killed.
-
-        Read before the row is written, so no transaction waits on the runtime. A driver or tier
-        that cannot tell, a missing ref or a failing runtime answers ``False``: the row then
-        keeps the ``container_exited`` cause.
-        """
-        if not isinstance(self._driver, OomObservableDriver) or not row.driver_ref:
-            return False
-        try:
-            return await self._driver.container_oom_killed(row.driver_ref)
-        except Exception:
-            logger.exception("could not read the OOM verdict of sandbox %s", row.id)
-            return False
 
     async def mark_stopped_unexpectedly(self, row: Sandbox) -> bool:
         """Settle a started row whose container is known to be dead, as a reconcile pass would.

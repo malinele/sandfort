@@ -183,6 +183,7 @@ class FakeDriver:
         self._ptys: dict[str, FakePty] = {}
         self._endpoints: dict[str, tuple[str, int]] = {}  # instance ref -> (host, port)
         self._oom_killed: set[str] = set()  # exited instances the runtime flags as OOM-killed
+        self._exit_codes: dict[str, int] = {}  # exited instances with a recorded exit code
         self.commit_layer_count: int | None = None  # test hook: layers a commit reports
         self.flattened: list[str] = []  # test record: references produced by a flatten
         self.build_contexts: list[Mapping[str, bytes]] = []  # test record: one per start_build
@@ -252,6 +253,7 @@ class FakeDriver:
     async def start(self, ref: str) -> None:
         self._set_state(ref, InstanceState.RUNNING)
         self._oom_killed.discard(ref)  # a start clears the runtime's verdict, as docker does
+        self._exit_codes.pop(ref, None)
 
     async def container_oom_killed(self, ref: str) -> bool:
         """``OomObservableDriver``: exited, and ``kill_instance(..., oom=True)`` flagged it."""
@@ -261,6 +263,13 @@ class FakeDriver:
             and ref in self._oom_killed
             and instance.info.state is InstanceState.EXITED
         )
+
+    async def container_exit_code(self, ref: str) -> int | None:
+        """``ExitStatusDriver``: the code ``kill_instance(..., exit_code=...)`` recorded."""
+        instance = self._instances.get(ref)
+        if instance is None or instance.info.state is not InstanceState.EXITED:
+            return None
+        return self._exit_codes.get(ref)
 
     async def stop(self, ref: str, *, timeout_s: float = 10.0) -> None:
         self._set_state(ref, InstanceState.EXITED)
@@ -319,11 +328,14 @@ class FakeDriver:
     async def list_images(self) -> list[ImageInfo]:
         return [info for ref, info in self._images.items() if ref.startswith(PLATFORM_IMAGE_PREFIX)]
 
-    def kill_instance(self, ref: str, *, vanish: bool = True, oom: bool = False) -> None:
+    def kill_instance(
+        self, ref: str, *, vanish: bool = True, oom: bool = False, exit_code: int | None = None
+    ) -> None:
         """Test helper: the container dies behind the platform's back.
 
         ``vanish`` removes it entirely (as ``docker rm -f`` would); otherwise it stays, exited.
-        ``oom`` makes an exited instance read as OOM-killed (``container_oom_killed``).
+        ``oom`` makes an exited instance read as OOM-killed (``container_oom_killed``);
+        ``exit_code`` is what ``container_exit_code`` then reports (unknown when omitted).
         """
         self._get(ref)
         if vanish:
@@ -332,6 +344,8 @@ class FakeDriver:
             self._set_state(ref, InstanceState.EXITED)
             if oom:
                 self._oom_killed.add(ref)
+            if exit_code is not None:
+                self._exit_codes[ref] = exit_code
 
     def plant_instance(
         self, sandbox_id: str, org_id: str, *, state: InstanceState = InstanceState.RUNNING

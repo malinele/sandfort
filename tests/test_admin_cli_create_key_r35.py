@@ -147,7 +147,11 @@ def test_audit_event_is_recorded_without_the_secret(db_path: Path) -> None:
     [new_key] = KEY_PATTERN.findall(result.stdout)
     [key_row] = _rows(db_path, "SELECT id, prefix FROM api_keys WHERE name = 'audited'")
     [event] = _rows(
-        db_path, "SELECT * FROM audit_events WHERE action = ? AND org_id = ?", CREATED, org_id
+        db_path,
+        "SELECT * FROM audit_events WHERE action = ? AND org_id = ? AND target_id = ?",
+        CREATED,
+        org_id,
+        key_row["id"],
     )
     assert event["actor_id"] == "sandfort-admin"
     assert event["actor_type"] == "platform_admin"
@@ -158,7 +162,11 @@ def test_audit_event_is_recorded_without_the_secret(db_path: Path) -> None:
     assert details["prefix"] == key_row["prefix"]
     assert new_key not in "".join(str(value) for value in tuple(event))
     other_events = _rows(
-        db_path, "SELECT id FROM audit_events WHERE action = ? AND org_id != ?", CREATED, org_id
+        db_path,
+        "SELECT id FROM audit_events WHERE action = ? AND org_id != ? AND target_id = ?",
+        CREATED,
+        org_id,
+        key_row["id"],
     )
     assert other_events == []
 
@@ -166,6 +174,7 @@ def test_audit_event_is_recorded_without_the_secret(db_path: Path) -> None:
 def test_unknown_slug_exits_1_and_writes_nothing(db_path: Path) -> None:
     _provision_two_orgs()
     keys_before = len(_rows(db_path, "SELECT id FROM api_keys"))
+    events_before = len(_rows(db_path, "SELECT id FROM audit_events"))
 
     result = _create_key("--org-slug", "ghost")
 
@@ -173,7 +182,7 @@ def test_unknown_slug_exits_1_and_writes_nothing(db_path: Path) -> None:
     assert "error: unknown organisation ghost" in result.stderr
     assert KEY_PATTERN.findall(result.output) == []
     assert len(_rows(db_path, "SELECT id FROM api_keys")) == keys_before
-    assert _rows(db_path, "SELECT id FROM audit_events WHERE action = ?", CREATED) == []
+    assert len(_rows(db_path, "SELECT id FROM audit_events")) == events_before
 
 
 def test_unknown_org_id_exits_1(db_path: Path) -> None:
@@ -234,7 +243,8 @@ def test_cli_event_details_match_the_api_event_keys_and_order(db_path: Path) -> 
     )
     [cli_event] = _rows(
         db_path,
-        "SELECT details FROM audit_events WHERE action = ? AND actor_type = 'platform_admin'",
+        "SELECT details FROM audit_events WHERE action = ? AND actor_type = 'platform_admin' "
+        "AND target_id = (SELECT id FROM api_keys WHERE name = 'by-cli')",
         CREATED,
     )
 

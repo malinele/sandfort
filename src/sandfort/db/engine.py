@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from sandfort.config import Settings
+from sandfort.db.sqlite_connection import RollbackOnCloseConnection
 from sandfort.db.urls import is_postgres, is_sqlite, to_async_url
 
 SQLITE_BUSY_TIMEOUT_MS = 5000
@@ -51,7 +52,8 @@ def _install_sqlite_hooks(engine: AsyncEngine) -> None:
 def create_engine(settings: Settings) -> AsyncEngine:
     url = to_async_url(settings.database_url)
     if is_sqlite(url):
-        engine = create_async_engine(url)
+        # A connection closed in the middle of a cancelled statement must not keep the lock.
+        engine = create_async_engine(url, connect_args={"factory": RollbackOnCloseConnection})
         _install_sqlite_hooks(engine)
         return engine
     if is_postgres(url):

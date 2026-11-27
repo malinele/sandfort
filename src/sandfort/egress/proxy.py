@@ -24,8 +24,9 @@ global ceiling or an unavailable policy (503), an unresolvable name or unreachab
 (502) and any method other than CONNECT (405) are answered with an error and the connection is
 closed. Decisions are logged to stderr with the sandbox id, target host and policy generation
 (``gen=``), never the credential. A name the policy refused is logged as its length and a keyed
-digest only (``sandfort.egress.logname``). Reading the request is bounded by
-``REQUEST_TIMEOUT_S``; everything after it by ``admission_cap_s``.
+digest only (``sandfort.egress.logname``); repeated denies of one sandbox and reason are
+logged once per interval with a suppressed count (``sandfort.egress.deny_log``). Reading the
+request is bounded by ``REQUEST_TIMEOUT_S``; everything after it by ``admission_cap_s``.
 
 Configuration comes from the environment (``SANDFORT_EGRESS_SECRET`` is required; the other
 ``SANDFORT_EGRESS_*`` settings are in ``sandfort.egress.proxy_limits`` and docs/operations.md).
@@ -53,6 +54,7 @@ from sandfort.egress.admission import (
     wire_policy,
 )
 from sandfort.egress.auth import EgressCredential, authenticate, note_legacy
+from sandfort.egress.deny_log import DenyLog
 from sandfort.egress.dns_sink import serving_dns_sink
 from sandfort.egress.logname import redacted_name
 from sandfort.egress.pinning import PinStore
@@ -153,8 +155,10 @@ class EgressProxy:
         legacy_cutover: datetime | None = None,
         policy_client: PolicyClient | None = None,
         dns_pin_s: float = 0,
+        deny_log: DenyLog | None = None,
     ) -> None:
         self._secret = secret
+        self._deny_log = deny_log or DenyLog()
         self._resolver = resolver
         self._checker = checker
         self._denied = tuple(denied_networks)
@@ -255,14 +259,7 @@ class EgressProxy:
             await writer.drain()
             await relay((reader, writer), upstream, self._idle_timeout_s)
         except Deny as deny:
-            _log.warning(
-                "deny sandbox=%s host=%s status=%d reason=%s gen=%s",
-                seen.sandbox_id,
-                self._logged_host(seen),
-                deny.status,
-                deny.detail,
-                seen.gen,
-            )
+            self._deny_log.log(seen.sandbox_id, deny, seen.gen, lambda: self._logged_host(seen))
             await send_error(writer, deny)
         except (OSError, TimeoutError):
             _log.info(

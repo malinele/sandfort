@@ -98,6 +98,11 @@ class UnitOfWork:
         self.quota_lock: QuotaLock = quota_lock_for(self._session)  # by dialect (WP 5.3)
 
     @property
+    def session(self) -> AsyncSession:
+        """The underlying session, for admin tooling that needs a query no repository has."""
+        return self._session
+
+    @property
     def in_transaction(self) -> bool:
         """True while a transaction (and its database lock) is open."""
         return self._session.in_transaction()

@@ -53,6 +53,7 @@ from sandfort.webhooks.ssrf import HostNotResolved, ResolverUnavailable, UrlReje
 router = APIRouter(prefix="/v1/webhooks", tags=["webhooks"])
 
 ENDPOINT_CREATED = "webhook.endpoint_created"
+ENDPOINT_UPDATED = "webhook.endpoint_updated"
 ENDPOINT_DELETED = "webhook.endpoint_deleted"
 DELIVERY_REDELIVERED = "webhook.redelivered"
 REDELIVERABLE = (DeliveryState.FAILED.value, DeliveryState.DISABLED.value)
@@ -172,9 +173,20 @@ async def get_endpoint(endpoint_id: str, principal: Writer, uow: Uow) -> Envelop
     return ok(endpoint_response(endpoint))
 
 
+def _changed_fields(current: WebhookEndpointRecord, updated: WebhookEndpointRecord) -> list[str]:
+    """Names of the fields a PATCH changed. Values stay out: a URL may carry a credential."""
+    names = ("enabled", "event_types", "url")
+    return [name for name in names if getattr(current, name) != getattr(updated, name)]
+
+
 @router.patch("/{endpoint_id}")
 async def update_endpoint(
-    endpoint_id: str, body: UpdateEndpointRequest, principal: Writer, uow: Uow, config: Config
+    endpoint_id: str,
+    body: UpdateEndpointRequest,
+    principal: Writer,
+    uow: Uow,
+    recorder: Recorder,
+    config: Config,
 ) -> Envelope[EndpointResponse]:
     box = SecretBox(config.webhook_secret_key)
     async with uow:
@@ -193,6 +205,11 @@ async def update_endpoint(
         saved = await uow.webhooks.update_endpoint(principal.org_id, updated)
         if saved is None:
             raise NotFound(f"webhook endpoint {endpoint_id} not found")
+        details = {
+            "changed": _changed_fields(current, updated),
+            "failure_count_reset": re_enabled and current.failure_count != 0,
+        }
+        await _audit(recorder, uow, principal, ENDPOINT_UPDATED, endpoint_id, details)
         await uow.commit()
     return ok(endpoint_response(saved))
 

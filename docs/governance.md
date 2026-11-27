@@ -200,10 +200,15 @@ Each event stores: actor (type and id), action, target (type and id), outcome (`
 To read and verify an organization's audit log as a reviewer, see
 [Reading and verifying the audit log](https://docs.sandfort.dev/audit-reviewers.html).
 
-- Most non-GET calls write one event for what it did, with named
-  exceptions rather than a promise of exactly one row. Two routes are known to write no row:
-  `POST /v1/sandboxes/{id}/preview-tokens` and `PATCH /v1/webhooks/{id}`. No test walks every
-  route to check this, so each feature is tested on its own and other gaps are possible.
+- Every non-GET route writes one event for what it did, with named
+  exceptions rather than a promise of exactly one row. A test
+  (`tests/test_audit_route_coverage_r96.py`) walks every mutating route the app registers and
+  fails when one has neither an audited case nor a reasoned entry on its exemption list. The
+  exceptions are the internal egress policy read (`POST /internal/egress/v1/policies`, which
+  changes no state), the PTY WebSocket attach, and a member update (`PATCH /v1/org/members/{id}`
+  or a SCIM user update) that changes nothing, and a repeat revoke of an API key or a SCIM
+  token (it answers 200), both of which write no row. A webhook update
+  (`PATCH /v1/webhooks/{id}`) writes `webhook.endpoint_updated` even when no field changed.
   A call refused after a valid key writes
   one refusal row instead (`request.denied`, or `sandbox.create_refused` and
   `sandbox.start_refused` for host capacity or the key's `max_sandboxes` cap, below, or a row
@@ -266,7 +271,8 @@ To read and verify an organization's audit log as a reviewer, see
   | `sandbox.failed`, `sandbox.reset_failed` | a driver failure after the call was accepted |
   | `sandbox.auto_stopped`, `sandbox.auto_deleted` | the idle timers |
   | `sandbox.resized`, `sandbox.egress_updated` | a resize, and a runtime egress allowlist replacement |
-  | `sandbox.drift_detected`, `sandbox.orphan_removed` | the reconciler: a sandbox that stopped unexpectedly, and a container with no sandbox that was removed |
+  | `sandbox.preview_token_created` | a preview token minted. The row holds the port, `ttl_seconds` and `expires_at`, never the token or the URL |
+  | `sandbox.drift_detected`, `sandbox.orphan_removed` | the reconciler: a sandbox that stopped unexpectedly, and a container with no sandbox that was removed. For a container that exited, the row carries `exit_code` (the daemon's recorded code, or `null`) and `oom_killed` (`true`, or `null` when the runtime did not report it) |
   | `sandbox.logs.read`, `sandbox.exec.replay` | a read of logs; a replayed idempotent exec |
   | `toolbox.process.execute`, `toolbox.process.code_run` | a synchronous exec or code-run |
   | `toolbox.code_contexts.create`, `.delete`, `.interrupt`, `.run` | a code context call |
@@ -276,11 +282,12 @@ To read and verify an organization's audit log as a reviewer, see
   | `snapshot.create`, `snapshot.register`, `snapshot.delete`, `snapshot.exported` | snapshots |
   | `volume.create`, `volume.delete`, `volume.restore`, `volume.export` | volumes, including a restore and an export |
   | `image.build.request`, `image.build.complete` | an image build request and its end |
-  | `api_key.created`, `api_key.revoked`, `quota.updated` | key and quota admin |
+  | `org.created` | `bootstrap` or `create-org` on the host: the first row of the new org's chain (name, slug, the command, the default quota), actor `platform_admin` / `sandfort-admin`. Orgs created before 2026-11-26 have no such row |
+  | `api_key.created`, `api_key.revoked`, `quota.updated` | key and quota admin. The first key, written by `bootstrap` or `create-org`, has the same row shape with actor `platform_admin` / `sandfort-admin` and no request id, IP or user agent |
   | `user.created`, `membership.added`, `membership.role_changed`, `membership.removed`, `membership.external_id_changed` | member admin, including SCIM Users calls |
   | `session.created` | an OIDC sign-in exchange |
   | `scim_token.created`, `scim_token.revoked` | SCIM token admin |
-  | `webhook.endpoint_created`, `webhook.endpoint_deleted`, `webhook.redelivered`, `webhook.endpoint_disabled` | webhook admin. The last is written when delivery failures disable an endpoint |
+  | `webhook.endpoint_created`, `webhook.endpoint_updated`, `webhook.endpoint_deleted`, `webhook.redelivered`, `webhook.endpoint_disabled` | webhook admin. An update row lists the names of the changed fields (`changed`) and whether the failure count was reset, never the URL or the secret. The last is written when delivery failures disable an endpoint |
   | `audit.chain_reanchored` | an operator acknowledges historical chain findings |
   | `request.denied`, `request.failed` | a refusal after a valid key |
 - A revoked or expired key is refused with 401 and that refusal is recorded as

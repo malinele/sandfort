@@ -219,13 +219,12 @@ async def test_list_members_carries_the_external_id(world: World) -> None:
 async def test_update_role_audits_and_keeps_the_external_id(world: World) -> None:
     created = await add(world, "ada@example.com", external_id=EXT)
 
-    updated = await world.service.update_member(
-        world.scim, created.user.id, role=OrgRole.DEVELOPER
-    )
+    updated = await world.service.update_member(world.scim, created.user.id, role=OrgRole.DEVELOPER)
 
     assert (updated.role, updated.external_id) == (OrgRole.DEVELOPER, EXT)
     await assert_stored(world, created.user.id, OrgRole.DEVELOPER, EXT)
     (event,) = await audit_rows(world, ROLE_CHANGED)
+    assert event.action == "membership.role_changed"
     assert event.details == {"from_role": "viewer", "role": "developer"}
     assert event.actor_id == world.scim.key_id
     assert event.target_id == created.user.id
@@ -356,9 +355,7 @@ async def test_the_role_ceiling_is_checked_before_the_member_is_read(world: Worl
 async def test_the_role_ceiling_allows_a_role_within_it(world: World) -> None:
     created = await add(world, "ada@example.com")
 
-    updated = await world.service.update_member(
-        world.scim, created.user.id, role=OrgRole.DEVELOPER
-    )
+    updated = await world.service.update_member(world.scim, created.user.id, role=OrgRole.DEVELOPER)
 
     assert updated.role is OrgRole.DEVELOPER
 

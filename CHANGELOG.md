@@ -49,6 +49,90 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 96 (after tag v0.1.0-beta.85, audit coverage of every mutating route, org genesis rows, stop facts, egress deny log)
+- **audit: the preview-token mint and the webhook update write audit rows, and a test walks every
+  mutating route (2026-11-26).** `POST /v1/sandboxes/{id}/preview-tokens` writes
+  `sandbox.preview_token_created` (port, `ttl_seconds`, `expires_at`, never the token or the URL),
+  and `PATCH /v1/webhooks/{id}` writes `webhook.endpoint_updated` in the same transaction as the
+  update (`changed` lists the names of the changed fields, plus `failure_count_reset`, never the URL
+  or the secret; a PATCH that changes nothing still writes a row). The new meta test lists every
+  route that is not GET, HEAD or OPTIONS, with SCIM and the internal egress route switched on, and
+  fails when one has neither a live case that writes its row, a named test that proves it, nor an
+  exemption with a reason. The exemptions are the internal egress policy read and the PTY
+  WebSocket attach. Earlier audit tests replayed a fixed list of calls, which is how these two
+  routes were missed. `docs/governance.md` now states the rule and its named exceptions (a no-op
+  member or SCIM user update and a repeat revoke write no row).
+  (`src/sandfort/api/routes/sandbox_preview.py`, `src/sandfort/api/routes/webhooks.py`,
+  `tests/test_audit_preview_webhook_r96.py`, `tests/test_audit_route_coverage_r96.py`,
+  `tests/audit_coverage_table_r96.py`, ab7830a1, fe0255e3: every proof entry must contain the
+  literal action, and the SSO exchange is proven through the HTTP route)
+- **admin: `bootstrap` and `create-org` open the new org's audit chain (2026-11-26).** Both commands
+  write `org.created` (name, slug, the command, the default quota when one is set) and then
+  `api_key.created` (key name, prefix, scopes, never the key) in the same transaction as the org,
+  its quota and its first key, with actor type `platform_admin` and actor id `sandfort-admin`, as
+  `create-key` already does. `audit-verify` passes on such an org with and without
+  `SANDFORT_AUDIT_CHAIN_KEY`. A refused duplicate slug writes nothing. Orgs created before this
+  round have no such rows, so their chain starts at the first API call.
+  (`src/sandfort/admin_provision_audit.py`, `src/sandfort/admin_cli.py`,
+  `src/sandfort/db/unit_of_work.py`, `tests/test_admin_provision_audit_r96.py`, 418684c8)
+- **reconciler: the `sandbox.drift_detected` row of an exited container carries `exit_code` and
+  `oom_killed` (2026-11-26).** `exit_code` is the daemon's recorded `State.ExitCode`, or `null` when
+  the driver cannot read it. `oom_killed` is `true` when the runtime flagged a memory kill and
+  `null` otherwise, never `false`, because the driver cannot tell "not killed" from "not
+  observable". On `gvisor` and `microvm` the driver does not report memory kills, so `oom_killed` is
+  `null` there. The facts are read before the transaction opens, through the new optional
+  `ExitStatusDriver` protocol outside the frozen `drivers/base.py`. The `sandbox.stopped` webhook
+  payload is unchanged. (`src/sandfort/workers/stop_facts.py`, `src/sandfort/workers/reconciler.py`,
+  `src/sandfort/drivers/exit_status.py`, `src/sandfort/drivers/docker/exit_status.py`,
+  `tests/test_stop_facts_r96.py`, `tests/test_stop_facts_bool_r96.py`, f38722f0)
+- **egress: the proxy's deny log line is rate limited (2026-11-26).** The first refusal per sandbox
+  and reason is logged at once, then at most one line per 60 s that ends with `suppressed=<n>`. A
+  refusal under a new policy generation is logged at once. The state is bounded to 4096 pairs. The
+  client still gets every 403, 407 or 429. There are no egress counters, because the proxy process
+  has no `/metrics` endpoint. (`src/sandfort/egress/deny_log.py`, `src/sandfort/egress/proxy.py`,
+  `tests/test_egress_deny_log_r96.py`, `tests/test_egress_deny_log_proxy_r96.py`, 97e954c2, fe0255e3)
+- **db: a cancelled SQLite statement no longer keeps the database write lock (2026-11-27).** Every
+  SQLite transaction starts with `BEGIN IMMEDIATE`, so it holds the write lock from its first
+  statement. A task cancelled while one of its statements still ran left that transaction open:
+  SQLAlchemy closes the connection on cancellation without a rollback, and sqlite3 defers the
+  close while the unfinished statement is alive, so the lock stayed until garbage collection and
+  every other writer waited out the 5 s `busy_timeout` and failed with "database is locked".
+  Worker shutdown cancels each worker loop and hit this (in the traced failure, the webhook
+  dispatcher's outbox read). SQLite connections are now `RollbackOnCloseConnection`, whose close
+  rolls back first. Postgres is unchanged. This also fixes the flaky
+  `test_the_worker_start_does_not_recover`. (`src/sandfort/db/sqlite_connection.py`,
+  `src/sandfort/db/engine.py`, `tests/test_sqlite_cancelled_statement_lock.py`, 7668f0ac)
+- **docs: audit action catalogs and the operations runbook follow round 96 (2026-11-26).** The
+  action tables in `docs/governance.md` and `docs/connect-guide.md` list `org.created`,
+  `sandbox.preview_token_created`, `webhook.endpoint_updated` and the new drift fields.
+  `docs/operations.md` describes the drift fields and the deny log rate limit, and the generated
+  pages in `site/docs/` are rebuilt. (96aa4f02 and this commit; the hash is recorded in the next round)
+
+#### Round 95 (after tag v0.1.0-beta.85, edge access logs and the docs deploy)
+- **docs, deploy: the example Ingress turns the controller access log off (2026-11-26).**
+  The server writes `sandfort_preview_token` and the terminal and pty connect `token` as
+  `REDACTED` (round 94), but an ingress in front logs the raw request line. A check on the
+  hosted beta found the terminal token in clear in the ingress-nginx log of the api host; the
+  preview host already had its access log off. `deploy/k8s/ingress.yaml` now sets
+  `nginx.ingress.kubernetes.io/enable-access-log: "false"` on the api and the preview Ingress,
+  and `docs/operations.md` (Behind a TLS-terminating proxy) says why and what still logs the
+  request. (`deploy/k8s/ingress.yaml`, `docs/operations.md`, `tests/test_ingress_access_log_r95.py`,
+  4a1a6b3e)
+- **deploy: the docs target builds outside the tracked tree (2026-11-26).** The docs deploy
+  built into `site/docs` and rewrote the tracked `release.html` from git, so the next target's
+  clean-tree preflight refused, and it called `.venv/bin/python`, which a fresh clone of the
+  public repository does not have. It now builds with `--out` into a temporary directory and
+  falls back to `python3` (the builder needs only the standard library; Python 3.9 builds the
+  same bytes). A dry run no longer hashes files it did not build.
+  (`deploy/redeploy-beta.sh`, `tests/test_docs_configmap_split.py`, 4a1a6b3e)
+- **docs(security): jobs mode accepts allowlisted creates (2026-11-26).** `docs/security.md`
+  still said an allowlisted create is refused when sandboxes are created by jobs, which egress
+  v2 round 5 changed (2026-11-24). It now says such a create goes only to nodes whose heartbeat
+  reports the egress stack, and that jobs mode has no reset, so an allowlisted jobs sandbox
+  that outlives `SANDFORT_EGRESS_TOKEN_TTL_S` (7 days by default) loses egress
+  (`docs/egress-v2-design.md` section 7). Found while scoring Sandfort against a published
+  sandbox checklist. (`docs/security.md`, `site/docs/security.html`, 4a1a6b3e)
+
 #### Round 94 (after tag v0.1.0-beta.84, preview proxy token hygiene)
 - **fix(proxy): the preview token stays out of log lines and forwarded Referer headers
   (2026-11-26).** uvicorn logs the request path with its query on `uvicorn.access` (HTTP)

@@ -422,6 +422,7 @@ async def test_restore_is_audited_with_the_name_and_the_bytes(
     response = await restore(client, key, volume_id, make_archive({"f": b"12345"}))
 
     (row,) = await audit_rows(app, org_id, RESTORE_ACTION)
+    assert row.action == "volume.restore"
     assert (row.target_type, row.target_id, row.outcome) == (
         "volume",
         volume_id,

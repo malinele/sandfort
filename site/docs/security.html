@@ -193,8 +193,11 @@ puts the sandbox on a second bridge, <code>sf-egress-net</code>, whose firewall 
 egress proxy address (<code>SF_EGRESS_PROXY</code>). The proxy is a separate process,
 <code>python -m sandfort.egress.proxy</code>, that checks signed tokens made with
 <code>SANDFORT_EGRESS_SECRET</code>. If the proxy address or secret is not configured, an allowlisted
-create is refused with 409 and never runs with open egress. Allowlisted creates are also
-refused when sandboxes are created by jobs.</li>
+create is refused with 409 and never runs with open egress. When sandboxes are created by
+jobs (multi-node), an allowlisted create goes only to nodes whose heartbeat reports the
+egress stack. Jobs mode has no reset, so the egress token is not refreshed there: an
+allowlisted jobs sandbox that outlives <code>SANDFORT_EGRESS_TOKEN_TTL_S</code> (7 days by default)
+loses egress.</li>
 </ul>
 <p>Limits of the network controls, stated in <code>deploy/host-setup.sh</code> and [operations]:</p>
 <ul>
@@ -347,8 +350,8 @@ fields of the row (<code>src/sandfort/services/audit_chain.py</code>). With no k
 <code>sha256</code> over the same input; <code>prod</code> refuses to start in that state unless
 <code>SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true</code> accepts the unkeyed chain explicitly. Audit rows are written in the
 same transaction as the change they describe. The rule is one event per mutating call, with
-named exceptions. Two routes are known to write no row: <code>POST /v1/sandboxes/{id}/preview-tokens</code>
-and <code>PATCH /v1/webhooks/{id}</code>. No test walks every route to check this.
+named exceptions. A test walks every mutating route the app registers and fails when one has
+neither an audited case nor a reasoned exemption (<code>tests/test_audit_route_coverage_r96.py</code>).
 A call refused after a valid key usually writes a <code>request.denied</code> row instead. A create or
 start refused for host capacity writes <code>sandbox.create_refused</code> or <code>sandbox.start_refused</code>, and a
 create refused by the key&#x27;s <code>max_sandboxes</code> cap writes <code>sandbox.create_refused</code> with <code>reason</code>

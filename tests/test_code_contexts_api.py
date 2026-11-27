@@ -1363,6 +1363,11 @@ async def test_every_mutating_call_is_audited_and_reads_are_not(
 
     events = [e for e in await audit_rows(app, org_id) if e.action in AUDIT_ACTIONS]
     assert sorted(e.action for e in events) == sorted(AUDIT_ACTIONS)
+    assert sorted(e.action for e in events) == [
+        "toolbox.code_contexts.create",
+        "toolbox.code_contexts.delete",
+        "toolbox.code_contexts.run",
+    ]  # the literal names, for tests/audit_coverage_table_r96.py
     for event in events:
         assert event.target_id == sandbox_id
         assert event.target_type == "sandbox"

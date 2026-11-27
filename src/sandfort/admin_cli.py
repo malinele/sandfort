@@ -23,6 +23,7 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sandfort import admin_doctor, admin_keys
+from sandfort.admin_provision_audit import record_key_created, record_org_provisioned
 from sandfort.auth.api_keys import generate_api_key
 from sandfort.auth.scopes import ALL_SCOPES
 from sandfort.clock import SystemClock
@@ -30,17 +31,14 @@ from sandfort.config import Settings
 from sandfort.db.engine import create_engine, create_session_factory
 from sandfort.db.models.api_keys import ApiKeyRow
 from sandfort.db.models.sandboxes import SandboxRow
-from sandfort.db.repositories.api_keys import SqlApiKeyRepository
 from sandfort.db.repositories.orgs import SqlOrgRepository
 from sandfort.db.repositories.ports import ChainedAuditEvent, UnitOfWorkPort
-from sandfort.db.repositories.quotas import SqlQuotaRepository
 from sandfort.db.unit_of_work import UnitOfWork
 from sandfort.domain.events import ActorType
 from sandfort.domain.org import ApiKey, Org
 from sandfort.domain.quota import OrgQuota
 from sandfort.errors import Conflict, NotFound, SandfortError, ValidationFailed
 from sandfort.ids import new_api_key_id, new_org_id
-from sandfort.services.api_key_admin import KEY_CREATED, TARGET_TYPE
 from sandfort.services.audit import AuditRecorder
 from sandfort.services.audit_chain import (
     REANCHOR_ACTION,
@@ -461,16 +459,22 @@ async def _provision_async(
 ) -> IssuedKey:
     engine = create_engine(settings)
     try:
-        async with create_session_factory(engine)() as session, session.begin():
+        async with UnitOfWork(create_session_factory(engine)) as uow:
             if first_org:
-                await _refuse_if_bootstrapped(session)
-            await _refuse_duplicate_slug(session, org_slug)
-            key = await _create_org_and_key(
-                session, settings, org_name, org_slug, platform_admin=platform_admin
+                await _refuse_if_bootstrapped(uow.session)
+            await _refuse_duplicate_slug(uow, org_slug)
+            issued = await _create_org_and_key(
+                uow,
+                settings,
+                org_name,
+                org_slug,
+                created_via="bootstrap" if first_org else "create-org",
+                platform_admin=platform_admin,
             )
+            await uow.commit()
     finally:
         await engine.dispose()
-    return key
+    return issued
 
 
 async def _refuse_if_bootstrapped(session: AsyncSession) -> None:
@@ -479,19 +483,21 @@ async def _refuse_if_bootstrapped(session: AsyncSession) -> None:
         raise Conflict("already bootstrapped: a platform-admin key exists")
 
 
-async def _refuse_duplicate_slug(session: AsyncSession, org_slug: str) -> None:
-    if await SqlOrgRepository(session).get_by_slug(org_slug) is not None:
+async def _refuse_duplicate_slug(uow: UnitOfWorkPort, org_slug: str) -> None:
+    if await uow.orgs.get_by_slug(org_slug) is not None:
         raise Conflict(f"organization slug already exists: {org_slug}")
 
 
 async def _create_org_and_key(
-    session: AsyncSession,
+    uow: UnitOfWorkPort,
     settings: Settings,
     org_name: str,
     org_slug: str,
     *,
+    created_via: str,
     platform_admin: bool,
 ) -> IssuedKey:
+    """Add the org, its default quota, its first key and their audit rows; the caller commits."""
     now = SystemClock().now()
     org = Org(id=new_org_id(), name=org_name, slug=org_slug, created_at=now)
     generated = generate_api_key(settings.api_key_pepper)
@@ -506,11 +512,19 @@ async def _create_org_and_key(
         created_by=BOOTSTRAP_ACTOR,
         created_at=now,
     )
-    await SqlOrgRepository(session).add(org)
+    await uow.orgs.add(org)
     default_quota = settings.default_org_quota()
     if default_quota != OrgQuota():  # unset everywhere: no row, the org stays unlimited
-        await SqlQuotaRepository(session).upsert_limits(org.id, default_quota, now)
-    await SqlApiKeyRepository(session).add(key)
+        await uow.quotas.upsert_limits(org.id, default_quota, now)
+    await uow.api_keys.add(key)
+    await record_org_provisioned(
+        uow,
+        org,
+        key,
+        actor_id=BOOTSTRAP_ACTOR,
+        created_via=created_via,
+        default_quota=default_quota,
+    )
     return IssuedKey(generated.key, org.id, key.id, key.prefix)
 
 
@@ -540,25 +554,7 @@ async def _create_key_async(
                 created_at=now,
             )
             await uow.api_keys.add(key)
-            await AuditRecorder(SystemClock()).record(
-                uow,
-                org_id=org.id,
-                actor_type=ActorType.PLATFORM_ADMIN,
-                actor_id=BOOTSTRAP_ACTOR,
-                action=KEY_CREATED,
-                target_type=TARGET_TYPE,
-                target_id=key.id,
-                details={
-                    "name": name,
-                    "prefix": key.prefix,
-                    "scopes": sorted(scope.value for scope in ALL_SCOPES),
-                    "sandbox_labels": None,
-                    "max_sandboxes": None,
-                    "shared_volume_labels": None,
-                    "expires_at": None,
-                    "is_platform_admin": platform_admin,
-                },
-            )
+            await record_key_created(uow, key, actor_id=BOOTSTRAP_ACTOR)
             await uow.commit()
     finally:
         await engine.dispose()

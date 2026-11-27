@@ -4072,7 +4072,8 @@ The sandbox must be started to create a token. For a stopped or deleted sandbox 
 
   | Action | Written when |
   |---|---|
-  | `api_key.created`, `.revoked` | A key is created or revoked (a repeat revoke writes nothing) |
+  | `org.created` | The operator creates the org with `bootstrap` or `create-org` (the first row of the org's chain; orgs created before 2026-11-26 do not have it) |
+  | `api_key.created`, `.revoked` | A key is created or revoked (a repeat revoke writes nothing). The first key of an org is recorded with actor type `platform_admin` and actor id `sandfort-admin` |
   | `request.denied` | An authenticated request, or one with a revoked or expired key (`reason`), is refused (statuses above), outcome `denied` |
   | `sandbox.create`, `.start`, `.stop`, `.delete` | A sandbox is created, started, stopped or deleted (`sandbox.create` and `sandbox.delete` details both carry the sandbox `name` and `labels`) |
   | `sandbox.create_refused` | A create is refused with 503 because the host is full, or with 429 because the key is at its `max_sandboxes` cap (target: the org), outcome `denied` |
@@ -4083,7 +4084,8 @@ The sandbox must be started to create a token. For a stopped or deleted sandbox 
   | `sandbox.claim` | A sandbox is claimed from the warm pool |
   | `sandbox.logs.read` | Sandbox logs are read |
   | `sandbox.auto_stopped`, `sandbox.auto_deleted` | An auto-stop or auto-delete timer fires |
-  | `sandbox.drift_detected`, `.orphan_removed` | The reconciler finds state drift, or removes an orphan |
+  | `sandbox.preview_token_created` | A preview token is minted (port, `ttl_seconds`, `expires_at`; never the token or the URL) |
+  | `sandbox.drift_detected`, `.orphan_removed` | The reconciler finds state drift, or removes an orphan. For a container that exited, the row carries `exit_code` and `oom_killed` (`true`, or `null` when the runtime did not report it) |
   | `snapshot.register`, `.create`, `.delete`, `.exported` | A snapshot is registered, created, deleted, exported |
   | `image.build.request`, `image.build.complete` | A declarative image build is requested or ends |
   | `volume.create`, `volume.delete` | A volume is created or deleted |
@@ -4093,7 +4095,7 @@ The sandbox must be started to create a token. For a stopped or deleted sandbox 
   | `toolbox.pty.create`, `.resize`, `.close` | A terminal is opened, resized or closed |
   | `toolbox.fs.stat`, `.list`, `.mkdir`, `.move`, `.delete`, `.upload`, `.download` | A file operation |
   | `toolbox.git.clone`, `.status`, `.add`, `.commit`, `.push`, `.pull` | A git operation |
-  | `webhook.endpoint_created`, `.endpoint_deleted` | A webhook endpoint is created or deleted |
+  | `webhook.endpoint_created`, `.endpoint_updated`, `.endpoint_deleted` | A webhook endpoint is created, updated or deleted (an update lists the changed field names in `changed`, never the URL or the secret, and is written even when nothing changed) |
   | `webhook.endpoint_disabled` | An endpoint is disabled after repeated delivery failures |
   | `user.created` | A member add names an email that has no user yet (target: the user id) |
   | `membership.added`, `.removed` | A member is added to the org or removed from it |

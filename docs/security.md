@@ -173,8 +173,11 @@ traffic disabled (`enable_icc=false`). Three controls sit on top of that.
   egress proxy address (`SF_EGRESS_PROXY`). The proxy is a separate process,
   `python -m sandfort.egress.proxy`, that checks signed tokens made with
   `SANDFORT_EGRESS_SECRET`. If the proxy address or secret is not configured, an allowlisted
-  create is refused with 409 and never runs with open egress. Allowlisted creates are also
-  refused when sandboxes are created by jobs.
+  create is refused with 409 and never runs with open egress. When sandboxes are created by
+  jobs (multi-node), an allowlisted create goes only to nodes whose heartbeat reports the
+  egress stack. Jobs mode has no reset, so the egress token is not refreshed there: an
+  allowlisted jobs sandbox that outlives `SANDFORT_EGRESS_TOKEN_TTL_S` (7 days by default)
+  loses egress.
 
 Limits of the network controls, stated in `deploy/host-setup.sh` and [operations]:
 
@@ -335,8 +338,8 @@ fields of the row (`src/sandfort/services/audit_chain.py`). With no key set the 
 `sha256` over the same input; `prod` refuses to start in that state unless
 `SANDFORT_UNKEYED_AUDIT_CHAIN_ACKNOWLEDGED=true` accepts the unkeyed chain explicitly. Audit rows are written in the
 same transaction as the change they describe. The rule is one event per mutating call, with
-named exceptions. Two routes are known to write no row: `POST /v1/sandboxes/{id}/preview-tokens`
-and `PATCH /v1/webhooks/{id}`. No test walks every route to check this.
+named exceptions. A test walks every mutating route the app registers and fails when one has
+neither an audited case nor a reasoned exemption (`tests/test_audit_route_coverage_r96.py`).
 A call refused after a valid key usually writes a `request.denied` row instead. A create or
 start refused for host capacity writes `sandbox.create_refused` or `sandbox.start_refused`, and a
 create refused by the key's `max_sandboxes` cap writes `sandbox.create_refused` with `reason`
