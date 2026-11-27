@@ -35,6 +35,11 @@ from sandfort.config import (
     egress_limits_from,
     parse_dns_sink_address,
 )
+from sandfort.egress.metrics_listener import (
+    ENV_METRICS_LISTEN,
+    MetricsListen,
+    parse_metrics_listen,
+)
 from sandfort.egress.rules import EgressRules
 from sandfort.webhooks.ssrf import IpAddress
 
@@ -127,6 +132,7 @@ class ProxyConfig:
     policy_max_stale_s: int = DEFAULT_POLICY_MAX_STALE_S
     dns_pin_s: int = DEFAULT_DNS_PIN_S  # DNS pin window per sandbox and name (0 = off)
     dns_sink_address: str = ""  # serve the DNS sink here, udp and tcp 53; "" = no sink
+    metrics_listen: MetricsListen | None = None  # GET /metrics on loopback; None = off
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str]) -> Self:
@@ -162,6 +168,9 @@ class ProxyConfig:
             dns_pin_s=_ranged(environ, ENV_DNS_PIN_S, DEFAULT_DNS_PIN_S, *DNS_PIN_RANGE_S),
             dns_sink_address=parse_dns_sink_address(
                 environ.get(ENV_DNS_SINK_LISTEN, ""), ENV_DNS_SINK_LISTEN
+            ),
+            metrics_listen=parse_metrics_listen(
+                environ.get(ENV_METRICS_LISTEN, ""), proxy_port=int(port_text)
             ),
         )
 

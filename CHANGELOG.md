@@ -49,6 +49,51 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 97 (after tag v0.1.0-beta.86, egress decision counters, gvisor out-of-memory verdict)
+- **egress: the proxy counts its decisions and serves them on an opt-in loopback listener
+  (2026-11-27).** Every CONNECT answer is counted in `sandfort_egress_decisions_total`
+  (`decision` `allow`, `deny` or `drop`, `status`, and a bounded `reason_class`), and every
+  connection-cap refusal is also counted in `sandfort_egress_connection_cap_hits_total` (`scope`
+  `sandbox`, `source` or `global`). No sandbox id, org id or host name is a label. The counters
+  live in the proxy process and are served only when `SANDFORT_EGRESS_METRICS_LISTEN` names a
+  loopback IPv4 address and port (unset by default). Any other address, IPv6, the proxy port and
+  port 53 are refused at startup, so sandboxes cannot reach the listener. The api's `/metrics`,
+  the deny log rate limit of round 96 and every answer to the client are unchanged, and a failing
+  counter never changes an answer. A client that closes before it sends a full request (a port
+  probe, or a hang-up part-way through the headers) is counted as `drop` with `reason_class`
+  `connection_error`, not as a `malformed` deny; it still gets the same answer and deny log line
+  as before. Proxy decisions stay out of the audit chain.
+  (`src/sandfort/egress/metrics.py`, `src/sandfort/egress/metrics_listener.py`,
+  `src/sandfort/egress/proxy.py`, `src/sandfort/egress/proxy_limits.py`,
+  `tests/test_egress_metrics_b21.py`, `tests/test_egress_metrics_proxy_b21.py`,
+  `tests/test_egress_metrics_listener_b21.py`,
+  `tests/test_egress_metrics_listener2_b21.py`, this commit; the hash is recorded in the next round)
+- **docker: the daemon's out-of-memory verdict is read for gvisor, with an exit-137 check (B20,
+  2026-11-27).** Measured on 2026-11-27 on the beta VM (Docker 29.10.0, cgroup v2, `alpine:3.20`,
+  512 MiB, the Sandfort hardening flags, `--init`): a memory death read `State.OOMKilled` true,
+  `Running` false and exit 137 in 5 of 5 runs under runc and under runsc, and `OOMKilled` false
+  in 5 of 5 runs under Kata. A plain SIGKILL read false under all three. The Docker driver now
+  reads the verdict for the `container` (runc) and `gvisor` (runsc) tiers and never for
+  `microvm` (Kata). Visible effect on `gvisor`: a sandbox that dies of memory settles with
+  `stop_cause` `oom_killed` (it read `container_exited`), the `sandbox.drift_detected` audit row
+  carries `oom_killed` true (it was `null`), and the exec that saw the death answers
+  `stop_reason` `oom_killed` with `sandbox_stopped` true (it read `sandbox_stopped`). The
+  verdict also requires `State.ExitCode` 137 for every runtime, because Docker keeps
+  `OOMKilled` true after an out-of-memory kill that the container survived, until its next
+  start, and a later stop (exit 143) must not read as a memory death. Remaining limits: a
+  container that survived an out-of-memory kill and is later SIGKILLed by something else still
+  reads `oom_killed`. `microvm` still reads `container_exited`, `null` and `killed` or
+  `sandbox_stopped`. The cgroup `oom_kill` counter, which sees a process killed while the
+  container keeps running, still works on the `container` tier only. This supersedes the round
+  96 statement that `oom_killed` is `null` on `gvisor`. The API descriptions, the SDK constants
+  docs, `docs/operations.md`, `docs/isolation-tiers.md` and the connect guides say the same, and
+  the OpenAPI spec and the docs site are regenerated.
+  (`src/sandfort/drivers/docker/oom.py`, `src/sandfort/drivers/base.py`,
+  `src/sandfort/workers/stop_facts.py`, `src/sandfort/api/schemas/sandboxes.py`,
+  `src/sandfort/api/schemas/toolbox_process.py`, `src/sandfort/api/openapi.py`,
+  `tests/test_oom_verdict_tiers_b20.py`, `tests/test_oom_stop_reason_r62.py`, this commit; the
+  hash is recorded in the next round)
+
 #### Round 96 (after tag v0.1.0-beta.85, audit coverage of every mutating route, org genesis rows, stop facts, egress deny log)
 - **audit: the preview-token mint and the webhook update write audit rows, and a test walks every
   mutating route (2026-11-26).** `POST /v1/sandboxes/{id}/preview-tokens` writes

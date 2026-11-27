@@ -1465,7 +1465,7 @@ unless the state is `stopped`. `stop_cause` is a string, `null` unless the state
 | `requested` | A user or API key asked for the stop. | Nothing; start the sandbox when you want it back. |
 | `auto_stop` | The idle timer stopped it after `auto_stop_minutes` without activity. | Start it again; raise `auto_stop_minutes` (or set a negative value) if the stop was unwanted. |
 | `container_exited` | The reconciler found the container exited (a resource limit or the main process ending); `error_code` is `container_exited` as well. | Start it again; if it exits repeatedly, lower its memory or process use. |
-| `oom_killed` | The container was killed for exceeding its memory limit. Reserved: no code path sets it yet. | Do not rely on it. If it appears, resize the stopped sandbox to more memory before starting it. |
+| `oom_killed` | The container was killed for exceeding its memory limit and exited with code 137, as the Docker daemon records it. Set on the `container` and `gvisor` tiers, while `microvm` reads `container_exited`. | Resize the stopped sandbox to more memory before starting it. |
 | `unknown` | The sandbox is `stopping` or `stopped` with no recorded cause, for example a stop recorded before the field existed. | Starting it is safe; the cause cannot be recovered. |
 
 The rules are these. A successful start clears the cause. A second stop request never overwrites it.
@@ -1783,7 +1783,7 @@ usually prints nothing. What else happens depends on the isolation tier (see "Ch
 
 Check `sandbox_stopped` and `stop_reason` after every exit 137; `killed` also covers a program
 that kills itself, so it does not prove an out-of-memory kill. The sandbox's `stop_cause`
-value `oom_killed` is reserved and is not set by any code path, so do not wait for it. To fix
+value `oom_killed` is set when the container died of it on the `container` and `gvisor` tiers (not on `microvm`). To fix
 it, lower the program's memory use, or stop the sandbox, resize it to more memory and start it
 (see "Quotas" for the limits; the files in the root filesystem are kept across the resize).
 

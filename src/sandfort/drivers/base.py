@@ -451,9 +451,11 @@ class InventoryDriver(Protocol):
 class OomObservableDriver(Protocol):
     """Optional: tell whether a dead instance was killed for exceeding its memory limit.
 
-    Only where the runtime records it (the Docker container tier: the daemon's
-    ``State.OOMKilled``). Drivers whose tiers cannot see it answer ``False`` there, which
-    callers read as "not known", never as "not an OOM".
+    Only where the runtime records it (the Docker container and gvisor tiers: the daemon's
+    ``State.OOMKilled`` with exit code 137, measured 2026-11-27, not Kata, where the daemon does
+    not set it). Drivers whose tiers cannot see it answer ``False`` there, which callers read
+    as "not known", never as "not an OOM". A container that survived an earlier OOM kill and is
+    later SIGKILLed by something else still reads as OOM-killed.
     """
 
     async def container_oom_killed(self, ref: str) -> bool:

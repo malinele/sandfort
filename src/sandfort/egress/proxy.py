@@ -22,16 +22,14 @@ The proxy fails closed: a bad or missing credential (407), a name outside the al
 blocked address or port (403), too many tunnels or unauthenticated connections (429), the
 global ceiling or an unavailable policy (503), an unresolvable name or unreachable upstream
 (502) and any method other than CONNECT (405) are answered with an error and the connection is
-closed. Decisions are logged to stderr with the sandbox id, target host and policy generation
-(``gen=``), never the credential. A name the policy refused is logged as its length and a keyed
-digest only (``sandfort.egress.logname``); repeated denies of one sandbox and reason are
-logged once per interval with a suppressed count (``sandfort.egress.deny_log``). Reading the
-request is bounded by ``REQUEST_TIMEOUT_S``; everything after it by ``admission_cap_s``.
-
-Configuration comes from the environment (``SANDFORT_EGRESS_SECRET`` is required; the other
-``SANDFORT_EGRESS_*`` settings are in ``sandfort.egress.proxy_limits`` and docs/operations.md).
-``EgressProxy`` itself is permissive until told otherwise; ``ProxyConfig`` (re-exported here)
-and ``EgressProxy.from_config`` carry the restrictive defaults.
+closed. Decisions are logged to stderr with the sandbox id, target host and ``gen=``, never the
+credential; a refused name only as its length and a keyed digest (``sandfort.egress.logname``),
+repeated denies once per interval (``sandfort.egress.deny_log``). Every decision is also counted
+with bounded labels (``sandfort.egress.metrics``), served on loopback only when configured
+(``sandfort.egress.metrics_listener``). Reading the request is bounded by ``REQUEST_TIMEOUT_S``,
+everything after it by ``admission_cap_s``. ``SANDFORT_EGRESS_SECRET`` is required; the other
+settings are in ``sandfort.egress.proxy_limits`` and docs/operations.md. ``EgressProxy`` is
+permissive; ``ProxyConfig`` (re-exported) and ``EgressProxy.from_config`` are restrictive.
 """
 
 import asyncio
@@ -57,6 +55,8 @@ from sandfort.egress.auth import EgressCredential, authenticate, note_legacy
 from sandfort.egress.deny_log import DenyLog
 from sandfort.egress.dns_sink import serving_dns_sink
 from sandfort.egress.logname import redacted_name
+from sandfort.egress.metrics import EgressMetrics
+from sandfort.egress.metrics_listener import serving_metrics
 from sandfort.egress.pinning import PinStore
 from sandfort.egress.policy_client import PolicyClient, PolicyEntry
 from sandfort.egress.proxy_limits import (
@@ -159,6 +159,7 @@ class EgressProxy:
     ) -> None:
         self._secret = secret
         self._deny_log = deny_log or DenyLog()
+        self.metrics = EgressMetrics()
         self._resolver = resolver
         self._checker = checker
         self._denied = tuple(denied_networks)
@@ -255,13 +256,16 @@ class EgressProxy:
             request = await asyncio.wait_for(read_request(reader), REQUEST_TIMEOUT_S)
             upstream = await asyncio.wait_for(self._admit(request, seen), self._admission_cap_s)
             _log.info("allow sandbox=%s host=%r gen=%s", seen.sandbox_id, seen.host, seen.gen)
+            self.metrics.allowed()
             writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             await writer.drain()
             await relay((reader, writer), upstream, self._idle_timeout_s)
         except Deny as deny:
+            self.metrics.denied(deny)
             self._deny_log.log(seen.sandbox_id, deny, seen.gen, lambda: self._logged_host(seen))
             await send_error(writer, deny)
         except (OSError, TimeoutError):
+            self.metrics.dropped(admitted=seen.tunnel is not None)
             _log.info(
                 "drop sandbox=%s host=%s reason=connection error",
                 seen.sandbox_id,
@@ -370,7 +374,8 @@ async def _serve(config: ProxyConfig) -> None:
     server = await proxy.start(config.host, config.port)
     _log.info("egress proxy listening on %s:%d", config.host, config.port)
     async with server, aclosing(proxy), serving_dns_sink(config.dns_sink_address):
-        await server.serve_forever()
+        async with serving_metrics(config.metrics_listen, proxy.metrics):
+            await server.serve_forever()
 
 
 def main(environ: Mapping[str, str] | None = None) -> int:

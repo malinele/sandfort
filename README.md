@@ -158,7 +158,7 @@ Docker-dependent tests are marked `@pytest.mark.docker`, so CI without Docker st
 ## Status
 
 - Eleven delivery phases are documented in `CHANGELOG.md` (phases 7 and 8 are still marked in progress there); acceptance gates 1-10 pass (gates 1-5 on local Docker, recorded in commit messages; gates 6-10 run locally on 2026-11-01 and 2026-11-02).
-- The suite has 17733 collected tests (`pytest --collect-only -q`, 2026-11-25, HEAD 0bd48eb6)<!-- re-pin count and commit at publication -->. That is a collected count, not a pass count. CI (lint, strict mypy, import contracts, unit and docker jobs) was green on GitHub as of the last pushed commit, 2026-11-19.
+- The suite has 17994 collected tests (`pytest --collect-only -q`, 2026-11-27, HEAD ba27c4fa)<!-- re-pin count and commit at publication -->. That is a collected count, not a pass count. CI (lint, strict mypy, import contracts, unit and docker jobs) was green on GitHub as of the last pushed commit, 2026-11-19.
 - Latency, from `examples/benchmark.py`, single local runs and not service levels: on macOS arm64 with Docker 29.8.2 and `alpine:3.20` pre-pulled (2026-11-01), sandbox create waiting for `started` took p50 107 ms and p95 145 ms over 20 creates, and a short exec took p50 18 ms and p95 25 ms over 50 commands in one sandbox. On a Linux KubeVirt VM with 6 vCPU on a shared Hetzner host (nested virtualization, Ubuntu 24.04, Docker 29.9.2, XFS pquota; 2026-11-03), create took p50 248 ms and p95 323 ms and exec took p50 52 ms and p95 60 ms. Run `examples/benchmark.py` on your own host; the numbers depend on it.
 
 ## License

@@ -308,10 +308,16 @@ it has a rollback mode. The runtime is the Rust one, with QEMU as the hypervisor
 ## Exec results, output cap and untrusted submissions
 
 - Out-of-memory kills read `stop_reason` `oom_killed` (and `stop_cause` `oom_killed` on the
-  sandbox when the container died of it) on the `container` tier only: the Docker daemon records
-  `OOMKilled` for it, and the server reads the cgroup `oom_kill` counter for a single killed
-  process. gVisor and microVM keep their own kernel, so the host sees neither signal; their
-  out-of-memory kills still read `killed`, or `sandbox_stopped` with `container_exited`.
+  sandbox, `oom_killed` true in the drift audit row) when the container died of it on the
+  `container` (runc) and `gvisor` (runsc) tiers: the Docker daemon records `OOMKilled` for the
+  dead container (measured 2026-11-27, Docker 29.10.0, cgroup v2), and the server reads it only
+  with exit code 137. The daemon does not set it under `microvm` (Kata), so there an
+  out-of-memory kill still reads `killed`, or `sandbox_stopped` with `container_exited`. The
+  server also reads the cgroup `oom_kill` counter for a single process killed while the
+  container keeps running, and that works on the `container` tier only (gVisor and microVM keep
+  their own kernel, so the host does not see those kills). Limit: Docker keeps the flag set
+  after an out-of-memory kill the container survived, so a container that survived one and is
+  later SIGKILLed by something else still reads `oom_killed`.
 - Exec results include `sandbox_stopped` (REST field; SDK `ExecResult.sandbox_stopped`): true
   when the command's sandbox stopped (a gvisor limit overrun, or a fork bomb on gvisor or
   microvm). The CLI then prints a hint to

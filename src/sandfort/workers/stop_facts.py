@@ -9,8 +9,9 @@ Convention: ``None`` is "unknown", never a stand-in for "no".
 * ``exit_code``: the recorded exit status, ``None`` when the driver has no
   ``ExitStatusDriver`` member, has no ref to ask about, cannot read the runtime, or raises.
 * ``oom_killed``: ``True`` when the runtime flagged an out-of-memory kill. Otherwise ``None``:
-  the ``OomObservableDriver`` answer ``False`` means "not flagged or not observable" (gVisor,
-  Kata), so it cannot be told from "not an OOM" and is never written as ``False``.
+  the ``OomObservableDriver`` answer ``False`` means "not flagged or not observable" (Kata, or a
+  container that did not exit 137), so it cannot be told from "not an OOM" and is never written
+  as ``False``.
 """
 
 import logging

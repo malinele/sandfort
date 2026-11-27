@@ -142,8 +142,9 @@ _STOP_REASON_DOC = (
     "which includes user code killing itself, not only a sandbox-initiated kill. "
     "'oom_killed' means the sandbox ran out of memory and the server could see it: the "
     "container died of it (sandbox_stopped is true) or the kernel killed the process "
-    "(exit 137, the sandbox keeps running). It is reported on the container isolation "
-    "tier only; under gVisor and the microVM tiers an out-of-memory kill still reads "
+    "(exit 137, the sandbox keeps running). A dead container is reported on the container "
+    "and gVisor isolation tiers, a killed process while the container keeps running on the "
+    "container tier only, and under the microVM tier an out-of-memory kill still reads "
     "'killed' or 'sandbox_stopped'."
 )
 _CONTEXT_STOP_REASON_DOC = _STOP_REASON_DOC + (

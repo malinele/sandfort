@@ -422,14 +422,14 @@ def test_the_counter_parser_and_cgroup_lookup(
 @pytest.mark.parametrize(
     ("runtime", "state", "expected"),
     [
-        ("runc", {"Running": False, "OOMKilled": True}, True),
-        ("runc", {"Running": False, "OOMKilled": False}, False),
-        ("runc", {"Running": True, "OOMKilled": True}, False),  # a process was killed, not it
-        ("runsc", {"Running": False, "OOMKilled": True}, False),
-        ("kata-qemu", {"Running": False, "OOMKilled": True}, False),
+        ("runc", {"Running": False, "OOMKilled": True, "ExitCode": 137}, True),
+        ("runc", {"Running": False, "OOMKilled": False, "ExitCode": 137}, False),
+        ("runc", {"Running": True, "OOMKilled": True, "ExitCode": 137}, False),  # a process died
+        ("runsc", {"Running": False, "OOMKilled": True, "ExitCode": 137}, True),
+        ("kata-qemu", {"Running": False, "OOMKilled": True, "ExitCode": 137}, False),
     ],
 )
-async def test_the_container_verdict_is_read_for_the_container_tier_only(
+async def test_the_container_verdict_is_read_for_runc_and_runsc(
     pair: socket.socket, runtime: str, state: dict[str, Any], expected: bool
 ) -> None:
     client = Client(Api(pair, runtime=runtime, state=state))

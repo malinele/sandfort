@@ -18,7 +18,8 @@ Restart guidance per value:
 * ``container_exited``: the reconciler found the container exited. Start it again; if it exits
   repeatedly, read the command logs for the cause.
 * ``oom_killed``: the container was killed for exceeding its memory limit, as the runtime
-  records it (container isolation tier only). Resize the stopped sandbox to more memory before
+  records it with exit code 137 (container and gvisor isolation tiers, microvm reports
+  ``container_exited``). Resize the stopped sandbox to more memory before
   starting it again.
 * ``unknown``: the stop was recorded without a cause (for example before the server stored
   causes). Starting it again is safe; the cause cannot be recovered.
@@ -37,7 +38,7 @@ StopCause = Literal[
 SANDBOX_STOP_CAUSE_REQUESTED: Final = "requested"  # a user or API key asked for the stop
 SANDBOX_STOP_CAUSE_AUTO_STOP: Final = "auto_stop"  # the idle scanner stopped it
 SANDBOX_STOP_CAUSE_CONTAINER_EXITED: Final = "container_exited"  # the container exited
-SANDBOX_STOP_CAUSE_OOM_KILLED: Final = "oom_killed"  # over its memory limit (container tier)
+SANDBOX_STOP_CAUSE_OOM_KILLED: Final = "oom_killed"  # over its memory limit (container, gvisor)
 SANDBOX_STOP_CAUSE_UNKNOWN: Final = "unknown"  # stopped with no recorded cause
 
 KNOWN_STOP_CAUSES: Final[frozenset[str]] = frozenset(get_args(StopCause))

@@ -666,6 +666,9 @@ several processes scrape each one.
 Not exported: sandbox counts by state, node capacity, Docker thread-lane saturation (see
 "Docker driver threads and shutdown"), node heartbeats, audit-chain health and disk usage.
 
+The egress proxy is a separate process with its own two counters and an optional loopback
+listener; see "Egress decision counters".
+
 ### Example alert rules
 
 `deploy/k8s/prometheusrule.yaml` ships six example alerts for the Prometheus Operator; it
@@ -1328,6 +1331,7 @@ process at startup.
 | `SANDFORT_EGRESS_DNS_PIN_S` | `30` (0 to 300) | How long the proxy reuses the addresses it resolved for a name, per sandbox and name, so a CONNECT inside the window dials the same set without a new query. `0` resolves on every CONNECT. At most 256 pins per sandbox and 65536 per proxy. A failed, empty or unreachable answer is never pinned, and a pin is dropped when the sandbox's policy no longer admits the name. |
 | `SANDFORT_EGRESS_DNS_SINK_LISTEN` | unset | Proxy only. The IPv4 address the proxy binds the DNS sink to, udp and tcp port 53 (below). `addr` or `addr:53`; any other port, IPv6, a hostname or a list is refused at startup. Unset: no sink. |
 | `SANDFORT_EGRESS_DNS_SINK_ADDRESS` | unset | Api and driver. The sink address given as the only DNS server to sandboxes on `sf-egress-net` (below). Same accepted forms as the listen setting. It must name the address the proxy listens on. |
+| `SANDFORT_EGRESS_METRICS_LISTEN` | unset | Proxy only. A loopback IPv4 address and port, such as `127.0.0.1:9464`, where the proxy serves `GET /metrics` with its egress counters (below). A wildcard, any other address, IPv6, a hostname, the proxy port and port 53 are refused at startup. Unset: no listener. |
 
 This release has no setting for a process-wide ceiling on proxy connections and none for a limit
 on connections that have not authenticated yet. The only configurable cap is the per-sandbox one
@@ -1344,8 +1348,62 @@ narrowed allowlist still shows up in the log within the policy bound. Suppressed
 a count, not the host name. The table holds at most 4096 sandbox and reason pairs. When it evicts a
 pair, or when a burst stops and no further refusal follows, the held-back count is never written, so
 the log can undercount. Every refusal still gets its answer (403, 407, 429). The interval is a
-constant (`DENY_LOG_INTERVAL_S` in `src/sandfort/egress/deny_log.py`), not a setting. The proxy has
-no `/metrics` endpoint, so there are no counters for egress decisions.
+constant (`DENY_LOG_INTERVAL_S` in `src/sandfort/egress/deny_log.py`), not a setting. Every refusal is still counted, see
+"Egress decision counters" below.
+
+### Egress decision counters
+
+The proxy counts every answer to a CONNECT in its own process. The api's `/metrics` does not
+include these counters, because the proxy is a separate process with its own registry.
+
+They are served only when `SANDFORT_EGRESS_METRICS_LISTEN` is set, as Prometheus text with no
+token, to at most 4 concurrent scrapes and with a 5 s read timeout for the request. The listener
+binds a loopback IPv4 address only, so no sandbox can reach it, whatever the network mode and
+whether or not `deploy/host-setup.sh` ran. Scrape from the same host or network namespace as the
+proxy: on the node with host networking, otherwise from a sidecar or with `docker exec`.
+
+There is one proxy per node, and each one has its own counters. They reset when the proxy
+restarts, so graph them with `rate()` or `increase()`, not as absolute values.
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `sandfort_egress_decisions_total` | counter | `decision` (`allow`, `deny`, `drop`), `status` (`200`, `400`, `403`, `405`, `407`, `429`, `431`, `502`, `503`, `none` for a drop, `other`), `reason_class` | Answers to a CONNECT. |
+| `sandfort_egress_connection_cap_hits_total` | counter | `scope` (`sandbox`, `source`, `global`) | Refusals by a connection cap: `sandbox` is the per-sandbox tunnel cap (429), `source` the cap on unauthenticated connections per source (429), `global` the process-wide ceiling (503). Each is also counted as a decision. |
+
+The `reason_class` values:
+
+- `allowed`: the tunnel was admitted and the 200 was written.
+- `connection_error`: see below. It is counted with `decision` `drop` and `status` `none`.
+- `malformed`: a request line or headers that cannot be parsed or are too long, a target that is
+  not `host:port`, a port out of range or a zone id (400, 431).
+- `method`: any method other than CONNECT (405).
+- `credential`: no credential, one that is not Basic or not decodable, a credential with no
+  password, an invalid token, or a username that does not match the token (407).
+- `credential_stale`: a v2 token with an old credential epoch, or a v1 token that a stored policy
+  has superseded (407).
+- `policy_missing`: the policy channel has no policy for the sandbox (407).
+- `port`: a target port outside the allowed-ports setting (403).
+- `allowlist`: the host or address is not in the sandbox's allowlist (403).
+- `blocked_address`: an address that is in a denied network, in a translation prefix or refused by
+  the address check (403).
+- `cap_sandbox`: the per-sandbox tunnel cap (429).
+- `cap_source`: the cap on unauthenticated connections per source (429).
+- `cap_global`: the global connection ceiling (503).
+- `policy_unavailable`: the policy lookup is unavailable (503).
+- `resolve`: the name does not resolve, or the resolver returned something that is not an
+  address (502).
+- `upstream`: the connection to a vetted address failed (502).
+- `other`: a refusal that none of the classes above covers. A `status` of `other` is a status the
+  proxy does not normally send.
+
+`connection_error` is a client that closed before it sent a full request (a TCP port probe or a
+client that hung up part-way through the headers), a reset or I/O error, a request read timeout,
+or the admission time cap, all before any answer was sent. A client that closes early still
+gets the deny log line it always got. An error after a tunnel opened is not counted again,
+because the tunnel was already counted as `allow`.
+
+No label carries a sandbox id, org id, host name or address. The deny log line names the sandbox;
+the counters do not. Proxy decisions are not audit rows.
 
 ### Controlled DNS: the sink
 
@@ -1777,8 +1835,8 @@ exit.
 | `sandbox_stopped` | The sandbox stopped under the command: a stop by the caller or auto-stop, or a death under a resource limit (memory or process count) or a main-process exit. Exit code 137, `sandbox_stopped` true. "Sandbox stopped or died" below tells the two apart. | `start()` brings the sandbox back with its files; use `reset()` and then `start()` when the files must be clean. After a death, lower the command's memory or process use. |
 | `sandbox_deleted` | Another caller deleted the sandbox while the command ran. Exit code 137, `sandbox_stopped` true. | Nothing to recover; create a new sandbox if the work should continue. The audit log shows who deleted it. |
 | `sandbox_reset` | Another caller reset the sandbox while the command ran. Exit code 137, `sandbox_stopped` true. | Repeat the command on the fresh sandbox if it is still wanted. The audit log shows who reset it. |
-| `oom_killed` | The sandbox ran out of memory and the server could see it. Either the container died of it (`sandbox_stopped` true, the sandbox `stop_cause` is `oom_killed`), or the kernel killed the process while the sandbox kept running (`sandbox_stopped` false: the cgroup `oom_kill` counter rose during the exec). Exit code 137. Reported on the container isolation tier only, on a host where the server can read the container's cgroup (a local daemon, cgroup v2) for the process case. Under gVisor and the microVM tiers an out-of-memory kill still reads `killed` or `sandbox_stopped`. | Raise the sandbox memory (resize) or reduce the workload. |
-| `killed` | The process got SIGKILL (exit code 137) and none of the reasons above applies: user code killing itself, or an out-of-memory kill the server could not see (gVisor, microVM, a remote daemon). | Check the sandbox memory limit; the sandbox itself may still be `started`. |
+| `oom_killed` | The sandbox ran out of memory and the server could see it. Either the container died of it (`sandbox_stopped` true, the sandbox `stop_cause` is `oom_killed`), or the kernel killed the process while the sandbox kept running (`sandbox_stopped` false: the cgroup `oom_kill` counter rose during the exec). Exit code 137. The container-death case (the daemon's verdict for a dead container) is reported on the `container` (runc) and `gvisor` (runsc) tiers, as measured on 2026-11-27, and needs the container to have exited with code 137. The process case (a process killed while the container keeps running) is reported on the `container` tier only, on a host where the server can read the container's cgroup (a local daemon, cgroup v2). On `microvm` (Kata) an out-of-memory kill still reads `killed` or `sandbox_stopped`. A container that survived an out-of-memory kill earlier and is later SIGKILLed by something else (exit 137 as well) still reads `oom_killed`, because Docker keeps its flag set until the next start. | Raise the sandbox memory (resize) or reduce the workload. |
+| `killed` | The process got SIGKILL (exit code 137) and none of the reasons above applies: user code killing itself, or an out-of-memory kill the server could not see (a process killed on `gvisor` while the container keeps running, `microvm`, a remote daemon). | Check the sandbox memory limit; the sandbox itself may still be `started`. |
 | `queue_timeout` | Code contexts only. The run waited for another run of the same context for longer than its own `timeout_s` and never started. Exit code 124, `timed_out` true; the context and its state are kept. | Send the cell again once the earlier run has finished, or give it a larger `timeout_s`. |
 | `context_lost` | Code contexts only. The context's kernel died or closed the connection during the run, or the context was deleted mid-run. | Create a new context and run the cell again; the state of the old one is gone. |
 
@@ -1828,7 +1886,7 @@ a tenant never sees is logged at `WARNING` by the logger `sandfort.drivers.docke
 | `timeout` | Yes | create or start: a driver operation ran past its deadline | A slow or hung Docker daemon, host load or disk I/O, a first pull of a large image on a slow link. Repeat once the daemon answers promptly; a steady stream means the node is overloaded (see "Capacity and sizing"). |
 | `reset_failed` | No for that sandbox; create a new one | reset: the driver failed after the old container was removed | The `sandbox.reset_failed` audit row and the server log. A reset builds the new container from the sandbox's image, so check that the image is still on the node or can be pulled. What was in the old container is gone; named volumes are kept. |
 | `container_missing` | No for that sandbox; create a new one | reconciler: the container of a `started` sandbox is gone, or exists but was never started | The `sandbox.drift_detected` audit row (`reason`, `driver_ref`). Whether something removed containers on the node (a manual `docker rm`, a prune, a Docker root that did not survive a node restart) and whether the daemon restarted. The container's files are lost. |
-| `container_exited` | Yes: `start` the sandbox | reconciler, or an exec that saw the container die: the sandbox is moved to `stopped` with this code and a reason | The `sandbox.drift_detected` audit row (`stopped_unexpectedly`, `exit_code`, `oom_killed`). `oom_killed` is `true` when the runtime flagged a memory kill and `null` when it did not report one, which is the usual answer on `gvisor` and `microvm`, so check the node's kernel log there. The sandbox exceeded its memory or process limit; its files are kept and a successful start clears the code. |
+| `container_exited` | Yes: `start` the sandbox | reconciler, or an exec that saw the container die: the sandbox is moved to `stopped` with this code and a reason | The `sandbox.drift_detected` audit row (`stopped_unexpectedly`, `exit_code`, `oom_killed`). `oom_killed` is `true` when the runtime flagged a memory kill and the container exited with code 137, and `null` when it did not report one, which is the usual answer on `microvm` (Kata does not set the flag), so check the node's kernel log there. A `gvisor` memory death of the whole sandbox reads `true` (measured 2026-11-27). The sandbox exceeded its memory or process limit; its files are kept and a successful start clears the code. |
 | `node_lost` | Not applicable today | Reserved for a lost node; no code path sets it | Nothing, as the code never appears. A node that is down shows as 503 `NODE_UNAVAILABLE` on calls routed to it (see "Cross-node toolbox routing"). If a `node_lost` row ever appears, treat it as `container_missing` and report it. |
 | `internal` | Once, with a new sandbox; if it repeats, no | Anything the server does not classify | The server log for the request id. A repeating `internal` is a bug to report with that log line. |
 
@@ -1868,7 +1926,7 @@ asked for from a container that died. Unlike `error_code`, it describes a `stopp
 | `requested` | A user or API key asked for the stop. | `SandboxService.stop`, in the write that moves the row to `stopping`. | Leave it. Start the sandbox only when the work should continue. |
 | `auto_stop` | The idle timer stopped it after `auto_stop_minutes` without activity. | The auto-stop scanner (`src/sandfort/workers/autostop.py`), in the write that moves the row to `stopping`. | Restart it if the work continues. If the stop was unwanted, raise `auto_stop_minutes` or set it to a negative value (never). |
 | `container_exited` | The container exited under the sandbox (a resource limit or the main process ending). The row is `stopped` and `error_code` is `container_exited` too. | The reconciler, or an exec that saw the container die (both settle the row through `mark_stopped_unexpectedly`). | Restart it. Alert when it repeats: lower the memory or process use, and check the node's kernel log for an out-of-memory kill. |
-| `oom_killed` | The container was killed for exceeding its memory limit, and the runtime said so (Docker `State.OOMKilled`). Only the container isolation tier (runc) can see it; under gVisor and the microVM tiers the same death reads `container_exited`. | The reconciler, or an exec that saw the container die (both settle the row through `mark_stopped_unexpectedly`, which asks the driver for the verdict). The exec that was running answers `stop_reason` `oom_killed`. | Resize the stopped sandbox to more memory, or reduce the workload, then start it. Alert when it repeats. |
+| `oom_killed` | The container was killed for exceeding its memory limit, and the runtime said so (Docker `State.OOMKilled`). The verdict covers the `container` (runc) and `gvisor` (runsc) tiers (measured 2026-11-27) and requires exit code 137. Under `microvm` (Kata) the daemon does not set it and the same death reads `container_exited`. A container that survived an out-of-memory kill earlier and is later SIGKILLed by something else still reads `oom_killed`, because Docker keeps its flag set until the next start. | The reconciler, or an exec that saw the container die (both settle the row through `mark_stopped_unexpectedly`, which asks the driver for the verdict). The exec that was running answers `stop_reason` `oom_killed`. | Resize the stopped sandbox to more memory, or reduce the workload, then start it. Alert when it repeats. |
 | `unknown` | The sandbox is `stopping` or `stopped` and the row holds no cause. | Never stored; the API shows it in place of a null. It is what a sandbox stopped before migration `0020` shows. | Leave it, or read the audit log for the stop. The cause cannot be recovered; starting it is safe. |
 
 Rules that hold for all values:

@@ -1,22 +1,28 @@
 """Out-of-memory evidence for the Docker driver, read without running anything in the sandbox.
 
-Two signals, both only for runtimes that share the host kernel (runc, the container tier):
+Two signals, each read only for the runtimes where it is reliable:
 
 * ``container_oom_killed``: the daemon's own verdict for a dead container (``State.OOMKilled``
-  of the container inspect, with the container not running);
+  of the container inspect, with the container not running and ``State.ExitCode`` 137). Read
+  for runc and runsc (gVisor); never for Kata, where the daemon does not set it (measured
+  2026-11-27). Docker keeps ``OOMKilled`` true after an OOM kill the container survived, until
+  its next start, so the exit-137 condition keeps a later graceful stop (exit 143) from reading
+  as a memory death. The limit that remains: a container that survived an OOM earlier and is
+  later SIGKILLed by something else (exit 137 as well) still reads as OOM-killed.
 * ``OomCounter``: the ``oom_kill`` counter of the container's cgroup v2 ``memory.events``,
-  read from the host. ``exec_stream`` reads it before an exec and again when the exec ended
-  with SIGKILL; a higher count means the kernel OOM-killed a process of the container meanwhile.
+  read from the host, and only for runtimes that share the host kernel (runc). ``exec_stream``
+  reads it before an exec and again when the exec ended with SIGKILL; a higher count means the
+  kernel OOM-killed a process of the container meanwhile.
 
 The cgroup is found by the container id under the two layouts Docker uses (the systemd driver's
 ``system.slice/docker-<id>.scope`` and the cgroupfs driver's ``docker/<id>``), so the baseline
 costs no daemon call. The runtime is inspected only after a SIGKILL exit, to confirm the tier.
 
-gVisor and Kata keep their own kernel: the host cgroup does not see their guest's kills and
-the daemon does not flag them, so both signals answer "not observable" there (``False``) and
-callers keep their earlier answer. The counter is also unobservable when the server cannot see
-the daemon's host (a remote daemon, a server in its own cgroup namespace, cgroup v1): never an
-error.
+gVisor and Kata keep their own kernel: the host cgroup does not see their guest's kills, so the
+counter answers "not observable" there (``False``) and callers keep their earlier answer. The
+daemon verdict answers ``False`` for Kata for the same reason. The counter is also unobservable
+when the server cannot see the daemon's host (a remote daemon, a server in its own cgroup
+namespace, cgroup v1): never an error.
 """
 
 import logging
@@ -34,12 +40,23 @@ CGROUP_DIR_TEMPLATES = ("system.slice/docker-{ref}.scope", "docker/{ref}")
 MEMORY_EVENTS = "memory.events"
 OOM_KILL_KEY = "oom_kill"
 KATA_RUNTIME_PREFIX = "kata"
+OOM_DEATH_EXIT_CODE = 137  # 128 + SIGKILL: every measured OOM death of the container exited so
 _CONTAINER_ID = re.compile(r"[0-9a-f]{64}")
 
 
 def shares_host_kernel(runtime: str) -> bool:
     """``True`` for runtimes whose processes are ordinary host processes (runc)."""
     return runtime != GVISOR_RUNTIME and not runtime.startswith(KATA_RUNTIME_PREFIX)
+
+
+def daemon_flags_oom(runtime: str) -> bool:
+    """``True`` where the daemon's ``State.OOMKilled`` is a reliable verdict: runc and runsc.
+
+    Measured 2026-11-27 on the beta VM (Docker 29.10.0, cgroup v2): an out-of-memory death
+    read ``OOMKilled`` true under runc and runsc in every run and false under Kata in every
+    run, and a plain SIGKILL read false under all three.
+    """
+    return not runtime.startswith(KATA_RUNTIME_PREFIX)
 
 
 def parse_oom_kill(events_text: str) -> int | None:
@@ -119,16 +136,25 @@ class OomCounter:
 
 
 def container_oom_killed_blocking(client: Any, ref: str) -> bool:
-    """``True`` when the container is not running and the daemon says it was OOM-killed."""
+    """``True`` when the container is not running, exited 137 and the daemon says OOM-killed.
+
+    The exit code narrows the sticky ``State.OOMKilled`` flag, which Docker leaves true after a
+    non-fatal OOM until the next start: a later stop (143) or exit does not match. A container
+    that survived an OOM and is later SIGKILLed by something else still reads as OOM-killed.
+    """
     try:
         attrs = client.api.inspect_container(ref)
     except Exception:
         logger.debug("could not inspect %s for an OOM verdict", ref, exc_info=True)
         return False
-    if not shares_host_kernel(_runtime_of(attrs)):
+    if not daemon_flags_oom(_runtime_of(attrs)):
         return False
     state = attrs.get("State") or {}
-    return state.get("OOMKilled") is True and state.get("Running") is False
+    return (
+        state.get("OOMKilled") is True
+        and state.get("Running") is False
+        and state.get("ExitCode") == OOM_DEATH_EXIT_CODE
+    )
 
 
 async def container_oom_killed(client: Any, ref: str) -> bool:

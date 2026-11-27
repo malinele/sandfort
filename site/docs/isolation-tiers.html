@@ -300,10 +300,16 @@ are visible to code inside the sandbox.</li>
 <h2 id="exec-results-output-cap-and-untrusted-submissions">Exec results, output cap and untrusted submissions<a class="anchor" href="#exec-results-output-cap-and-untrusted-submissions" aria-label="Link to section: Exec results, output cap and untrusted submissions">#</a></h2>
 <ul>
 <li>Out-of-memory kills read <code>stop_reason</code> <code>oom_killed</code> (and <code>stop_cause</code> <code>oom_killed</code> on the
-sandbox when the container died of it) on the <code>container</code> tier only: the Docker daemon records
-<code>OOMKilled</code> for it, and the server reads the cgroup <code>oom_kill</code> counter for a single killed
-process. gVisor and microVM keep their own kernel, so the host sees neither signal; their
-out-of-memory kills still read <code>killed</code>, or <code>sandbox_stopped</code> with <code>container_exited</code>.</li>
+sandbox, <code>oom_killed</code> true in the drift audit row) when the container died of it on the
+<code>container</code> (runc) and <code>gvisor</code> (runsc) tiers: the Docker daemon records <code>OOMKilled</code> for the
+dead container (measured 2026-11-27, Docker 29.10.0, cgroup v2), and the server reads it only
+with exit code 137. The daemon does not set it under <code>microvm</code> (Kata), so there an
+out-of-memory kill still reads <code>killed</code>, or <code>sandbox_stopped</code> with <code>container_exited</code>. The
+server also reads the cgroup <code>oom_kill</code> counter for a single process killed while the
+container keeps running, and that works on the <code>container</code> tier only (gVisor and microVM keep
+their own kernel, so the host does not see those kills). Limit: Docker keeps the flag set
+after an out-of-memory kill the container survived, so a container that survived one and is
+later SIGKILLed by something else still reads <code>oom_killed</code>.</li>
 <li>Exec results include <code>sandbox_stopped</code> (REST field; SDK <code>ExecResult.sandbox_stopped</code>): true
 when the command&#x27;s sandbox stopped (a gvisor limit overrun, or a fork bomb on gvisor or
 microvm). The CLI then prints a hint to

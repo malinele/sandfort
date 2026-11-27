@@ -370,8 +370,9 @@ _STOP_REASONS: tuple[tuple[str, str], ...] = (
         STOP_REASON_OOM_KILLED,
         "the sandbox ran out of memory and the server could see it: the container died of it "
         "(`sandbox_stopped` is true) or the kernel killed the process (the sandbox keeps "
-        "running); the container isolation tier only, the gVisor and microVM tiers still "
-        "answer `killed` or `sandbox_stopped`",
+        "running). A dead container is reported on the container and gVisor tiers, a killed "
+        "process on the container tier only, and the microVM tier still answers `killed` or "
+        "`sandbox_stopped`",
     ),
     (STOP_REASON_KILLED, "the process got SIGKILL (exit code 137) without any other reason"),
 )

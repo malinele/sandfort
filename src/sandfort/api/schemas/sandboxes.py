@@ -404,8 +404,8 @@ class SandboxResponse(BaseModel):
             "requested: stopped on purpose by a stop request; auto_stop: stopped on purpose "
             "by the idle timer (auto_stop_minutes); container_exited: the process tree "
             "exited, start it again; oom_killed: the container was killed for exceeding its "
-            "memory limit (container isolation tier only; the other tiers report "
-            "container_exited); unknown: stopped before this field existed."
+            "memory limit and exited with code 137 (container and gvisor isolation tiers, while "
+            "microvm reports container_exited); unknown: stopped before this field existed."
         ),
     )
     stopped_at: AwareDatetime | None = Field(
