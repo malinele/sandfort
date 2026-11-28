@@ -647,9 +647,13 @@ server returned. The URL is sanitised like any server text, except that the toke
 in it. The sanitiser would mask every query value, as in <code>?sandfort_preview_token=***</code>. So the
 value of the <code>sandfort_preview_token</code> query parameter is put back as returned, when the token is
 ordinary text. Ordinary text means the sanitiser would leave it unchanged. Other query values
-stay masked. When the URL cannot carry the token that way, text mode prints the exact token on a
-<code>token: &lt;token&gt;</code> line after the URL. A token that holds control characters is never printed in
-text mode (a note on stderr says to use <code>--json</code>), and the URL then shows it masked;</li>
+stay masked. The <code>browser_url</code> of an HTTPS server is treated the same way: the sanitiser would
+mask its whole fragment as <code>#***</code>, so a fragment that is exactly
+<code>sandfort_preview_token=&lt;token&gt;</code> is put back as returned, when the token is ordinary text, and
+the rest of the URL is sanitised. When the printed URL cannot carry the token that way, text
+mode prints the exact token on a <code>token: &lt;token&gt;</code> line after the URL. A token that holds
+control characters is never printed in text mode (a note on stderr says to use <code>--json</code>), and
+the URL then shows it masked;</li>
 <li>the build log lines that the CLI echoes while it follows a snapshot build follow the program
 output policy of <code>exec</code> (see &quot;Program output&quot; in the rules below). Dangerous terminal sequences
 are removed. The content is not masked. Nothing is flattened or cut, so indentation is kept.</li>
@@ -1768,7 +1772,12 @@ rewrites <code>/etc/resolv.conf</code> on start where it manages DNS, removes st
 <code>/.sandfort-reserve</code> and a start fills it again. Your own files are not touched.</li>
 <li>On the hosted beta, files survive a stop on <code>gvisor</code> because the runtime is registered with
 <code>--overlay2=none</code> (<code>deploy/node-setup.sh</code>). On a self-hosted node, register <code>runsc</code> the same way.
-The server does not check it.</li>
+At startup the server reads the runtime arguments from <code>docker info</code>. If the runtime of the
+<code>gvisor</code> tier is registered without <code>--overlay2=none</code>, it logs one warning and carries on. It
+never refuses to start over this, and a daemon that does not report the arguments can cause a
+warning on a correct node. The warning appears only in the server startup log.
+<code>python -m sandfort.admin_cli doctor</code> has no row for it, so a clean <code>doctor</code> does not show
+that the flag is set.</li>
 <li><code>reset</code> removes the container together with the image scratch volumes and creates new, empty
 ones. Anything a <code>volumes</code> entry mounts is a named volume and is not touched.</li>
 <li><code>delete</code> removes the container, the image scratch volumes and the saved image a resize leaves
@@ -2235,6 +2244,13 @@ sees both. The same applies to the answer of an image build and to the <code>dig
 defaults (<code>cpu_millicores</code> 1000, <code>memory_mib</code> 512, <code>disk_gib</code> 3) unless you pass <code>resources=</code>. It
 does inherit the isolation tier. The new sandbox&#x27;s disk quota counts only what it writes itself;
 the snapshot content it starts from does not count against <code>disk_gib</code>.</p>
+<p>A snapshot is a copy of the container&#x27;s filesystem taken when the commit runs, and nothing more. It
+is independent of its source: the source sandbox can be stopped or deleted once the snapshot is
+<code>ready</code>, and the snapshot stays. Deleting the source is refused with 409 while the snapshot is
+<code>pending</code>. A snapshot is kept until you delete it, no timer removes it. It does not capture the
+contents of volumes mounted in the sandbox, the <code>/dev/shm</code> memory file system, running processes or
+memory. A sandbox created from it starts fresh processes with an empty <code>/dev/shm</code>, so a dev server,
+a Python session or an in-memory cache has to be started again.</p>
 <h4 id="exporting-a-snapshot">Exporting a snapshot<a class="anchor" href="#exporting-a-snapshot" aria-label="Link to section: Exporting a snapshot">#</a></h4>
 <p>A <code>ready</code> snapshot can be downloaded as an image tar, the archive <code>docker save</code> produces. It
 needs the <code>snapshots:read</code> scope; the call is audited as <code>snapshot.exported</code>.</p>
@@ -3124,21 +3140,48 @@ create the sandbox from an image that has it, for example <code>python:3.12</cod
 </ul>
 <h2 id="4-preview-urls">4. Preview URLs<a class="anchor" href="#4-preview-urls" aria-label="Link to section: 4. Preview URLs">#</a></h2>
 <p>To create a token for a port, run <code>sandfort preview &lt;sandbox&gt; &lt;port&gt;</code>, which prints the preview URL,
-or call <code>sbx.preview(port)</code> in the Python SDK, which returns a <code>PreviewInfo</code> with <code>url</code>, <code>token</code> and
-the expiry. In REST, POST to the sandbox&#x27;s <code>preview-tokens</code> endpoint. Open the returned <code>url</code> in a
-browser: it works as returned because it already carries the access token as a query parameter.
-Preview URLs are served under the wildcard preview domain over HTTPS and stop working at
+or call <code>sbx.preview(port)</code> in the Python SDK, which returns a <code>PreviewInfo</code> with <code>url</code>, <code>token</code>,
+the expiry and, on an HTTPS preview origin, <code>browser_url</code>. In REST, POST to the sandbox&#x27;s
+<code>preview-tokens</code> endpoint. The reply always has <code>url</code>. It carries the access token as a query
+parameter, so it works as returned in a browser, with curl and in scripts. When the server&#x27;s
+preview origin is HTTPS (<code>SANDFORT_PUBLIC_PREVIEW_URL</code> starts with <code>https</code>), the reply also has
+<code>browser_url</code>: open that one in a browser. <code>sandfort preview</code> prints <code>url</code>, so
+<code>curl &quot;$(sandfort preview &lt;sandbox&gt; &lt;port&gt;)&quot;</code> reaches your app. <code>sandfort preview --browser</code> prints
+<code>browser_url</code> when the reply has it and <code>url</code> otherwise, and <code>sandfort --json preview</code> has both
+fields. Preview URLs are served under the wildcard preview domain over HTTPS and stop working at
 <code>expires_at</code>.</p>
-<p>Treat the <code>url</code> as a credential. Whoever holds it can open that port of the sandbox, as often as
-they like, until <code>expires_at</code>. The lifetime is <code>ttl_seconds</code>: 1 hour by default, at least 60
-seconds and at most 7 days. No endpoint revokes a token before it expires, so choose a short
-<code>ttl_seconds</code>. On the first open, the proxy takes the token out of the query, sets it as an
-<code>HttpOnly</code> cookie and does not forward it to your app. The URL as you opened it can still stay in
-browser history and in the access logs on the way. Do not share it and do not paste it into tickets
-or chat. Mint a new token for each person who needs one.</p>
+<p><code>browser_url</code> has the shape <code>https://&lt;host&gt;/__sandfort/preview#sandfort_preview_token=&lt;token&gt;</code>. A
+browser never sends the fragment to a server, so no request line, access log or <code>Referer</code> holds
+the token. The page at <code>/__sandfort/preview</code> needs JavaScript. It sends the token in a POST body,
+the proxy answers with the <code>HttpOnly</code> cookie, and the browser moves on to <code>/</code> of the preview host.
+The link always lands on <code>/</code>, never on a deep path, and nothing sent to that path reaches your app.
+From curl, scripts and websocket clients use <code>url</code>, or send the token in a <code>Sandfort-Preview-Token</code>
+request header. The proxy never forwards that header to your app, and it appears in no URL. When a
+request carries the token in more than one place, the proxy uses only the first of the header, the
+query and the cookie, in that order. A header token is never set as a cookie.
+On a plain-HTTP preview origin the reply has no <code>browser_url</code>, because the cookie needs HTTPS, and
+<code>url</code> is the only URL.</p>
+<p>Treat <code>url</code> and <code>browser_url</code> as credentials. Whoever holds either can open that port of the
+sandbox, as often as they like, until <code>expires_at</code>. The lifetime is <code>ttl_seconds</code>: 1 hour by
+default, at least 60 seconds and at most 7 days. No endpoint revokes a token before it expires, so
+choose a short <code>ttl_seconds</code>. On the first open, the proxy takes the token out of the query, sets
+it as an <code>HttpOnly</code> cookie and does not forward it to your app, neither in the query nor in a
+request header (a <code>Referer</code>, or a URL header such as <code>X-Url</code> that a front proxy adds). The <code>url</code> as
+you opened it can still stay in browser history and in the access logs on the way. <code>browser_url</code>
+stays out of request lines and access logs, but the link as you share it and the browser history
+of whoever opens it can still hold it. Do not share either one and do not paste it into tickets or
+chat. Mint a new token for each person who needs one. The proxy still accepts the token in the
+query, so <code>url</code> keeps working. The reasoning behind the handoff page is in
+<code>docs/preview-token-handoff-design.md</code>, a repository path.</p>
 <p>The sandbox must be started to create a token. For a stopped or deleted sandbox the call answers 409
 <code>no_container</code>, with <code>details.state</code> and, when the sandbox is <code>stopping</code> or <code>stopped</code>,
 <code>details.stop_cause</code>. Start the sandbox and ask again.</p>
+<p>Expiry is checked when a request or a websocket handshake starts. A page, an event stream or a
+websocket that is already open keeps running after <code>expires_at</code>, and the next request on that URL
+answers 401. Tokens are kept in the memory of the server process, so a server restart ends every
+preview URL. While the sandbox is not started its preview URLs answer 404, and a URL that has not
+expired works again once you start the sandbox. A deleted sandbox ends its URLs for good. Previews
+of a public sandbox need no token, so for them only the sandbox state counts.</p>
 <h2 id="5-beta-limits">5. Beta limits<a class="anchor" href="#5-beta-limits" aria-label="Link to section: 5. Beta limits">#</a></h2>
 <ul>
 <li><p><strong>Audit chain incident (fixed).</strong> Before 2026-11-04, concurrent appends under load forked the

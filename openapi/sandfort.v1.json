@@ -5659,6 +5659,18 @@
       },
       "PreviewTokenResponse": {
         "properties": {
+          "browser_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Link to open in a browser: the proxy's handoff page with the token in the URL fragment, which no request line, log or redirect carries. Absent unless the server's preview origin (`SANDFORT_PUBLIC_PREVIEW_URL`) is https. Scripts use `url`, or send `token` in the `Sandfort-Preview-Token` request header.",
+            "title": "Browser Url"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",

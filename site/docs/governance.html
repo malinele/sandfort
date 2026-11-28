@@ -647,8 +647,11 @@ daemon pulls images from registries when you register a snapshot or build an ima
 <code>console</code>. There is no network exporter. <code>SANDFORT_TRACING_ENABLED</code> defaults to <code>true</code>.</li>
 <li><code>/metrics</code> is unauthenticated. Keep it inside the cluster.</li>
 <li>The browser web terminal (<code>GET /terminal</code>, served by the preview proxy) loads xterm.js 5.5.0
-from <code>cdn.jsdelivr.net</code>, without a subresource-integrity hash. The <code>/console</code> page
-references no external URL.</li>
+from <code>cdn.jsdelivr.net</code>. The script and the stylesheet tag each carry a pinned <code>sha384</code>
+subresource-integrity hash and <code>crossorigin=&quot;anonymous&quot;</code>, so the browser refuses a file whose
+bytes differ. The hashes belong to version 5.5.0 and must be recomputed when it changes. The
+page still needs the browser to reach <code>cdn.jsdelivr.net</code>. The <code>/console</code> page references no
+external URL.</li>
 </ul>
 <h2 id="isolation">Isolation<a class="anchor" href="#isolation" aria-label="Link to section: Isolation">#</a></h2>
 <p>Isolation is chosen per sandbox; see

@@ -1,13 +1,16 @@
 """``POST /v1/sandboxes/{sandbox_id}/preview-tokens``: mint a preview token and its URL.
 
 A preview token is multi-use until it expires and is bound to the caller's org, the sandbox
-and one port. The preview proxy accepts it as the ``sandfort_preview_token`` query parameter
-or cookie; public sandboxes need none. Minting issues a credential, so it takes
-``sandboxes:write``. The sandbox must belong to the caller's org (else 404) and be started
-(round 57): any other state, or a started row without a container, answers the toolbox's 409
-``no_container`` with ``state`` and the visible ``stop_cause`` in the details, since the proxy
-refuses such a sandbox on every request and a minted token cannot be revoked. The proxy still
-checks the state on every request.
+and one port. The preview proxy accepts it as the ``Sandfort-Preview-Token`` request header,
+the ``sandfort_preview_token`` query parameter or the cookie, and public sandboxes need none.
+``url`` carries the token in its query. ``browser_url``, present only when
+``public_preview_url`` is an https origin, carries it in the fragment of the proxy's handoff
+page. Minting issues a credential, so it takes ``sandboxes:write``. The sandbox must belong to
+the caller's org (else 404) and be started (round 57): any other state, or a started row
+without a container, answers the toolbox's 409 ``no_container`` with ``state`` and the
+visible ``stop_cause`` in the details, since the proxy refuses such a sandbox on every
+request and a minted token cannot be revoked. The proxy still checks the state on every
+request.
 """
 
 from datetime import datetime, timedelta
@@ -29,7 +32,7 @@ from sandfort.domain.org import Scope
 from sandfort.domain.sandbox import Sandbox, SandboxState, visible_stop_cause
 from sandfort.errors import no_container_conflict
 from sandfort.proxy.routing import MAX_PORT, MIN_PORT, preview_host
-from sandfort.proxy.tokens import DEFAULT_TTL, TOKEN_PARAM, PreviewTokenStore
+from sandfort.proxy.tokens import DEFAULT_TTL, HANDOFF_PATH, TOKEN_PARAM, PreviewTokenStore
 from sandfort.services.audit import AuditRecorder
 from sandfort.services.sandboxes import SandboxService
 
@@ -38,6 +41,13 @@ router = APIRouter(prefix="/v1/sandboxes", tags=["sandboxes"])
 CREATED = 201
 PREVIEW_TOKEN_CREATED = "sandbox.preview_token_created"
 HTTP_DEFAULT_PORT = 80
+HTTPS_ORIGIN = "https://"
+BROWSER_URL_DESCRIPTION = (
+    "Link to open in a browser: the proxy's handoff page with the token in the URL fragment, "
+    "which no request line, log or redirect carries. Absent unless the server's preview origin "
+    "(`SANDFORT_PUBLIC_PREVIEW_URL`) is https. Scripts use `url`, or send `token` in the "
+    "`Sandfort-Preview-Token` request header."
+)
 MIN_TTL_S = 60
 MAX_TTL_S = 7 * 24 * 3600
 DEFAULT_TTL_S = int(DEFAULT_TTL.total_seconds())
@@ -58,24 +68,43 @@ class MintPreviewTokenRequest(RequestModel):
 class PreviewTokenResponse(BaseModel):
     token: str
     url: str
+    browser_url: str | None = Field(
+        default=None, exclude_if=lambda value: value is None, description=BROWSER_URL_DESCRIPTION
+    )
     port: int
     expires_at: datetime
 
 
-def preview_url(settings: Settings, sandbox_id: str, port: int, token: str) -> str:
-    """``http://<port>-<sandbox-id>.<preview domain>[:<proxy port>]?<token param>=<token>``.
+def preview_origin(settings: Settings, sandbox_id: str, port: int) -> str:
+    """``http://<port>-<sandbox-id>.<preview domain>[:<proxy port>]``.
 
     With ``public_preview_url`` set (TLS terminated in front of the proxy) the scheme comes
     from that origin, and so does the port, but only when the origin names one.
     """
     host = preview_host(port, sandbox_id, settings.preview_domain)
-    query = f"?{TOKEN_PARAM}={token}"
     if settings.public_preview_url:
         scheme, _, authority = settings.public_preview_url.partition("://")
         _, has_port, public_port = authority.partition(":")
-        return f"{scheme}://{host}{has_port}{public_port}{query}"
+        return f"{scheme}://{host}{has_port}{public_port}"
     suffix = "" if settings.proxy_port == HTTP_DEFAULT_PORT else f":{settings.proxy_port}"
-    return f"http://{host}{suffix}{query}"
+    return f"http://{host}{suffix}"
+
+
+def preview_url(settings: Settings, sandbox_id: str, port: int, token: str) -> str:
+    """``<preview origin>?<token param>=<token>``, the shape every server returns."""
+    return f"{preview_origin(settings, sandbox_id, port)}?{TOKEN_PARAM}={token}"
+
+
+def browser_url(settings: Settings, sandbox_id: str, port: int, token: str) -> str | None:
+    """``<preview origin>/__sandfort/preview#<token param>=<token>``, or ``None``.
+
+    ``None`` unless ``public_preview_url`` is an https origin: the handoff ends in the
+    ``__Host-`` cookie, which is always ``Secure``, so a plain-HTTP origin keeps ``url`` only.
+    """
+    if not settings.public_preview_url.startswith(HTTPS_ORIGIN):
+        return None
+    origin = preview_origin(settings, sandbox_id, port)
+    return f"{origin}{HANDOFF_PATH}#{TOKEN_PARAM}={token}"
 
 
 def _require_started(sandbox: Sandbox) -> None:
@@ -132,6 +161,7 @@ async def mint_preview_token(
         PreviewTokenResponse(
             token=token,
             url=preview_url(settings, sandbox.id, grant.port, token),
+            browser_url=browser_url(settings, sandbox.id, grant.port, token),
             port=grant.port,
             expires_at=grant.expires_at,
         )

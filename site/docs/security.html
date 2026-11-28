@@ -35,7 +35,7 @@
 <div class="subnav"><nav class="in" aria-label="Documentation"><a class="back" href="https://sandfort.dev/">&#8592; sandfort.dev</a><a href="/">API reference</a><a href="/quickstart">Quickstart</a><a href="/guide">Connect guide</a><a href="/operations">Runbook</a><a href="/security" aria-current="page">Security</a><a href="/isolation-tiers">Isolation tiers</a><a href="/beta-terms">Beta terms</a><a href="/release">Releases</a><a href="/governance">Governance page</a><a href="/audit-reviewers">Audit for reviewers</a></nav></div>
 <main id="main">
 <div class="frame"><div class="doc has-toc">
-<details class="toc"><summary>On this page</summary><ul><li><a href="#1-threat-model-summary">1. Threat model summary</a></li><li><a href="#2-sandbox-isolation-as-configured-by-the-docker-driver">2. Sandbox isolation as configured by the Docker driver</a><ul><li><a href="#network">Network</a></li><li><a href="#image-build-runtime">Image build runtime</a></li></ul></li><li><a href="#3-what-is-outside-the-sandbox-boundary">3. What is outside the sandbox boundary</a></li><li><a href="#4-control-plane">4. Control plane</a></li><li><a href="#5-audit-and-tamper-evidence">5. Audit and tamper evidence</a></li><li><a href="#6-operational-hardening-checklist">6. Operational hardening checklist</a></li><li><a href="#7-reporting-a-vulnerability">7. Reporting a vulnerability</a></li></ul></details>
+<details class="toc"><summary>On this page</summary><ul><li><a href="#1-threat-model-summary">1. Threat model summary</a></li><li><a href="#2-sandbox-isolation-as-configured-by-the-docker-driver">2. Sandbox isolation as configured by the Docker driver</a><ul><li><a href="#network">Network</a></li><li><a href="#image-build-runtime">Image build runtime</a></li></ul></li><li><a href="#3-what-is-outside-the-sandbox-boundary">3. What is outside the sandbox boundary</a><ul><li><a href="#preview-content">Preview content</a></li></ul></li><li><a href="#4-control-plane">4. Control plane</a></li><li><a href="#5-audit-and-tamper-evidence">5. Audit and tamper evidence</a></li><li><a href="#6-operational-hardening-checklist">6. Operational hardening checklist</a></li><li><a href="#7-reporting-a-vulnerability">7. Reporting a vulnerability</a></li></ul></details>
 <article class="prose">
 <h1 id="security">Security<a class="anchor" href="#security" aria-label="Link to section: Security">#</a></h1>
 <p>This page answers the questions a security team asks before a pilot. Each statement is
@@ -138,6 +138,13 @@ container root maps to host root for every tier; with it, the tiers not in the o
 run remapped. Details, validation and the gate texts: <code>docs/architecture.md</code>, &quot;Container
 hardening&quot;; node steps in [operations]. The driver sets no AppArmor option, so the
 daemon&#x27;s default applies where AppArmor is enabled, and no setting feeds the <code>user</code> field.</li>
+<li><strong>Setuid and setgid bits are inert on the <code>container</code> tier, and not measured on the
+others.</strong> Every sandbox is created with <code>no-new-privileges:true</code> and <code>cap_drop=ALL</code> plus the
+add-list above (<code>NO_NEW_PRIVILEGES</code> in <code>src/sandfort/drivers/docker/hardening.py</code>). Under
+runc the kernel then ignores setuid and setgid bits on exec, and a probe on the <code>container</code>
+tier during the hosted beta evaluation showed no change of the effective uid. The <code>gvisor</code>
+and <code>microvm</code> tiers have not been measured, so this page makes no claim for them. <code>SETUID</code>
+and <code>SETGID</code> stay in the add-list, so code can still switch its own uid or gid.</li>
 <li><strong>Disk limits need host support.</strong> The driver sets <code>storage_opt.size</code> from <code>disk_gib</code>
 when <code>SANDFORT_ENVIRONMENT=prod</code>. Docker honours it on <code>overlay2</code> over XFS mounted with
 <code>pquota</code>, or on btrfs or zfs. The startup check reads <code>docker info</code>, which does not show
@@ -270,6 +277,23 @@ against <code>remote_url</code> itself, not the remote name. The helper answers 
 prompts for that host. A planted remote url or <code>insteadOf</code> rule therefore cannot send
 the token to another host through git. This does not protect against the disclosure
 described above.</li>
+<li><strong>A snapshot taken during the operation can contain the token.</strong> The helper lives in
+<code>/tmp/.sandfort-git/</code>, which is part of the sandbox root filesystem, and a snapshot
+commit (<code>POST /v1/snapshots/from-sandbox</code>) pauses the container but copies that
+filesystem as it is. A snapshot committed while a credentialed clone, push or pull is
+running (up to 600 seconds) holds the helper file with the token in it. So does every
+sandbox created from that snapshot and the archive of its export, for as long as the
+snapshot exists. The server does not block this: the commit runs as a background job
+that can run in another process than the git call (for example a <code>worker</code> role
+process), so the git call cannot see it. The same holds when removing the helper
+failed. After a successful operation the git call then answers an error and a helper
+may be left behind: 502 <code>DRIVER_ERROR</code> for a plain driver failure, and 409, 404 or 504
+when the driver error is a conflict, a missing object or a timeout. After a failed
+operation the failed removal is only written to the server log and the call keeps its
+own error, so the answer does not say that a helper may remain. Do not create a
+snapshot of a sandbox while a credentialed git call on it is running. Wait until the
+call has returned. Treat a snapshot taken during such a call, or after such a call
+that returned any error, as holding the token, delete it, and revoke the token.</li>
 <li><strong>Mitigation.</strong> Send only short-lived tokens scoped to the one repository and the
 least permission the operation needs (read-only for clone and pull). Revoke or let
 them expire right after the call. Do not send a credential to a sandbox that runs code
@@ -278,6 +302,53 @@ unchanged.</li>
 </ul></li>
 <li><strong>Volumes and snapshots.</strong> Their contents are whatever sandbox code wrote. Treat them as
 untrusted data.</li>
+<li><strong>No encryption at rest beyond the host&#x27;s.</strong> Sandfort encrypts one thing at rest: webhook
+signing secrets, when <code>SANDFORT_WEBHOOK_SECRET_KEY</code> is set (see &quot;Webhook secrets&quot; in
+section 4, <code>src/sandfort/webhooks/secret_box.py</code>). Sandbox filesystems, snapshots, volumes,
+command logs and the database are stored the way the host&#x27;s disk and database store them.
+Use an encrypted disk or volume on the host if you need encryption at rest.</li>
+</ul>
+<h3 id="preview-content">Preview content<a class="anchor" href="#preview-content" aria-label="Link to section: Preview content">#</a></h3>
+<p>A preview serves whatever the sandbox code answers, so its content is tenant-controlled and
+untrusted.</p>
+<ul>
+<li><strong>Separate origins, same site.</strong> Each preview has its own host,
+<code>&lt;port&gt;-&lt;sandbox-id&gt;.&lt;preview domain&gt;</code> (<code>preview_host</code> in <code>src/sandfort/proxy/routing.py</code>),
+so the browser gives it its own origin, storage and script scope. All previews are still
+same-site with each other and with the other hosts under the same registrable domain,
+unless the preview domain has its own Public Suffix List entry. The hosted beta&#x27;s preview
+domain has none yet.</li>
+<li><strong>Cookies reach other previews.</strong> Script in a preview page can set a cookie for the parent
+domain with <code>document.cookie</code>, and the browser then sends it to every other preview under
+that domain. The proxy removes <code>Domain</code> only from the <code>Set-Cookie</code> headers the sandbox
+sends (<code>strip_cookie_domain</code> in <code>src/sandfort/proxy/tokens.py</code>), which does not stop script
+in the page, and it forwards every cookie except its own token cookie to the app
+(<code>_request_headers</code> in <code>src/sandfort/proxy/app.py</code>). So one tenant can plant a cookie that
+another tenant&#x27;s preview app receives. The token cookie is safe from this, because its
+<code>__Host-</code> prefix makes browsers refuse a parent-domain cookie of that name. Do not base a
+decision that matters on a cookie value a preview app receives.</li>
+<li><strong>No CSP or framing headers on app answers.</strong> The proxy adds no <code>Content-Security-Policy</code>,
+<code>X-Frame-Options</code> or <code>frame-ancestors</code> to what the app returns. Only the pages the proxy
+serves itself carry a <code>Content-Security-Policy</code> with <code>frame-ancestors &#x27;none&#x27;</code>: the web
+terminal page (<code>src/sandfort/proxy/terminal.py</code>) and the preview handoff page at
+<code>/__sandfort/preview</code> (<code>src/sandfort/proxy/handoff.py</code>). A default policy would break dev
+servers and a default deny would break embedding, so neither ships. Protection against
+clickjacking is the app&#x27;s job: set <code>frame-ancestors</code> or <code>X-Frame-Options</code> in the app itself.</li>
+<li><strong>Preview tokens and shared caches.</strong> A private sandbox&#x27;s preview needs a token bound to its
+org, sandbox and port. The proxy reads it from the <code>Sandfort-Preview-Token</code> header, the
+<code>sandfort_preview_token</code> query parameter or the <code>__Host-</code> cookie, in that order, checks only
+the first one present and forwards none of them to the app. A request that only the cookie
+authorizes is refused when its <code>Origin</code> names another host or its <code>Sec-Fetch-Site</code> is neither
+<code>same-origin</code> nor <code>none</code> (<code>fetch_metadata_consistent</code> in <code>src/sandfort/proxy/tokens.py</code>).
+<code>browser_url</code> keeps the token in the URL fragment of <code>/__sandfort/preview</code>, so it is in no
+request line, but the link as shared and the browser history can still hold it. Every
+proxied answer of a private sandbox carries a <code>Cache-Control</code> that starts with <code>private</code> and
+keeps the app&#x27;s other directives minus <code>public</code>, <code>s-maxage</code> and <code>proxy-revalidate</code>, a <code>Vary</code>
+that names <code>Cookie</code> and <code>Sandfort-Preview-Token</code>, and no <code>CDN-Cache-Control</code> or
+<code>Surrogate-Control</code>, so a shared cache that follows these headers does not hand it to a
+request without the token (<code>src/sandfort/proxy/caching.py</code>). The viewer&#x27;s browser may still
+cache it. An answer to a URL that names the token parameter gets <code>Cache-Control: no-store</code>
+instead.</li>
 </ul>
 <h2 id="4-control-plane">4. Control plane<a class="anchor" href="#4-control-plane" aria-label="Link to section: 4. Control plane">#</a></h2>
 <p><strong>API keys.</strong> A key has the form <code>sf_&lt;env&gt;_&lt;prefix8&gt;_&lt;secret43&gt;</code>, with the secret drawn from
@@ -340,6 +411,17 @@ unencrypted, so a private network or an encrypted overlay between nodes is a req
 until they expire; the runbook documents that a removed member&#x27;s token stops working
 because the membership check fails.</li>
 <li><strong>No SCIM groups, no per-tenant SSO.</strong> See [operations].</li>
+<li><strong>Failed authentication is not limited by default.</strong> A well-formed but wrong key costs one
+key lookup by prefix and one HMAC before the 401 (two of each on a toolbox route). Nothing
+counts those failures unless <code>SANDFORT_AUTH_FAILURE_LIMIT_PER_MINUTE</code> is set
+(<code>src/sandfort/api/middleware/auth_failure_limit.py</code>). The limit counts per client address,
+so behind a proxy it needs <code>SANDFORT_FORWARDED_ALLOW_IPS</code> set to that proxy, or one client
+locks out every client behind the same proxy. A caller whose peer address uvicorn trusts for
+<code>X-Forwarded-For</code> (every peer under <code>*</code>) can set its own forwarded address and is not held
+by it, and a caller with many addresses (an IPv6 prefix, for example) gets a fresh count on
+each. Requests already in flight when an address reaches the limit still run.
+Keys carry 256 random bits, so the limit is about load on the key lookup path, not about
+guessing a key.</li>
 </ul>
 <h2 id="5-audit-and-tamper-evidence">5. Audit and tamper evidence<a class="anchor" href="#5-audit-and-tamper-evidence" aria-label="Link to section: 5. Audit and tamper evidence">#</a></h2>
 <p>The audit log is chained per organization. Each row stores <code>prev_hash</code> and
@@ -419,6 +501,10 @@ export regularly and keep the exports somewhere the database operators cannot wr
 <li>[ ] Put a private network or an encrypted overlay between nodes if you use cross-node
 routing, and do not expose <code>SANDFORT_NODE_INTERNAL_URL</code> ports to clients.</li>
 <li>[ ] Terminate TLS in front of the API. The server does not.</li>
+<li>[ ] Pin the edge transport policy in the controller instead of relying on its defaults (TLS
+versions with <code>ssl-protocols</code>, the HSTS keys, the http to https redirect). See the
+subsection Edge transport policy in <code>docs/operations.md</code> for the ConfigMap keys and the
+<code>curl</code> and <code>openssl</code> probe to run after every controller upgrade and before each release.</li>
 <li>[ ] Keep <code>/metrics</code> reachable only from inside the cluster (and set
 <code>SANDFORT_METRICS_TOKEN</code> if it must cross a boundary).</li>
 <li>[ ] Use a Docker storage setup that supports disk quotas (<code>overlay2</code> on XFS with

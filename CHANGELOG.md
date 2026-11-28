@@ -49,6 +49,94 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 104 (after tag v0.1.0-beta.89, open-file limit of the server process)
+- **server: the soft open-file limit is raised at start-up (2026-11-28).** Docker starts a
+  container with a soft `RLIMIT_NOFILE` of 1024 (read on the beta VM, hard limit 524288), and a
+  preview request in flight or an open preview websocket holds two descriptors. At the round
+  103 caps the process would have run out of descriptors near 450 previews in flight, before
+  the cap answers 503, and `EMFILE` then fails every accept and database connect in the
+  process. `sandfort-server` now raises its soft limit to the hard limit (at most 1048576) for
+  every role and logs the change. When the preview proxy runs in the process and the limit
+  stays below twice `SANDFORT_PREVIEW_MAX_CONCURRENT` plus the upstream keep-alive pool plus a
+  reserve of 1024, it logs a warning. That figure is a lower bound: web terminal websockets
+  (two descriptors each, outside the preview caps) and idle client connections only have the
+  reserve, which is an estimate. A platform that refuses the raise keeps its limit, and
+  the start goes on. `uvicorn --factory` does not run this step. (`src/sandfort/fd_limit.py`,
+  `src/sandfort/main.py`, `tests/test_fd_limit_r104.py`, this commit)
+- **tests: log redaction checked on uvicorn 0.55.0 (2026-11-28).** uvicorn 0.55.0, released
+  the same day, builds the logged path from `raw_path` and writes `"` as `%22`. The server
+  installs uvicorn without a pin, so a fresh build gets 0.55.0. The token is still redacted in
+  every access and websocket line. Only the test helper that builds a scope without
+  `raw_path` failed, and it now passes on 0.54.0 and 0.55.0 alike.
+  (`tests/test_proxy_token_hygiene_r94.py`, this commit)
+
+#### Round 103 (after tag v0.1.0-beta.89, preview token handoff, shared-cache rule, preview cap defaults)
+- **proxy: preview token handoff page and request header (B27, 2026-11-28).** The preview proxy
+  answers the reserved path `/__sandfort/preview` on every preview host itself, and nothing on
+  that path reaches the sandbox app. `GET` serves a fixed page with `Cache-Control: no-store`
+  and a CSP that pins the sha256 of its one inline script. The script reads the token from the
+  URL fragment, removes the fragment from history, posts the token and then opens `/`. `POST`
+  requires `Origin` equal to `Host`, takes the token from a form body of at most 1024 bytes and
+  answers 204 with the existing `__Host-` cookie. A bad token gets the existing 401 envelope, a
+  cross-site or Origin-less `POST` gets 401 "cross-site preview request refused", other methods
+  get 405 and a larger body gets 413. The proxy also reads a `Sandfort-Preview-Token` request
+  header and never forwards it. When several carriers are present, only the first of header,
+  query and cookie is checked, and a header token never becomes a cookie. Query tokens still
+  work. (`src/sandfort/proxy/handoff.py`, `src/sandfort/proxy/answers.py`,
+  `tests/test_proxy_handoff_b27.py`, `tests/test_proxy_header_token_b27.py`, this commit)
+- **api, SDKs, CLI: `browser_url` next to the preview `url` (B27, 2026-11-28).** `POST
+  /v1/sandboxes/{id}/preview-tokens` adds an optional `browser_url`
+  (`https://<port>-<sandbox id>.<preview domain>/__sandfort/preview#sandfort_preview_token=<token>`)
+  only when `SANDFORT_PUBLIC_PREVIEW_URL` is https. `url` is unchanged. The Python SDK has
+  `PreviewInfo.browser_url` and the TypeScript SDK an optional `browserUrl`. `sandfort preview`
+  still prints `url` in text mode, so `curl "$(sandfort preview ...)"` keeps working. The new
+  `--browser` flag prints `browser_url` instead when the server sent one that carries the
+  token, and `--json` includes `browser_url` only when the server sent it.
+  (`sdk/python/src/sandfort_sdk/models.py`, `sdk/typescript/src/sandbox-ops.ts`,
+  `cli/src/sandfort_cli/preview_browser.py`, `tests/test_preview_browser_url_r103.py`,
+  `openapi/sandfort.v1.json`, this commit)
+- **proxy: private preview answers are not stored by shared caches (2026-11-28).** A security
+  review found that a response authenticated by the new header or by the cookie passed the
+  app's `Cache-Control: public, max-age=600` through, so a caching edge in front of the preview
+  domain could hand a private sandbox's response to a request without a token. For a private
+  sandbox the proxy now rewrites `Cache-Control` to start with `private`, drops `public`,
+  `s-maxage` and `proxy-revalidate`, keeps the other directives, and sets `private` when the app
+  sent none. It merges `Cookie` and `Sandfort-Preview-Token` into `Vary` (a `Vary: *` stays) and
+  drops `CDN-Cache-Control`, `<vendor>-CDN-Cache-Control` and `Surrogate-Control`. A query-token
+  answer keeps `no-store`. Public sandboxes and websockets are unchanged.
+  (`src/sandfort/proxy/caching.py`, `tests/test_proxy_cache_r103.py`, this commit)
+- **proxy: preview cap defaults raised to 768 per sandbox and 4096 per process (B33, 2026-11-28).**
+  A local load test (macOS host, a Vite-like upstream with 2000 modules, three runs per
+  scenario) found that at 256 per sandbox two browsers cold loading one preview got 766 to 926
+  503 `CAPACITY` answers per run and every tab broke. At 768 per sandbox and 4096 per process
+  there was no 503 in 12 runs. These numbers come from one local session, not from production.
+  The idle upstream keep-alive pool now follows
+  `SANDFORT_PREVIEW_MAX_CONCURRENT_PER_SANDBOX` (768 when that is 0), because a pool of 20 left
+  thousands of `TIME_WAIT` sockets after one cold load. `docs/operations.md` asks operators to
+  keep the file descriptor limit at 16384 or more. (`src/sandfort/config.py`,
+  `src/sandfort/proxy/app.py`, `tests/test_proxy_caps_r103.py`, this commit)
+- **docs: the handoff is documented as implemented (2026-11-28).** `docs/preview-token-handoff-design.md`
+  records the decisions as made in code. The connect guide section 4, `docs/architecture.md`,
+  `docs/operations.md` and `docs/security.md` describe the header, the handoff page and the
+  cache rule, and `site/docs` is rebuilt, including the spec copy and its sidecar hash.
+  (`tests/test_docs_preview_handoff_r103.py`, `tests/test_site_spec_copy_r103.py`, this commit;
+  the hash is recorded in the next round)
+
+#### Round 102 (after tag v0.1.0-beta.88, architecture data model drift, preview token handoff proposal)
+- **docs: the architecture data model matches the models (2026-11-28).** Every table row in
+  `docs/architecture.md` now names a real `__tablename__` with its columns, the quota ledger is
+  described per sandbox, and metering is described as it runs (sandbox disk, memory and vCPU
+  sampled every `metering_sample_interval_s`, no snapshot or volume metering). The doctor bullet
+  in `docs/operations.md` says what doctor and startup share instead of "cannot disagree". A
+  test checks that every table named in the data model exists in `src/sandfort/db/models/`, and
+  the reverse. (`tests/test_docs_drift_b36.py`, 7841b20e)
+- **docs: preview token handoff design proposal (B27, 2026-11-28).** `docs/preview-token-handoff-design.md`
+  compares a fragment handoff, a one-time code and a path token for keeping the preview token
+  out of every URL a log or history keeps. It recommends the fragment handoff for browsers plus
+  a request header for other clients, added next to today's query token, and lists the open
+  questions. A proposal only at the time, implemented in round 103. The connect guide links it.
+  (`docs/connect-guide.md`, 7841b20e)
+
 #### Round 101 (after tag v0.1.0-beta.88, preview proxy cookie jar, failed authentication limit)
 - **proxy: the upstream client keeps no cookies and adds no headers of its own (B32,
   2026-11-28).** The preview proxy shares one httpx client for every sandbox. Its cookie jar

@@ -1,8 +1,12 @@
 """Round 100 (B36): docs state what the code does for ids, tokens, snapshots and previews."""
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+MODELS_DIR = ROOT / "src" / "sandfort" / "db" / "models"
+TABLENAME = re.compile(r'^\s*__tablename__\s*=\s*"([a-z_]+)"', re.MULTILINE)
+TABLE_ROW = re.compile(r"^\| `([a-z_]+)` \|", re.MULTILINE)
 
 
 def _raw(relative: str) -> str:
@@ -16,6 +20,20 @@ def _flat(relative: str) -> str:
 def _between(text: str, start: str, end: str) -> str:
     begin = text.index(start)
     return text[begin : text.index(end, begin)]
+
+
+def _model_tables() -> set[str]:
+    found: set[str] = set()
+    for path in sorted(MODELS_DIR.glob("*.py")):
+        found.update(TABLENAME.findall(path.read_text(encoding="utf-8")))
+    return found
+
+
+def _documented_tables() -> list[str]:
+    section = _between(
+        _raw("docs/architecture.md"), "## 4. Data model", "**Lifecycle transitions**"
+    )
+    return TABLE_ROW.findall(section)
 
 
 def test_architecture_describes_the_real_id_format() -> None:
@@ -160,4 +178,49 @@ def test_overlay_advisory_is_documented_as_startup_log_only() -> None:
     assert "admin_cli doctor" in near
     doctor = _between(_flat("docs/operations.md"), "## Doctor:", "## Production start gate")
     for needle in ("overlay2=none", "server startup log", "has no row for it"):
+        assert needle in doctor, needle
+
+
+def test_architecture_data_model_table_names_exist_in_the_models() -> None:
+    documented = _documented_tables()
+    assert documented
+    assert sorted(set(documented) - _model_tables()) == []
+
+
+def test_architecture_data_model_has_one_row_per_model_table() -> None:
+    documented = _documented_tables()
+    assert len(documented) == len(set(documented))
+    assert sorted(_model_tables() - set(documented)) == []
+
+
+def test_architecture_names_the_real_outbox_rollup_and_mount_storage() -> None:
+    text = _flat("docs/architecture.md")
+    for stale in ("usage_daily", "sandbox_volume_mounts", "`events` (outbox)", "sampled hourly"):
+        assert stale not in text, stale
+    for needle in (
+        "`sandfort.volume_mounts`",
+        "`usage_rollups` once an hour",
+        "`metering_sample_interval_s` (default 300 s)",
+        "Snapshots and volumes are not metered.",
+    ):
+        assert needle in text, needle
+
+
+def test_architecture_quota_risk_describes_the_per_sandbox_ledger() -> None:
+    text = _flat("docs/architecture.md")
+    assert "A single ledger row per org" not in text
+    assert "One `quota_ledger` row per sandbox is inserted" in text
+    assert "`SELECT ... FOR UPDATE` on the org row, then the org's quota row" in text
+
+
+def test_operations_doctor_does_not_claim_it_cannot_disagree_with_the_gate() -> None:
+    doctor = _between(_flat("docs/operations.md"), "## Doctor:", "## Production start gate")
+    assert "cannot disagree" not in doctor
+    for needle in (
+        "does not call the start gate",
+        "`gate_findings`",
+        "`egress_gaps`",
+        "rows built from `Settings`",
+        "a prediction",
+    ):
         assert needle in doctor, needle

@@ -342,8 +342,8 @@ class Settings:
     public_api_url: str = ""  # API base the web terminal dials; "" = the request's host + port
     public_preview_url: str = ""  # origin previews are served on; "" = http + proxy_port
     # Preview requests in flight plus open preview websockets (B33), 0 = no cap.
-    preview_max_concurrent_per_sandbox: int = 256
-    preview_max_concurrent: int = 2048  # the same for the whole process
+    preview_max_concurrent_per_sandbox: int = 768
+    preview_max_concurrent: int = 4096  # the same for the whole process
     # Longest wait for a sandbox's response headers to a preview request, 0 = no bound.
     preview_response_header_timeout_s: float = 300.0
     environment: str = "dev"  # one of VALID_ENVIRONMENTS; prod gates startup on isolation

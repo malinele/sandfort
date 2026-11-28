@@ -67,7 +67,7 @@ def test_with_block_frees_the_slot_on_an_exception() -> None:
     assert limits.acquire("sbx_a")
 
 
-def test_caps_default_to_256_and_2048_and_load_from_the_environment() -> None:
+def test_caps_default_to_768_and_4096_and_load_from_the_environment() -> None:
     defaults = Settings()
     loaded = Settings.from_env(
         {
@@ -78,8 +78,8 @@ def test_caps_default_to_256_and_2048_and_load_from_the_environment() -> None:
 
     limits = PreviewLimits.from_settings(loaded)
 
-    assert defaults.preview_max_concurrent_per_sandbox == 256
-    assert defaults.preview_max_concurrent == 2048
+    assert defaults.preview_max_concurrent_per_sandbox == 768
+    assert defaults.preview_max_concurrent == 4096
     assert (loaded.preview_max_concurrent_per_sandbox, loaded.preview_max_concurrent) == (0, 7)
     assert (limits.per_sandbox, limits.total) == (0, 7)
     with pytest.raises(ValueError, match="PREVIEW_MAX_CONCURRENT_PER_SANDBOX"):

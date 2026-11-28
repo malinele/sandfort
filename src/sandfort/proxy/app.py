@@ -2,19 +2,22 @@
 
 ``Host: <port>-<sandbox-id>.<preview domain>`` routes to that port inside the sandbox. Before
 any upstream connection, a foreign host or a stopped sandbox answers 404, and a private sandbox
-without a preview token for its org, sandbox and port (``TOKEN_PARAM`` query or cookie) answers
-401. HTTP streams through httpx minus hop-by-hop headers; websockets are bridged with the
-``websockets`` client; upstream failures answer 502. A valid query token is stripped and set
-as a cookie (never forwarded). Cookie auth needs consistent Origin and Sec-Fetch-Site; upstream
-cookies lose their Domain. ``GET /terminal`` on a non-preview host serves the terminal.
+without a preview token for its org, sandbox and port answers 401. The token is read from the
+``TOKEN_HEADER`` request header, else the ``TOKEN_PARAM`` query, else the cookie, and the
+header is never forwarded. ``HANDOFF_PATH`` on a preview host is answered by ``handoff``
+itself and never reaches the sandbox. HTTP streams through httpx minus hop-by-hop headers,
+websockets are bridged with the ``websockets`` client, and upstream failures answer 502. A
+valid query token is stripped and set as a cookie (never forwarded). Cookie auth needs
+consistent Origin and Sec-Fetch-Site, and upstream cookies lose their Domain.
+``GET /terminal`` on a non-preview host serves the terminal.
 The token is also cut from every forwarded request header (a Referer, or an edge's X-Url) and
 from uvicorn's log lines (``hygiene``). Each request and websocket bridge holds a concurrency
 slot (``limits``): above the per-sandbox or the process cap the answer is 503 ``CAPACITY``.
+No shared cache may keep an HTTP answer of a private sandbox (``caching``).
 The upstream request carries the headers the client sent plus the three ``X-Forwarded-*`` ones
 the proxy sets, nothing httpx adds on its own (default headers, cookie jar).
 """
 
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -28,22 +31,17 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 from websockets.typing import Subprotocol
 
-from sandfort.api.envelope import fail
 from sandfort.config import Settings
 from sandfort.domain.sandbox import Sandbox, SandboxState
 from sandfort.drivers.base import EndpointDriver
 from sandfort.drivers.errors import DriverError
-from sandfort.proxy import routing, terminal
-from sandfort.proxy.hygiene import (
-    PROXY_RESPONSE_HEADERS,
-    install_log_redaction,
-    strip_header_token,
-    with_token_response_headers,
-)
+from sandfort.proxy import handoff, routing, terminal
+from sandfort.proxy.answers import _header, _headers, _reject, _Rejected
+from sandfort.proxy.caching import answer_cache_headers
+from sandfort.proxy.hygiene import CREDENTIAL_HEADERS, install_log_redaction, strip_header_token
 from sandfort.proxy.limits import PreviewBusy, PreviewLimits, relay_response_body, send_upstream
 from sandfort.proxy.streaming import (
     HOP_BY_HOP,
-    WS_INTERNAL_ERROR,
     _client_to_upstream,
     _connection_listed,
     _request_body,
@@ -51,6 +49,7 @@ from sandfort.proxy.streaming import (
     _upstream_to_client,
 )
 from sandfort.proxy.tokens import (
+    TOKEN_HEADER,
     InMemoryPreviewTokenStore,
     PreviewGrant,
     PreviewTokenInvalid,
@@ -68,17 +67,18 @@ logger = logging.getLogger(__name__)
 type SandboxLookup = Callable[[str], Awaitable[Sandbox | None]]
 
 CONNECT_TIMEOUT_S = 10.0
-MAX_KEEPALIVE = 20  # idle upstream connections kept open
+MAX_KEEPALIVE = 768  # idle upstream connections kept open when the per-sandbox cap is 0
 WS_MAX_MESSAGE_BYTES = 16 * 1024 * 1024
-WS_POLICY_VIOLATION = 1008
 BAD_GATEWAY = "BAD_GATEWAY"
 NOT_FOUND_MESSAGE = "no running preview is served at this host"
 UNREACHABLE_MESSAGE = "the sandbox port is unreachable"
 
-# Never taken from the client: the proxy sets the forwarding headers and rebuilds the cookies.
+# Never taken from the client: the proxy sets the forwarding headers and rebuilds the cookies,
+# and it reads the token header itself.
 _REPLACED = frozenset(
     {"host", "cookie", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"}
     | {"forwarded", "x-forwarded-port", "x-forwarded-scheme", "x-real-ip"}
+    | CREDENTIAL_HEADERS
 )
 # The websockets client performs its own handshake and sends the user agent it is given.
 _WS_HANDSHAKE = frozenset(
@@ -95,24 +95,7 @@ class _Upstream:
     query: bytes  # the client's query string without the preview token
     token_from_query: str | None  # set as a cookie on the response
     token_in_query: bool = False  # the request URL named TOKEN_PARAM, valid or not
-
-
-@dataclass(eq=False)  # exceptions keep identity semantics (and stay hashable)
-class _Rejected(Exception):  # a request the proxy answers itself, instead of the upstream
-    status: int
-    code: str
-    message: str
-    headers: tuple[tuple[bytes, bytes], ...] = ()  # extra response headers
-
-
-def _headers(scope: Scope) -> list[tuple[bytes, bytes]]:
-    raw: list[tuple[bytes, bytes]] = scope.get("headers") or []
-    return raw
-
-
-def _header(scope: Scope, name: bytes) -> str | None:
-    values = (value.decode("latin-1") for key, value in _headers(scope) if key.lower() == name)
-    return next(values, None)
+    private: bool = False  # a token granted the request: no shared cache may keep the answer
 
 
 def _cookie_headers(scope: Scope) -> list[str]:
@@ -173,26 +156,6 @@ def _upstream_url(scheme: str, upstream: _Upstream, scope: Scope) -> str:
     return f"{scheme}://{host}:{upstream.port}{raw_path.decode('latin-1')}{query}"
 
 
-async def _reject(scope: Scope, send: Send, rejected: _Rejected | PreviewBusy) -> None:
-    body = json.dumps(fail(rejected.code, rejected.message).model_dump(mode="json")).encode()
-    headers = [
-        (b"content-type", b"application/json"),
-        (b"content-length", b"%d" % len(body)),
-        *PROXY_RESPONSE_HEADERS,
-        *rejected.headers,
-    ]
-    start = {"status": rejected.status, "headers": headers}
-    if scope["type"] == "http":
-        await send({"type": "http.response.start", **start})
-        await send({"type": "http.response.body", "body": body})
-    elif "websocket.http.response" in (scope.get("extensions") or {}):
-        await send({"type": "websocket.http.response.start", **start})
-        await send({"type": "websocket.http.response.body", "body": body})
-    else:
-        code = WS_INTERNAL_ERROR if rejected.status >= 500 else WS_POLICY_VIOLATION
-        await send({"type": "websocket.close", "code": code})
-
-
 def _refusing_cookie_jar() -> CookieJar:
     """A jar that stores nothing: one viewer's cookies never reach another request."""
     return CookieJar(policy=DefaultCookiePolicy(allowed_domains=[]))
@@ -216,10 +179,11 @@ class PreviewProxy:
         self._lookup = lookup
         self._driver = driver
         self._owns_client = http_client is None
+        keepalive = settings.preview_max_concurrent_per_sandbox or MAX_KEEPALIVE  # 0 = no cap
         self._client = http_client or httpx.AsyncClient(
             cookies=_refusing_cookie_jar(),
             timeout=httpx.Timeout(None, connect=CONNECT_TIMEOUT_S),  # streams may idle long
-            limits=httpx.Limits(max_connections=None, max_keepalive_connections=MAX_KEEPALIVE),
+            limits=httpx.Limits(max_connections=None, max_keepalive_connections=keepalive),
             trust_env=False,  # sandbox traffic never goes through the host's HTTP proxy
         )
         self._on_shutdown = on_shutdown
@@ -238,6 +202,9 @@ class PreviewProxy:
         if kind == "websocket" and (await receive())["type"] != "websocket.connect":
             return
         try:
+            if handoff.is_handoff(scope):  # answered by the proxy, nothing reaches the app
+                await self._handoff(scope, receive, send)
+                return
             upstream = await self._route(scope)
             slot = self._limits.acquire(upstream.sandbox_id)  # before any upstream connection
         except (_Rejected, PreviewBusy) as rejected:
@@ -272,25 +239,37 @@ class PreviewProxy:
             return None  # a foreign host: only the configured preview domain is served
         return routing.parse_preview_host(hostname)
 
-    async def _route(self, scope: Scope) -> _Upstream:
+    async def _started(self, scope: Scope) -> tuple[Sandbox, str, int]:
+        """The sandbox, its driver ref and the port a preview host names, or the 404."""
         target = self._target(_header(scope, b"host"))
         if target is None or not routing.MIN_PORT <= target.port <= routing.MAX_PORT:
             raise _Rejected(404, "NOT_FOUND", NOT_FOUND_MESSAGE)
         sandbox = await self._lookup(target.sandbox_id)
         if sandbox is None or sandbox.state is not SandboxState.STARTED or not sandbox.driver_ref:
             raise _Rejected(404, "NOT_FOUND", NOT_FOUND_MESSAGE)
+        return sandbox, sandbox.driver_ref, target.port
+
+    async def _handoff(self, scope: Scope, receive: Receive, send: Send) -> None:
+        sandbox, _, wanted = await self._started(scope)  # the 404 of any preview request
+        await handoff.serve(scope, receive, send, partial(self._authorize, sandbox, wanted))
+
+    async def _route(self, scope: Scope) -> _Upstream:
+        sandbox, ref, wanted = await self._started(scope)
         query_string: bytes = scope.get("query_string") or b""
         query_token, query = split_query_token(query_string)
         cookie_token, _ = split_cookie_token(_cookie_headers(scope))
-        grant = await self._authorize(sandbox, target.port, query_token or cookie_token)
-        if grant is not None and not query_token and not fetch_metadata_consistent(_headers(scope)):
+        header_token = _header(scope, TOKEN_HEADER.encode()) or None
+        direct = header_token or query_token  # precedence: header, query, then the cookie
+        grant = await self._authorize(sandbox, wanted, direct or cookie_token)
+        if grant is not None and not direct and not fetch_metadata_consistent(_headers(scope)):
             raise _Rejected(401, PreviewTokenInvalid.code, "cross-site preview request refused")
         try:
-            host, port = await self._driver.get_endpoint(sandbox.driver_ref, target.port)
+            host, port = await self._driver.get_endpoint(ref, wanted)
         except DriverError as exc:
             logger.warning("preview endpoint for %s unavailable: %s", sandbox.id, exc.message)
             raise _Rejected(502, BAD_GATEWAY, UNREACHABLE_MESSAGE) from exc
-        granted = query_token if grant is not None else None  # only a grant earns a cookie
+        # Only a query token that earned the grant is kept as a cookie, never the header token.
+        granted = query_token if grant is not None and not header_token else None
         return _Upstream(
             host=host,
             port=port,
@@ -298,6 +277,7 @@ class PreviewProxy:
             query=query,
             token_from_query=granted,
             token_in_query=query_token is not None,
+            private=grant is not None,
         )
 
     async def _authorize(self, sandbox: Sandbox, port: int, tok: str | None) -> PreviewGrant | None:
@@ -338,9 +318,9 @@ class PreviewProxy:
         token, secure = upstream.token_from_query, scope.get("scheme") == "https"
         cookie = None if token is None else token_cookie(token, secure=secure)  # None: malformed
         try:
-            headers = _response_headers(response, cookie)
-            if upstream.token_in_query:  # the URL still carries the token in the browser
-                headers = with_token_response_headers(headers)
+            sent = _response_headers(response, cookie)
+            token_url = upstream.token_in_query  # no-store: the URL still carries the token
+            headers = answer_cache_headers(sent, private=upstream.private, token_url=token_url)
             status = response.status_code
             await send({"type": "http.response.start", "status": status, "headers": headers})
             await relay_response_body(response, send, receive)  # stops early on a disconnect

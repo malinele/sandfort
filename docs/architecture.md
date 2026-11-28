@@ -131,7 +131,7 @@ calls it after the workers stop and before the engine is disposed; see the shutd
   - Marks missing sandboxes `error`.
   - Recounts the quota ledger and alerts on drift.
 - **Autostop.** Stops sandboxes idle past `auto_stop_minutes` (measured from `last_activity_at`). Deletes stopped sandboxes past `auto_delete_minutes`.
-- **Metering.** Usage intervals are opened and closed on transitions. A worker rolls them up into `usage_daily` every 5 minutes. Storage (GiB-hours) is sampled hourly for disk, snapshots and volumes.
+- **Metering.** Usage intervals are opened and closed on transitions. A worker rolls them up into `usage_rollups` once an hour (`metering_rollup_interval_s`, default 3600). A sampler credits each started sandbox's disk size to its `disk_gib` intervals every `metering_sample_interval_s` (default 300 s). Snapshots and volumes are not metered.
 - **Audit.** `AuditRecorder.record(...)` writes inside the unit of work. Details are redacted: no request bodies, no stdin, commands truncated to 512 chars, credentials dropped. Every non-GET route writes an audit row except the few on the exemption list of `tests/test_audit_route_coverage_r96.py`, which walks every registered mutating route.
 - **Webhook dispatcher.** Reads the outbox and fans out to matching endpoints. Delivery:
   - Signed with Standard-Webhooks headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`).
@@ -296,7 +296,7 @@ src/sandfort/
     handlers.py                job type -> handler registry
     reconciler.py              desired vs actual reconciliation + ledger recount
     autostop.py                auto-stop / auto-delete scanner
-    metering.py                rollup intervals -> usage_daily; storage sampler
+    metering.py                rollup intervals -> usage_rollups; storage sampler
     webhook_dispatcher.py      outbox fan-out + delivery attempts
     gc.py                      unreferenced image / dangling volume / temp file GC
   webhooks/
@@ -356,7 +356,7 @@ openapi/sandfort.v1.json       committed spec; CI fails on drift
 | POST | `/v1/sandboxes/{id}/resize` (P5, stopped only) | `{resources}` → Sandbox |
 | POST | `/v1/sandboxes/{id}/snapshot` | `{name}` → 202 Snapshot (`pending`) |
 | GET | `/v1/sandboxes/{id}/logs` | `?follow&since&tail` → SSE `event: stdout\|stderr` |
-| POST | `/v1/sandboxes/{id}/preview-tokens` (P5) | `{port, ttl_seconds?}` → 201 `{token, url, port, expires_at}`. The token is multi-use, lives 60 s to 7 days (default 1 h) and is held in process memory (`proxy/tokens.py`). A sandbox that is not started answers 409 `no_container`. |
+| POST | `/v1/sandboxes/{id}/preview-tokens` (P5) | `{port, ttl_seconds?}` → 201 `{token, url, browser_url?, port, expires_at}`. The token is multi-use, lives 60 s to 7 days (default 1 h) and is held in process memory (`proxy/tokens.py`). `url` carries it in the query. `browser_url` is present only when `SANDFORT_PUBLIC_PREVIEW_URL` is an https origin and carries it in the URL fragment of the proxy's handoff page `/__sandfort/preview`. A sandbox that is not started answers 409 `no_container`. |
 | POST | `/v1/snapshots` | `{name, image: "python:3.12-slim"}` or `{name, build: ImageSpec}` → 202 Snapshot |
 | GET | `/v1/snapshots`, `/v1/snapshots/{id}` | list / get (`state, size_bytes, layer_count, image_digest`) |
 | GET | `/v1/snapshots/{id}/build-logs` | `?follow` → SSE |
@@ -432,31 +432,34 @@ Every toolbox call requires `state=started` (else 409) and touches `last_activit
 
 ## 4. Data model
 
-Conventions: the primary key of an entity table is a prefixed time-sortable id, `TEXT(30)` (see D8). The exceptions are in `src/sandfort/db/models/`: `nodes.id` is an operator-set `String(64)`, `usage_intervals` and `quota_ledger` use an integer autoincrement `id`, and `quotas`, `idempotency_keys`, `org_memberships` and `usage_rollups` use their `org_id` or a composite key (`(org_id, key)`, `(user_id, org_id)`, `(org_id, period_start, dimension)`) as primary key. Times are tz-aware UTC. JSON columns use generic `JSON`. Enums are `TEXT` + `CHECK`. Mutable aggregates carry `created_at/updated_at` and a `version` int for optimistic locking.
+Conventions: the primary key of an entity table is a prefixed time-sortable id, `TEXT(30)` (see D8). The exceptions are in `src/sandfort/db/models/`: `nodes.id` is an operator-set `String(64)`, `usage_intervals` and `quota_ledger` use an integer autoincrement `id`, and `quotas`, `idempotency_keys`, `org_memberships` and `usage_rollups` use their `org_id` or a composite key (`(org_id, key)`, `(user_id, org_id)`, `(org_id, period_start, dimension)`) as primary key. Times are tz-aware UTC. JSON columns use generic `JSON`. Enums are `TEXT` + `CHECK`. Each row below lists the `created_at` and `updated_at` columns its table has, and only `sandboxes` has a `version` int for optimistic locking.
 
 | Table | Key fields |
 |---|---|
-| `organizations` | id, name, slug UNIQUE, status(active\|suspended) |
+| `organizations` | id, name, slug UNIQUE, status(active\|suspended), created_at, updated_at |
 | `quotas` | org_id PK/FK, max_vcpus, max_memory_mib, max_disk_gib, max_sandboxes, updated_at |
 | `quota_ledger` | id (integer autoincrement), org_id FK, sandbox_id, vcpus, memory_mib, disk_gib, state(reserved\|released), created_at, updated_at. One row per sandbox reservation, released and never deleted. IDX(org_id, state), IDX(sandbox_id) |
-| `api_keys` | id, org_id, name, prefix UNIQUE, secret_hash, scopes JSON, is_platform_admin, last_used_at, expires_at, revoked_at, created_by |
-| `nodes` | id, hostname, driver, capacity_cpu_millicores, capacity_memory_mib, capacity_disk_gib, cpu_overcommit, state, last_heartbeat_at (one row in MVP) |
-| `sandboxes` | id, org_id, node_id, name (UNIQUE org_id+name), state, desired_state, snapshot_id FK, image_ref, image_digest, driver, driver_ref, cpu_millicores, memory_mib, disk_gib, env JSON, labels JSON, network_policy JSON, public, auto_stop_minutes, auto_delete_minutes, last_activity_at, started_at, stopped_at, error_reason, error_code, stop_cause, deleted_at, version |
-| `sandbox_volume_mounts` | sandbox_id, volume_id, mount_path, read_only; PK(sandbox_id, mount_path) |
-| `snapshots` | id, org_id (NULL = global), name (UNIQUE org+name), state(pending\|pulling\|building\|active\|error\|deleting), source(registry\|build\|sandbox), source_sandbox_id, image_ref, image_digest, image_spec JSON, spec_hash (indexed), size_bytes, layer_count, default_resources JSON, last_used_at |
-| `volumes` | id, org_id, name UNIQUE per org, state, driver_ref, size_bytes, measured_at |
-| `jobs` | id, org_id, type, payload JSON, state(queued\|running\|succeeded\|failed\|cancelled), attempts, max_attempts, run_after, lease_owner, lease_expires_at, target_type, target_id, result JSON, error; IDX(state, run_after) |
-| `exec_sessions` | id, sandbox_id, cwd, env JSON, state, closed_at |
-| `exec_commands` | id, sandbox_id, session_id NULL, command_preview(512), state, exit_code, timed_out, log_path, started_at, finished_at |
-| `pty_sessions` | id, sandbox_id, driver_exec_id, cols, rows, state, closed_at |
+| `api_keys` | id, org_id (indexed), name, prefix UNIQUE, secret_hash, scopes JSON, is_platform_admin, sandbox_labels JSON NULL, max_sandboxes NULL, shared_volume_labels JSON NULL, last_used_at, expires_at, revoked_at, created_by, created_at, updated_at |
+| `users` | id, email UNIQUE, display_name, disabled_at NULL, created_at, updated_at |
+| `org_memberships` | PK(user_id, org_id), role(admin\|developer\|viewer), external_id NULL, created_at, updated_at. UNIQUE(org_id, external_id), IDX(org_id) |
+| `scim_tokens` | id, org_id (indexed), name, prefix UNIQUE, secret_hash, max_role(admin\|developer\|viewer), last_used_at NULL, revoked_at NULL, created_by NULL, created_at, updated_at |
+| `nodes` | id (`String(64)`, operator-set), name, max_sandboxes, state(active\|draining), last_heartbeat_at, internal_url, egress_ready, egress_ready_at NULL, created_at, updated_at |
+| `sandboxes` | id, org_id, name, state, desired_state, image_ref, driver, driver_ref NULL, cpu_millicores, memory_mib, disk_gib, env JSON, labels JSON, network_policy JSON, public, auto_stop_minutes, auto_delete_minutes, last_activity_at NULL, started_at NULL, stopped_at NULL, error_reason NULL, error_code NULL, deleted_at NULL, standby, spec_hash NULL, node_id, egress_allowlist JSON NULL, snapshot NULL (the snapshot id or image reference the create named), stop_cause NULL, egress_policy_generation, egress_credential_epoch, created_at, updated_at, version. UNIQUE(org_id, name) only among sandboxes whose state is not `destroyed`, `error` or `destroying` (partial index `ix_sandboxes_org_id_name_live`), IDX(state), IDX(spec_hash), IDX(node_id) |
+| (none) | There is no volume mount table. A sandbox's mounts are one JSON-encoded list stored as a single `labels` value under the reserved key `sandfort.volume_mounts` (`encode_mounts` and `decode_mounts` in `services/volumes.py`), each entry with volume_id, provider_volume_name, mount_path and read_only (omitted when false). |
+| `snapshots` | id, org_id, name, image_ref, digest, layer_count, state(pending\|ready\|error\|deleting), source_sandbox_id NULL, spec_hash NULL, isolation NULL, cpu_millicores NULL, memory_mib NULL, disk_gib NULL, labels JSON, created_at. UNIQUE(org_id, name) |
+| `volumes` | id, org_id, name, provider_volume_name, state(ready\|deleting), sampled_size_bytes NULL, labels JSON, restoring_since NULL, created_at. UNIQUE(org_id, name) |
+| `jobs` | id, org_id, kind, payload JSON, state(queued\|leased\|done\|failed\|dead), attempts, run_after, lease_expires_at NULL, last_error NULL, node_id, created_at, updated_at. IDX(state, run_after), IDX(node_id) |
+| `exec_sessions` | id, org_id, sandbox_id FK, cwd NULL, env JSON, state(active\|closed), created_at, updated_at. IDX(org_id, sandbox_id) |
+| `exec_commands` | id, org_id, sandbox_id FK, session_id FK NULL, argv JSON, state(running\|exited\|killed), exit_code NULL, stdout_bytes, stderr_bytes, created_at, finished_at NULL. IDX(org_id, sandbox_id), IDX(session_id) |
+| `pty_sessions` | id, org_id, sandbox_id FK, state(open\|closed), rows, cols, created_at, closed_at NULL. IDX(org_id, sandbox_id) |
 | (none) | There is no token table. PTY connect tokens (single use, 60 s) and preview tokens (multi use, 60 s to 7 days) live in process memory as SHA-256 digests (`auth/connect_tokens.py`, `proxy/tokens.py`), so a restart drops them. |
-| `events` (outbox) | id, org_id, type, subject_type, subject_id, payload JSON, occurred_at, dispatched_at; IDX(dispatched_at NULL) |
-| `webhook_endpoints` | id, org_id, url, secret_ciphertext, event_types JSON, enabled, consecutive_failures, disabled_reason |
-| `webhook_deliveries` | id, endpoint_id, event_id, state(pending\|succeeded\|failed\|dead), attempts, next_attempt_at, last_status, last_latency_ms, last_error; UNIQUE(endpoint_id, event_id) |
-| `audit_events` | id, org_id, actor_type(api_key\|system\|platform_admin), actor_id, action, target_type, target_id, outcome(success\|denied\|error), request_id, ip, user_agent, details JSON (redacted), occurred_at, prev_hash, hash (chain added in P5). Append-only, no UPDATE/DELETE path. |
-| `usage_intervals` | id, org_id, sandbox_id, kind(compute\|disk), cpu_millicores, memory_mib, disk_gib, started_at, ended_at NULL; IDX(org_id, ended_at) |
-| `usage_daily` | PK(org_id, day, sandbox_id), vcpu_seconds, memory_gib_seconds, disk_gib_hours, snapshot_gib_hours, volume_gib_hours |
-| `idempotency_keys` | PK(org_id, key), request_hash, response_status, response_body JSON, expires_at |
+| `outbox_events` | id, org_id, event_type, payload JSON, created_at, dispatched_at NULL, attempts. IDX(dispatched_at) |
+| `webhook_endpoints` | id, org_id, url, secret, enabled, failure_count, event_types JSON, created_at |
+| `webhook_deliveries` | id, endpoint_id FK, event_id FK (outbox_events), state(pending\|delivered\|failed\|disabled), attempts, next_attempt_at NULL, last_status NULL, event_type NULL, payload_sha256 NULL, last_error NULL, attempt_history JSON, created_at, updated_at. UNIQUE(endpoint_id, event_id), IDX(state, next_attempt_at) |
+| `audit_events` | id, org_id, actor_type(api_key\|system\|platform_admin), actor_id, action, target_type, target_id, outcome(success\|denied\|error), request_id, ip, user_agent, details JSON (redacted), occurred_at, prev_hash, hash (chain added in P5). Append-only, no UPDATE/DELETE path. Indexes IDX(org_id, occurred_at), IDX(org_id, request_id). |
+| `usage_intervals` | id (integer autoincrement), org_id, sandbox_id, dimension(vcpu\|memory_mib\|disk_gib), amount, started_at, ended_at NULL. IDX(org_id, ended_at), IDX(sandbox_id, ended_at) |
+| `usage_rollups` | PK(org_id, period_start, dimension), dimension(vcpu\|memory_mib\|disk_gib), total |
+| `idempotency_keys` | PK(org_id, key), request_hash, response_status, response_body JSON, expires_at. IDX(expires_at) |
 
 **Lifecycle transitions** (`domain/lifecycle.py`):
 - `pending→creating→started`
@@ -581,7 +584,7 @@ Snapshotting is a job flag, not a state. The sandbox stays `started`; the contai
    - Jobs are idempotent by design and checked by tests that kill the process mid-job.
 
 3. **Quota enforcement races.**
-   - A single ledger row per org is mutated in the same transaction as the state change, under `BEGIN IMMEDIATE` (SQLite) or `FOR UPDATE` (PG).
+   - One `quota_ledger` row per sandbox is inserted in the same transaction as the sandbox row. The lock serialises check-then-reserve per org: every SQLite transaction starts with `BEGIN IMMEDIATE`, and Postgres takes `SELECT ... FOR UPDATE` on the org row, then the org's quota row (`db/locking.py`).
    - Reserve before acting; release in a compensating unit of work on failure.
    - The reconciler recounts from the source of truth and alerts on drift.
    - Idempotency keys prevent double-reserving when clients retry.

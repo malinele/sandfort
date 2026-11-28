@@ -222,6 +222,8 @@ The secret of a create answer is a non-enumerable property: `apiKeys.create(...)
 `JSON.stringify`, `Object.keys` and `console.log` / `util.inspect`. Read it immediately and
 store it: a copy of the object (spread, `Object.assign`, `structuredClone`) does not carry it,
 and `util.inspect(value, { showHidden: true })` still shows it, so do not log with that.
+The `url` and `browserUrl` of a preview answer hold the same token and stay enumerable, so do
+not log the whole answer.
 
 ```ts
 const created = await client.apiKeys.create("ci", ["sandboxes:read"]);
@@ -496,6 +498,9 @@ const tiers = await client.listIsolation(); // { default: "container", available
 // A started sandbox only (409 otherwise); ttlSeconds 60..604800, server default 3600.
 const preview = await sbx.mintPreviewToken({ port: 3000, ttlSeconds: 600 });
 console.log(preview.url, preview.expiresAt);
+// browserUrl is set only when the server's preview origin is HTTPS: open it in a browser (the
+// token sits in its fragment). Use url, or the Sandfort-Preview-Token header, from scripts.
+console.log(preview.browserUrl);
 
 const entry = await sbx.fs.stat("/tmp/main.py"); // { kind, sizeBytes, mode, modifiedAt, ... }
 

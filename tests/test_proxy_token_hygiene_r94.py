@@ -102,7 +102,10 @@ def record(message: str, *args: Any) -> logging.LogRecord:
 
 
 def logged_path(query: str) -> str:
-    return get_path_with_query_string({"path": "/p", "query_string": query.encode()})
+    """The path uvicorn logs for ``/p?<query>``; 0.55 reads ``raw_path`` and writes ``"`` as %22."""
+    return get_path_with_query_string(
+        {"path": "/p", "raw_path": b"/p", "query_string": query.encode()}
+    )
 
 
 # -- helpers --------------------------------------------------------------------------------
@@ -154,13 +157,16 @@ def test_strip_referer_token_leaves_a_clean_referer_unchanged(referer: str) -> N
 
 
 @pytest.mark.parametrize(
-    ("query", "expected"),
+    ("query", "redacted"),
     [
-        (f"keep=1&{TOKEN_PARAM}={TOKEN}", f"/p?keep=1&{TOKEN_PARAM}=REDACTED"),
-        (f'a="&{TOKEN_PARAM}={TOKEN}', f'/p?a="&{TOKEN_PARAM}=REDACTED'),  # raw quote from curl
+        (f"keep=1&{TOKEN_PARAM}={TOKEN}", f"keep=1&{TOKEN_PARAM}=REDACTED"),
+        (f'a="&{TOKEN_PARAM}={TOKEN}', f'a="&{TOKEN_PARAM}=REDACTED'),  # raw quote from curl
     ],
 )
-def test_filter_redacts_the_path_and_keeps_the_args_shape(query: str, expected: str) -> None:
+def test_filter_redacts_the_path_and_keeps_the_args_shape(query: str, redacted: str) -> None:
+    # What uvicorn logs for the redacted query: only the token value differs, so the quote
+    # stays raw on uvicorn 0.54 and becomes %22 on 0.55 in both lines alike.
+    expected = logged_path(redacted)
     entry = record(HTTP_FORMAT, "127.0.0.1:1", "GET", logged_path(query), "1.1", 200)
 
     assert TokenRedactingFilter().filter(entry) is True

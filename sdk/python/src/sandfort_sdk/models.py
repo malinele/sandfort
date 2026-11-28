@@ -239,18 +239,30 @@ class SandboxInfo:
 
 @dataclass(frozen=True, slots=True)
 class PreviewInfo:
-    """A minted preview token and the URL that reaches one port of a sandbox through the proxy."""
+    """A minted preview token and the URL that reaches one port of a sandbox through the proxy.
+
+    ``url`` carries the token as a query parameter and works from a browser, curl and scripts.
+    ``browser_url`` is set only when the server's preview origin is HTTPS: open it in a browser,
+    the token sits in its fragment, so no request line or access log holds it.
+    """
 
     url: str
     token: str
     port: int
     expires_at: datetime
+    browser_url: str | None = None
 
     @classmethod
     def from_payload(cls, data: Any) -> "PreviewInfo":
         raw = _as_dict(data, "preview token")
         url, token, port = _required(raw, "preview token", "url", "token", "port")
-        return cls(url, token, port, _required_timestamp(raw.get("expires_at"), "preview token"))
+        return cls(
+            url,
+            token,
+            port,
+            _required_timestamp(raw.get("expires_at"), "preview token"),
+            _optional_str(raw.get("browser_url"), "preview token browser_url"),
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,6 +15,7 @@ import {
   asRecord,
   compact,
   fileEntryFromPayload,
+  optionalString,
   requiredNumber,
   requiredString,
   requiredTimestamp,
@@ -104,6 +105,13 @@ export interface PreviewToken {
    */
   readonly token: string;
   url: string;
+  /**
+   * Set only when the server's preview origin is HTTPS. Open it in a browser: the token sits in
+   * its fragment, so no request line or access log holds it. Use `url` or the
+   * `Sandfort-Preview-Token` request header from scripts. Enumerable like `url`, and it holds
+   * the same token, so do not log it.
+   */
+  browserUrl?: string;
   port: number;
   expiresAt: Date;
 }
@@ -211,8 +219,10 @@ export function previewTokenFromPayload(data: unknown): PreviewToken {
   const what = "preview token";
   const raw = asRecord(data, what);
   const token = requiredString(raw, "token", what);
+  const browserUrl = optionalString(raw, "browser_url");
   const info = {
     url: requiredString(raw, "url", what),
+    ...(browserUrl === undefined ? {} : { browserUrl }),
     port: requiredNumber(raw, "port", what),
     expiresAt: requiredTimestamp(raw["expires_at"], what),
   };

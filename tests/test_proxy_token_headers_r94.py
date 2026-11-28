@@ -143,7 +143,7 @@ async def test_public_sandbox_query_token_also_gets_the_headers(
     assert response.headers.get_list("cache-control") == ["no-store"]
 
 
-async def test_later_cookie_request_passes_upstream_headers_unchanged(
+async def test_later_cookie_request_keeps_the_app_headers_but_private(
     world: World, caching: httpx.AsyncClient
 ) -> None:
     sandbox = await world.add(public=False)
@@ -153,7 +153,8 @@ async def test_later_cookie_request_passes_upstream_headers_unchanged(
     response = await call(world.proxy(caching), "GET", host_for(sandbox.id), headers=headers)
 
     assert response.status_code == 200, response.text
-    assert response.headers.get_list("cache-control") == ["max-age=60"]
+    assert response.headers.get_list("cache-control") == ["private, max-age=60"]
+    assert response.headers.get_list("vary") == ["Cookie, Sandfort-Preview-Token"]
     assert response.headers.get_list("referrer-policy") == ["origin"]
 
 

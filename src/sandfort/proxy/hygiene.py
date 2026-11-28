@@ -5,8 +5,9 @@ its URL. ``TokenRedactingFilter`` rewrites uvicorn's access and websocket log li
 reads ``REDACTED``. ``strip_referer_token`` cuts the parameter from a ``Referer`` and
 ``strip_header_token`` does the same for any header value, wherever the parameter sits in it.
 The proxy runs it on every forwarded request header, so an edge's ``X-Url`` or ``X-Pathname``
-cannot carry the token to the app. ``PROXY_RESPONSE_HEADERS`` go on every response the proxy
-builds itself, and
+cannot carry the token to the app. ``CREDENTIAL_HEADERS`` (the ``TOKEN_HEADER`` a script
+sends) are read by the proxy and never forwarded at all. ``PROXY_RESPONSE_HEADERS`` go on
+every response the proxy builds itself, and
 ``with_token_response_headers`` puts ``TOKEN_RESPONSE_HEADERS`` on the response to a
 token-bearing URL. That one says ``strict-origin``, not ``no-referrer``: under ``no-referrer``
 a browser sends ``Origin: null`` on a form POST, and the cookie check refuses that.
@@ -17,9 +18,10 @@ import re
 from typing import Final
 from urllib.parse import unquote_plus
 
-from sandfort.proxy.tokens import TOKEN_PARAM, split_query_token
+from sandfort.proxy.tokens import TOKEN_HEADER, TOKEN_PARAM, split_query_token
 
 REDACTED: Final = "REDACTED"
+CREDENTIAL_HEADERS: Final = frozenset({TOKEN_HEADER})  # lower case request header names
 # uvicorn logs HTTP requests on uvicorn.access and websocket handshakes on uvicorn.error.
 REDACTED_LOGGERS: Final = ("uvicorn.access", "uvicorn.error")
 # The single use pty connect token of GET /terminal and of the API's pty websocket

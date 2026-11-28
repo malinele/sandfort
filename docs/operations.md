@@ -975,7 +975,7 @@ All names are read from `SANDFORT_*` by `src/sandfort/config.py`.
 | `SANDFORT_AUTH_FAILURE_LIMIT_PER_MINUTE` | `0` (off) | Failed authentications per client address: 401 answers to requests that carry an `Authorization` header, counted in a fixed 60 second window that starts at the first failure. At the limit, every request from that address with an `Authorization` header answers 429 `RATE_LIMITED` before the key is checked, a valid key included, until the window ends. Set it only when the server sees each client's own address (see "Behind a TLS-terminating proxy"). |
 | `SANDFORT_DOCKER_THREAD_LIMIT`, `SANDFORT_DOCKER_BULK_THREADS` | 64, 48 | Concurrent docker-py calls in the process (see "Docker driver threads and shutdown"). |
 | `SANDFORT_VOLUME_MAX_BYTES` | `0` (no limit) | Soft size limit per volume; see below. |
-| `SANDFORT_PREVIEW_MAX_CONCURRENT_PER_SANDBOX`, `SANDFORT_PREVIEW_MAX_CONCURRENT` | 256, 2048 | Preview proxy requests in flight plus open preview websockets, per sandbox and per process (`0` = no cap). Over either cap the proxy answers 503 `CAPACITY` with `Retry-After: 1` before it opens an upstream connection. |
+| `SANDFORT_PREVIEW_MAX_CONCURRENT_PER_SANDBOX`, `SANDFORT_PREVIEW_MAX_CONCURRENT` | 768, 4096 | Preview proxy requests in flight plus open preview websockets, per sandbox and per process (`0` = no cap). Over either cap the proxy answers 503 `CAPACITY` with `Retry-After: 1` before it opens an upstream connection. The defaults hold three browsers on one preview, see the load test bullet below. |
 | `SANDFORT_PREVIEW_RESPONSE_HEADER_TIMEOUT_S` | 300 | Seconds the preview proxy waits for a sandbox's response headers (`0` = no limit). When it fires the proxy answers 502 `BAD_GATEWAY` and frees the request's slot. It does not bound a response body or a websocket once they stream. |
 
 Read these limits as they are implemented:
@@ -1032,7 +1032,29 @@ Read these limits as they are implemented:
   expires (expiry is checked when a request or handshake starts). The caps are per process, and
   the web terminal page (`GET /terminal`) is not counted. A slot can hold a client connection
   and an upstream connection at once, so keep the process file descriptor limit well above
-  twice `SANDFORT_PREVIEW_MAX_CONCURRENT`.
+  twice `SANDFORT_PREVIEW_MAX_CONCURRENT`. `sandfort-server` raises its soft `RLIMIT_NOFILE` to
+  the hard limit at start-up (at most 1048576), because Docker gives a container a soft limit
+  of 1024. It logs a warning when the limit stays below twice the process cap plus the upstream
+  keep-alive pool plus 1024. Then raise the container's `nofile` limit (`ulimits` in compose)
+  or lower the cap. That figure is a lower bound: web terminal websockets (two descriptors each,
+  not counted by the preview caps) and idle client connections only have the 1024 reserve. `uvicorn --factory sandfort.main:create_app` skips this step.
+- **The preview cap defaults come from a load test.** A browser that cold loads a preview holds
+  156 to 208 slots at its peak: a slot is freed only after the proxy's relay task finishes, and
+  each tab's websocket holds one more. Two different browsers on one preview (a developer and a
+  reviewer, or Chrome and Safari) peaked at 332 to 353 slots, three at 509 to 556, and a reload
+  storm across three browsers at 484 to 576. A request over the cap answers 503, and a browser
+  does not retry a failed ES module import, so the page fails to boot. With 768 per sandbox
+  there was no 503 in 12 runs of four scenarios, and with 256 two browsers got 766 to 926 per
+  run. These numbers come from one local session on 2026-11-28 (three runs per scenario, Chrome
+  over HTTP/2 on a 10 core macOS host, not the beta VM), so read them as an order of magnitude.
+  A higher cap adds no throughput: one proxy process served about 1000 to 1300 requests per
+  second there, so a higher cap turns refusals into queueing. The process default of 4096 needs
+  a file descriptor limit well above 8192, for example 16384 or more. Read `/proc/<pid>/limits`
+  of the server and raise `nofile` before you keep that default. The proxy keeps as many idle
+  upstream connections as the per-sandbox cap (768 by default, and `MAX_KEEPALIVE` in
+  `src/sandfort/proxy/app.py`, also 768, when that cap is `0`), so a burst reuses them. With 20,
+  a cold load by two browsers (about 4000 requests) left 3976 sockets in TIME_WAIT toward the
+  sandbox.
 
 ### Measured facts that exist
 
@@ -1571,14 +1593,22 @@ summary: 8 pass, 1 warn, 1 fail
     from the text before the first colon, so nothing the gate refuses on is left out. It is a
     `FAIL` in `prod` and a `WARN` elsewhere (a disk quota gap is a `FAIL` when
     `SANDFORT_ENFORCE_DISK_QUOTA` is on).
-- **Same findings as the gate.** It judges the daemon with the same finding functions the
-  production start uses (the webhook key and host capacity wording come from
-  `sandfort.preflight`, the module the start uses), plus the egress probe (a canary container
-  on each managed network tries to get out), so the two cannot disagree. A finding that would
-  refuse a `prod` start is a `FAIL`; one the gate only logs is a `WARN`; everything else is
-  `PASS`. The probe runs when `SANDFORT_EGRESS_PROBE` is on, which is the default in `prod`
-  only. With the probe off, the check reports whether `SANDFORT_EGRESS_ACKNOWLEDGED` covers the
-  host rules.
+- **Shared finding functions, not the gate itself.** The doctor does not call the start gate.
+  It judges the daemon with the same finding functions the production start uses
+  (`missing_isolation`, `advisory_findings` and `egress_findings` from
+  `drivers/docker/capabilities.py`, the egress probe's `probe_findings`, and the webhook key
+  and host capacity wording from `sandfort.preflight`), plus the egress probe (a canary
+  container on each managed network tries to get out). Two parts are the doctor's own code.
+  `gate_findings` in `src/sandfort/admin_doctor.py` chooses between the probe result and the
+  acknowledgement the way `egress_gaps` in `src/sandfort/api/app.py` does, but it is a
+  separate function. The rows built from `Settings` (`database`, `seccomp profile`,
+  `cgroup parent`, `userns opt-out tiers`, `require userns remap`, `allowed registries`,
+  `build network` and `fault injection`) come from the doctor's own check functions, not from
+  the start code. For the shared findings, one that would refuse a `prod` start is a `FAIL`,
+  one the gate only logs is a `WARN`, and everything else is `PASS`. The probe runs when
+  `SANDFORT_EGRESS_PROBE` is on, which is the default in `prod` only. With the probe off, the
+  check reports whether `SANDFORT_EGRESS_ACKNOWLEDGED` covers the host rules. Treat the verdict
+  line as a prediction made from shared finding functions, not as a run of the gate.
 - **One startup warning it does not report.** The server logs a warning at start when the
   runtime of the `gvisor` tier is registered without `--overlay2=none`
   (`src/sandfort/drivers/docker/overlay_check.py`, `deploy/node-setup.sh` registers the flag).
@@ -1842,6 +1872,21 @@ the api host and the preview host, or log the path without the query. On ingress
 the annotation `nginx.ingress.kubernetes.io/enable-access-log: "false"`, which
 `deploy/k8s/ingress.yaml` sets on both Ingresses; the server's access log still has one line per
 request with the client address.
+
+The preview proxy takes the token from three places and checks only the first one present: the
+`Sandfort-Preview-Token` request header, then the `sandfort_preview_token` query parameter, then
+the `__Host-sandfort_preview_token` cookie. It forwards none of them to the app, and it sets the
+cookie only from a query token. On an https preview origin (`SANDFORT_PUBLIC_PREVIEW_URL`) the
+mint also returns `browser_url`, a link to `/__sandfort/preview` on the preview host with the
+token in the URL fragment. A browser never sends the fragment, so no request line or access log
+holds that token. The proxy answers that path itself, a page and then a POST that sets the
+cookie, and nothing on it reaches the app. For a private sandbox the proxy rewrites the cache
+headers of every answer: `Cache-Control` starts with `private` and loses `public`, `s-maxage`
+and `proxy-revalidate`, `Vary` names `Cookie` and `Sandfort-Preview-Token`, and
+`CDN-Cache-Control` (also with a vendor prefix) and `Surrogate-Control` are dropped. An answer to
+a URL that carries the token gets `Cache-Control: no-store` instead. A cache in front of the
+preview host must follow these headers, so do not set it to override the origin's
+`Cache-Control`.
 
 ### Edge transport policy
 

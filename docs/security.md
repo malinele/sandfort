@@ -309,12 +309,28 @@ untrusted.
   another tenant's preview app receives. The token cookie is safe from this, because its
   `__Host-` prefix makes browsers refuse a parent-domain cookie of that name. Do not base a
   decision that matters on a cookie value a preview app receives.
-- **No CSP or framing headers.** The proxy adds no `Content-Security-Policy`,
-  `X-Frame-Options` or `frame-ancestors` to what the app returns. Only the web terminal page
-  carries a policy, a `Content-Security-Policy` with `frame-ancestors 'none'`
-  (`src/sandfort/proxy/terminal.py`). A default policy would break dev servers and a default
-  deny would break embedding, so neither ships. Protection against clickjacking is the app's
-  job: set `frame-ancestors` or `X-Frame-Options` in the app itself.
+- **No CSP or framing headers on app answers.** The proxy adds no `Content-Security-Policy`,
+  `X-Frame-Options` or `frame-ancestors` to what the app returns. Only the pages the proxy
+  serves itself carry a `Content-Security-Policy` with `frame-ancestors 'none'`: the web
+  terminal page (`src/sandfort/proxy/terminal.py`) and the preview handoff page at
+  `/__sandfort/preview` (`src/sandfort/proxy/handoff.py`). A default policy would break dev
+  servers and a default deny would break embedding, so neither ships. Protection against
+  clickjacking is the app's job: set `frame-ancestors` or `X-Frame-Options` in the app itself.
+- **Preview tokens and shared caches.** A private sandbox's preview needs a token bound to its
+  org, sandbox and port. The proxy reads it from the `Sandfort-Preview-Token` header, the
+  `sandfort_preview_token` query parameter or the `__Host-` cookie, in that order, checks only
+  the first one present and forwards none of them to the app. A request that only the cookie
+  authorizes is refused when its `Origin` names another host or its `Sec-Fetch-Site` is neither
+  `same-origin` nor `none` (`fetch_metadata_consistent` in `src/sandfort/proxy/tokens.py`).
+  `browser_url` keeps the token in the URL fragment of `/__sandfort/preview`, so it is in no
+  request line, but the link as shared and the browser history can still hold it. Every
+  proxied answer of a private sandbox carries a `Cache-Control` that starts with `private` and
+  keeps the app's other directives minus `public`, `s-maxage` and `proxy-revalidate`, a `Vary`
+  that names `Cookie` and `Sandfort-Preview-Token`, and no `CDN-Cache-Control` or
+  `Surrogate-Control`, so a shared cache that follows these headers does not hand it to a
+  request without the token (`src/sandfort/proxy/caching.py`). The viewer's browser may still
+  cache it. An answer to a URL that names the token parameter gets `Cache-Control: no-store`
+  instead.
 
 ## 4. Control plane
 

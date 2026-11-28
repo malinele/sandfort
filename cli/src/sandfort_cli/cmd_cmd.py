@@ -42,6 +42,7 @@ from sandfort_cli.output import (
     shown,
     strip_dangerous_terminal,
 )
+from sandfort_cli.preview_browser import browser_field, echo_preview_text
 from sandfort_cli.refs import resolve_sandbox_id
 from sandfort_cli.sandboxes import (
     INTEGER_METAVAR,
@@ -396,24 +397,6 @@ def preview_url(url: str, token: str, api_key: str) -> str:
     return preview_view(url, token, api_key)[0]
 
 
-def has_control_chars(text: str) -> bool:
-    return any(ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F for char in text)
-
-
-def echo_token_line(token: str) -> None:
-    """Text mode only: the exact token on its own line, for a url that could not carry it.
-
-    A token holding control characters is never printed raw (it could drive the terminal); it
-    is not an ordinary token, and ``--json`` has it exactly.
-    """
-    if not token:
-        return
-    if has_control_chars(token):
-        typer.echo("sandfort: the token holds control characters; use --json to read it", err=True)
-        return
-    typer.echo(f"token: {token}")
-
-
 @accepts_negative_numbers
 def preview_command(
     ctx: typer.Context,
@@ -433,10 +416,16 @@ def preview_command(
             help="Token lifetime in seconds (default: the server's).",
         ),
     ] = None,
+    browser: Annotated[
+        bool,
+        typer.Option("--browser", help="Print the browser URL when the server sent one."),
+    ] = False,
 ) -> None:
     """Print the preview URL for a port of a sandbox (with --json: also token and expiry).
 
-    A sandbox that is not started still gets a URL, with a warning on stderr.
+    The URL carries the token in its query, so curl and scripts can use it. With --browser the
+    browser URL (token in its fragment) is printed instead when the server sent one, and --json
+    has both URLs. A sandbox that is not started still gets a URL, with a warning on stderr.
     """
     reject_empty_name(sandbox_id, SANDBOX_METAVAR)
     port = parse_whole_number(port_text, PORT_METAVAR, low=MIN_PREVIEW_PORT, high=MAX_PORT)
@@ -455,11 +444,12 @@ def preview_command(
         typer.echo(note, err=True)
     url, token_in_url = preview_view(info.url, info.token, key)
     if app_state(ctx).json_output:
-        # The token is a credential: printed exactly as the server returned it, and the url
+        # The token is a credential: printed exactly as the server returned it, and the urls
         # (already sanitised, token put back) must not be cleaned a second time.
         others = clean_strings({"port": info.port, "expires_at": info.expires_at.isoformat()}, key)
-        print_json({**others, "url": url, "token": info.token})
+        extra = browser_field(info.browser_url, info.token, key)
+        print_json({**others, "url": url, **extra, "token": info.token})
     else:
-        typer.echo(url)
-        if not token_in_url:
-            echo_token_line(info.token)
+        echo_preview_text(
+            (url, token_in_url), info.browser_url if browser else None, info.token, key
+        )

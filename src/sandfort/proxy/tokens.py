@@ -3,8 +3,9 @@
 Unlike connect tokens (single use), a preview token is validated but never consumed:
 it stays valid until it expires. ``InMemoryPreviewTokenStore`` is the single-process
 implementation and keeps only a SHA-256 digest of each token. The proxy reads a token from
-the ``TOKEN_PARAM`` query parameter or the ``COOKIE_NAME`` cookie; the ``split_*`` helpers
-take it out of what is forwarded to the sandbox.
+the ``TOKEN_HEADER`` request header, the ``TOKEN_PARAM`` query parameter or the
+``COOKIE_NAME`` cookie, in that order of precedence, and from the form body of a ``POST`` to
+``HANDOFF_PATH``. The ``split_*`` helpers take it out of what is forwarded to the sandbox.
 """
 
 import hashlib
@@ -23,6 +24,8 @@ from sandfort.proxy.routing import MAX_PORT, MIN_PORT
 DEFAULT_TTL = timedelta(hours=1)
 TOKEN_BYTES = 32
 TOKEN_PARAM = "sandfort_preview_token"  # query parameter name
+TOKEN_HEADER = "sandfort-preview-token"  # request header name, lower case, never forwarded
+HANDOFF_PATH = "/__sandfort/preview"  # reserved on preview hosts, answered by the proxy (B27)
 # __Host- makes browsers accept the cookie only with Secure, Path=/ and no Domain, so a sibling
 # host on the parent domain cannot overwrite it; an unprefixed cookie of that name is ignored.
 COOKIE_NAME = f"__Host-{TOKEN_PARAM}"

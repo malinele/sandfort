@@ -773,9 +773,13 @@ module, `cli/src/sandfort_cli/sanitise.py`; it is not limited to `login`). It co
     in it. The sanitiser would mask every query value, as in `?sandfort_preview_token=***`. So the
     value of the `sandfort_preview_token` query parameter is put back as returned, when the token is
     ordinary text. Ordinary text means the sanitiser would leave it unchanged. Other query values
-    stay masked. When the URL cannot carry the token that way, text mode prints the exact token on a
-    `token: <token>` line after the URL. A token that holds control characters is never printed in
-    text mode (a note on stderr says to use `--json`), and the URL then shows it masked;
+    stay masked. The `browser_url` of an HTTPS server is treated the same way: the sanitiser would
+    mask its whole fragment as `#***`, so a fragment that is exactly
+    `sandfort_preview_token=<token>` is put back as returned, when the token is ordinary text, and
+    the rest of the URL is sanitised. When the printed URL cannot carry the token that way, text
+    mode prints the exact token on a `token: <token>` line after the URL. A token that holds
+    control characters is never printed in text mode (a note on stderr says to use `--json`), and
+    the URL then shows it masked;
   - the build log lines that the CLI echoes while it follows a snapshot build follow the program
     output policy of `exec` (see "Program output" in the rules below). Dangerous terminal sequences
     are removed. The content is not masked. Nothing is flattened or cut, so indentation is kept.
@@ -3680,20 +3684,41 @@ The SDK and CLI call the REST API under `/v1`. The spec is the repository file
 ## 4. Preview URLs
 
 To create a token for a port, run `sandfort preview <sandbox> <port>`, which prints the preview URL,
-or call `sbx.preview(port)` in the Python SDK, which returns a `PreviewInfo` with `url`, `token` and
-the expiry. In REST, POST to the sandbox's `preview-tokens` endpoint. Open the returned `url` in a
-browser: it works as returned because it already carries the access token as a query parameter.
-Preview URLs are served under the wildcard preview domain over HTTPS and stop working at
+or call `sbx.preview(port)` in the Python SDK, which returns a `PreviewInfo` with `url`, `token`,
+the expiry and, on an HTTPS preview origin, `browser_url`. In REST, POST to the sandbox's
+`preview-tokens` endpoint. The reply always has `url`. It carries the access token as a query
+parameter, so it works as returned in a browser, with curl and in scripts. When the server's
+preview origin is HTTPS (`SANDFORT_PUBLIC_PREVIEW_URL` starts with `https`), the reply also has
+`browser_url`: open that one in a browser. `sandfort preview` prints `url`, so
+`curl "$(sandfort preview <sandbox> <port>)"` reaches your app. `sandfort preview --browser` prints
+`browser_url` when the reply has it and `url` otherwise, and `sandfort --json preview` has both
+fields. Preview URLs are served under the wildcard preview domain over HTTPS and stop working at
 `expires_at`.
 
-Treat the `url` as a credential. Whoever holds it can open that port of the sandbox, as often as
-they like, until `expires_at`. The lifetime is `ttl_seconds`: 1 hour by default, at least 60
-seconds and at most 7 days. No endpoint revokes a token before it expires, so choose a short
-`ttl_seconds`. On the first open, the proxy takes the token out of the query, sets it as an
-`HttpOnly` cookie and does not forward it to your app, neither in the query nor in a request header
-(a `Referer`, or a URL header such as `X-Url` that a front proxy adds). The URL as you opened it
-can still stay in browser history and in the access logs on the way. Do not share it and do not paste it into tickets
-or chat. Mint a new token for each person who needs one.
+`browser_url` has the shape `https://<host>/__sandfort/preview#sandfort_preview_token=<token>`. A
+browser never sends the fragment to a server, so no request line, access log or `Referer` holds
+the token. The page at `/__sandfort/preview` needs JavaScript. It sends the token in a POST body,
+the proxy answers with the `HttpOnly` cookie, and the browser moves on to `/` of the preview host.
+The link always lands on `/`, never on a deep path, and nothing sent to that path reaches your app.
+From curl, scripts and websocket clients use `url`, or send the token in a `Sandfort-Preview-Token`
+request header. The proxy never forwards that header to your app, and it appears in no URL. When a
+request carries the token in more than one place, the proxy uses only the first of the header, the
+query and the cookie, in that order. A header token is never set as a cookie.
+On a plain-HTTP preview origin the reply has no `browser_url`, because the cookie needs HTTPS, and
+`url` is the only URL.
+
+Treat `url` and `browser_url` as credentials. Whoever holds either can open that port of the
+sandbox, as often as they like, until `expires_at`. The lifetime is `ttl_seconds`: 1 hour by
+default, at least 60 seconds and at most 7 days. No endpoint revokes a token before it expires, so
+choose a short `ttl_seconds`. On the first open, the proxy takes the token out of the query, sets
+it as an `HttpOnly` cookie and does not forward it to your app, neither in the query nor in a
+request header (a `Referer`, or a URL header such as `X-Url` that a front proxy adds). The `url` as
+you opened it can still stay in browser history and in the access logs on the way. `browser_url`
+stays out of request lines and access logs, but the link as you share it and the browser history
+of whoever opens it can still hold it. Do not share either one and do not paste it into tickets or
+chat. Mint a new token for each person who needs one. The proxy still accepts the token in the
+query, so `url` keeps working. The reasoning behind the handoff page is in
+`docs/preview-token-handoff-design.md`, a repository path.
 
 The sandbox must be started to create a token. For a stopped or deleted sandbox the call answers 409
 `no_container`, with `details.state` and, when the sandbox is `stopping` or `stopped`,

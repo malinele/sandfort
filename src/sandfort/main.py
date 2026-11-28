@@ -36,8 +36,10 @@ from sandfort.clock import SystemClock
 from sandfort.config import VALID_ROLES, Settings
 from sandfort.db.engine import create_engine, create_session_factory
 from sandfort.drivers.base import EndpointDriver
+from sandfort.fd_limit import preview_descriptor_need, raise_open_file_limit
 from sandfort.logging import configure_logging
 from sandfort.preflight import ConfigurationError, check_preflight
+from sandfort.proxy.app import MAX_KEEPALIVE
 from sandfort.proxy.app import create_proxy_app as build_proxy_app
 from sandfort.proxy.hygiene import install_log_redaction
 
@@ -251,6 +253,15 @@ def _load_settings(args: argparse.Namespace) -> Settings:
     return settings
 
 
+def _preview_need(settings: Settings) -> int | None:
+    """Descriptors the in-process preview proxy can hold (``fd_limit``), its keep-alive pool too.
+
+    The pool is sized as ``PreviewProxy`` sizes it: the per-sandbox cap, else ``MAX_KEEPALIVE``.
+    """
+    keepalive = settings.preview_max_concurrent_per_sandbox or MAX_KEEPALIVE
+    return preview_descriptor_need(settings.preview_max_concurrent, keepalive)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="sandfort-server", description="Sandfort API server.")
     parser.add_argument("--role", choices=VALID_ROLES, help="process role (env: SANDFORT_ROLE)")
@@ -258,15 +269,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--port", type=int, help="bind port (default: SANDFORT_PORT)")
     args = parser.parse_args(argv)
     settings = _load_settings(args)
+    serves_previews = settings.role in API_ROLES and settings.proxy_enabled
 
-    if settings.role in API_ROLES and settings.proxy_enabled:
-        _serve_with_proxy(create_app(settings), settings)
-        return
     if settings.role in API_ROLES:
         app = create_app(settings)
     else:
         _configure_logging(settings.log_level)
         app = build_worker_app(settings)
+    raise_open_file_limit(_preview_need(settings) if serves_previews else None)
+    if serves_previews:
+        _serve_with_proxy(app, settings)
+        return
     uvicorn.run(
         with_plain_refusal(app),
         host=settings.host,
