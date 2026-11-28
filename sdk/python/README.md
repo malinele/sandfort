@@ -28,6 +28,13 @@ client = Client(base_url="http://127.0.0.1:8000", api_key="sf_...")
 The API key comes from `python -m sandfort.admin_cli bootstrap`, which prints the plaintext
 `sf_...` key once. It cannot be recovered later.
 
+A `base_url` that starts with `http://` and names a host other than loopback (`localhost`,
+`127.0.0.0/8`, `::1`) sends the API key in clear text, so both clients emit an
+`InsecureBaseUrlWarning` (a `UserWarning`) when they are built. Use `https://`. On a trusted
+private network, silence it with
+`warnings.filterwarnings("ignore", category=InsecureBaseUrlWarning)`. The `sandfort` CLI builds
+the same client, so it prints the warning too.
+
 Both clients are context managers (`with Client(...)`, `async with AsyncClient(...)`) and have
 `close()` / `aclose()`. The optional `timeout` keyword is the per-request timeout in seconds
 (default 30). The async client has the same methods; every call is awaited and returns the

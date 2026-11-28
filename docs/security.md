@@ -119,6 +119,13 @@ What the table does not say:
   run remapped. Details, validation and the gate texts: `docs/architecture.md`, "Container
   hardening"; node steps in [operations]. The driver sets no AppArmor option, so the
   daemon's default applies where AppArmor is enabled, and no setting feeds the `user` field.
+- **Setuid and setgid bits are inert on the `container` tier, and not measured on the
+  others.** Every sandbox is created with `no-new-privileges:true` and `cap_drop=ALL` plus the
+  add-list above (`NO_NEW_PRIVILEGES` in `src/sandfort/drivers/docker/hardening.py`). Under
+  runc the kernel then ignores setuid and setgid bits on exec, and a probe on the `container`
+  tier during the hosted beta evaluation showed no change of the effective uid. The `gvisor`
+  and `microvm` tiers have not been measured, so this page makes no claim for them. `SETUID`
+  and `SETGID` stay in the add-list, so code can still switch its own uid or gid.
 - **Disk limits need host support.** The driver sets `storage_opt.size` from `disk_gib`
   when `SANDFORT_ENVIRONMENT=prod`. Docker honours it on `overlay2` over XFS mounted with
   `pquota`, or on btrfs or zfs. The startup check reads `docker info`, which does not show
@@ -252,6 +259,23 @@ strong runtime.
     prompts for that host. A planted remote url or `insteadOf` rule therefore cannot send
     the token to another host through git. This does not protect against the disclosure
     described above.
+  - **A snapshot taken during the operation can contain the token.** The helper lives in
+    `/tmp/.sandfort-git/`, which is part of the sandbox root filesystem, and a snapshot
+    commit (`POST /v1/snapshots/from-sandbox`) pauses the container but copies that
+    filesystem as it is. A snapshot committed while a credentialed clone, push or pull is
+    running (up to 600 seconds) holds the helper file with the token in it. So does every
+    sandbox created from that snapshot and the archive of its export, for as long as the
+    snapshot exists. The server does not block this: the commit runs as a background job
+    that can run in another process than the git call (for example a `worker` role
+    process), so the git call cannot see it. The same holds when removing the helper
+    failed. After a successful operation the git call then answers an error and a helper
+    may be left behind: 502 `DRIVER_ERROR` for a plain driver failure, and 409, 404 or 504
+    when the driver error is a conflict, a missing object or a timeout. After a failed
+    operation the failed removal is only written to the server log and the call keeps its
+    own error, so the answer does not say that a helper may remain. Do not create a
+    snapshot of a sandbox while a credentialed git call on it is running. Wait until the
+    call has returned. Treat a snapshot taken during such a call, or after such a call
+    that returned any error, as holding the token, delete it, and revoke the token.
   - **Mitigation.** Send only short-lived tokens scoped to the one repository and the
     least permission the operation needs (read-only for clone and pull). Revoke or let
     them expire right after the call. Do not send a credential to a sandbox that runs code
@@ -259,6 +283,38 @@ strong runtime.
     unchanged.
 - **Volumes and snapshots.** Their contents are whatever sandbox code wrote. Treat them as
   untrusted data.
+- **No encryption at rest beyond the host's.** Sandfort encrypts one thing at rest: webhook
+  signing secrets, when `SANDFORT_WEBHOOK_SECRET_KEY` is set (see "Webhook secrets" in
+  section 4, `src/sandfort/webhooks/secret_box.py`). Sandbox filesystems, snapshots, volumes,
+  command logs and the database are stored the way the host's disk and database store them.
+  Use an encrypted disk or volume on the host if you need encryption at rest.
+
+### Preview content
+
+A preview serves whatever the sandbox code answers, so its content is tenant-controlled and
+untrusted.
+
+- **Separate origins, same site.** Each preview has its own host,
+  `<port>-<sandbox-id>.<preview domain>` (`preview_host` in `src/sandfort/proxy/routing.py`),
+  so the browser gives it its own origin, storage and script scope. All previews are still
+  same-site with each other and with the other hosts under the same registrable domain,
+  unless the preview domain has its own Public Suffix List entry. The hosted beta's preview
+  domain has none yet.
+- **Cookies reach other previews.** Script in a preview page can set a cookie for the parent
+  domain with `document.cookie`, and the browser then sends it to every other preview under
+  that domain. The proxy removes `Domain` only from the `Set-Cookie` headers the sandbox
+  sends (`strip_cookie_domain` in `src/sandfort/proxy/tokens.py`), which does not stop script
+  in the page, and it forwards every cookie except its own token cookie to the app
+  (`_request_headers` in `src/sandfort/proxy/app.py`). So one tenant can plant a cookie that
+  another tenant's preview app receives. The token cookie is safe from this, because its
+  `__Host-` prefix makes browsers refuse a parent-domain cookie of that name. Do not base a
+  decision that matters on a cookie value a preview app receives.
+- **No CSP or framing headers.** The proxy adds no `Content-Security-Policy`,
+  `X-Frame-Options` or `frame-ancestors` to what the app returns. Only the web terminal page
+  carries a policy, a `Content-Security-Policy` with `frame-ancestors 'none'`
+  (`src/sandfort/proxy/terminal.py`). A default policy would break dev servers and a default
+  deny would break embedding, so neither ships. Protection against clickjacking is the app's
+  job: set `frame-ancestors` or `X-Frame-Options` in the app itself.
 
 ## 4. Control plane
 
@@ -329,6 +385,17 @@ channel and the supported versions, is `SECURITY.md` at the repository root.
   until they expire; the runbook documents that a removed member's token stops working
   because the membership check fails.
 - **No SCIM groups, no per-tenant SSO.** See [operations].
+- **Failed authentication is not limited by default.** A well-formed but wrong key costs one
+  key lookup by prefix and one HMAC before the 401 (two of each on a toolbox route). Nothing
+  counts those failures unless `SANDFORT_AUTH_FAILURE_LIMIT_PER_MINUTE` is set
+  (`src/sandfort/api/middleware/auth_failure_limit.py`). The limit counts per client address,
+  so behind a proxy it needs `SANDFORT_FORWARDED_ALLOW_IPS` set to that proxy, or one client
+  locks out every client behind the same proxy. A caller whose peer address uvicorn trusts for
+  `X-Forwarded-For` (every peer under `*`) can set its own forwarded address and is not held
+  by it, and a caller with many addresses (an IPv6 prefix, for example) gets a fresh count on
+  each. Requests already in flight when an address reaches the limit still run.
+  Keys carry 256 random bits, so the limit is about load on the key lookup path, not about
+  guessing a key.
 
 ## 5. Audit and tamper evidence
 
@@ -421,6 +488,10 @@ Walk this list before a pilot.
 - [ ] Put a private network or an encrypted overlay between nodes if you use cross-node
       routing, and do not expose `SANDFORT_NODE_INTERNAL_URL` ports to clients.
 - [ ] Terminate TLS in front of the API. The server does not.
+- [ ] Pin the edge transport policy in the controller instead of relying on its defaults (TLS
+      versions with `ssl-protocols`, the HSTS keys, the http to https redirect). See the
+      subsection Edge transport policy in `docs/operations.md` for the ConfigMap keys and the
+      `curl` and `openssl` probe to run after every controller upgrade and before each release.
 - [ ] Keep `/metrics` reachable only from inside the cluster (and set
       `SANDFORT_METRICS_TOKEN` if it must cross a boundary).
 - [ ] Use a Docker storage setup that supports disk quotas (`overlay2` on XFS with

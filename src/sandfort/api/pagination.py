@@ -1,4 +1,4 @@
-"""Opaque cursor encoding over the last returned id (ULID-ordered), bound to a list filter.
+"""Opaque cursor encoding over the last returned id (id-ordered), bound to a list filter.
 
 A cursor made with filter values (``encode_cursor(last_id, values)``) carries those values in a
 compact form (scalars as text, mappings as a short digest) and is refused with 422 when it is

@@ -86,6 +86,7 @@ from sandfort_sdk.git import (
     GitStatus,
 )
 from sandfort_sdk.image import Image, ImageFile
+from sandfort_sdk.insecure_url import InsecureBaseUrlWarning
 from sandfort_sdk.members import AsyncMembers, Members
 from sandfort_sdk.models import (
     AuditEvent,
@@ -255,6 +256,7 @@ __all__ = [
     "IdempotencyMismatch",
     "Image",
     "ImageFile",
+    "InsecureBaseUrlWarning",
     "InternalError",
     "InvalidResponseError",
     "InvalidState",

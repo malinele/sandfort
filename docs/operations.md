@@ -972,8 +972,11 @@ All names are read from `SANDFORT_*` by `src/sandfort/config.py`.
 | `SANDFORT_MAX_LOG_STREAMS_PER_ORG` | 16 | Live log streams per org, per process, one shared cap across container-log follow (`GET .../logs?follow=true`), command-log follow and build-log SSE (`0` = no cap); over it is 503 `CAPACITY` with `Retry-After: 30`, and a refused container-log follow writes no audit row. Non-follow log reads are not counted. |
 | `SANDFORT_MAX_VOLUME_TRANSFERS_PER_ORG`, `SANDFORT_MAX_VOLUME_TRANSFERS` | 2, 8 | Running volume exports and restores per org and in the process (`0` = no cap); over it is 409 `org_transfer_limit` or `transfer_limit`. |
 | `SANDFORT_RATE_LIMIT_REFILL_PER_S`, `SANDFORT_RATE_LIMIT_BURST` | 100, 1000 | Token bucket per API key. |
+| `SANDFORT_AUTH_FAILURE_LIMIT_PER_MINUTE` | `0` (off) | Failed authentications per client address: 401 answers to requests that carry an `Authorization` header, counted in a fixed 60 second window that starts at the first failure. At the limit, every request from that address with an `Authorization` header answers 429 `RATE_LIMITED` before the key is checked, a valid key included, until the window ends. Set it only when the server sees each client's own address (see "Behind a TLS-terminating proxy"). |
 | `SANDFORT_DOCKER_THREAD_LIMIT`, `SANDFORT_DOCKER_BULK_THREADS` | 64, 48 | Concurrent docker-py calls in the process (see "Docker driver threads and shutdown"). |
 | `SANDFORT_VOLUME_MAX_BYTES` | `0` (no limit) | Soft size limit per volume; see below. |
+| `SANDFORT_PREVIEW_MAX_CONCURRENT_PER_SANDBOX`, `SANDFORT_PREVIEW_MAX_CONCURRENT` | 256, 2048 | Preview proxy requests in flight plus open preview websockets, per sandbox and per process (`0` = no cap). Over either cap the proxy answers 503 `CAPACITY` with `Retry-After: 1` before it opens an upstream connection. |
+| `SANDFORT_PREVIEW_RESPONSE_HEADER_TIMEOUT_S` | 300 | Seconds the preview proxy waits for a sandbox's response headers (`0` = no limit). When it fires the proxy answers 502 `BAD_GATEWAY` and frees the request's slot. It does not bound a response body or a websocket once they stream. |
 
 Read these limits as they are implemented:
 
@@ -1015,6 +1018,21 @@ Read these limits as they are implemented:
   node qualifies the create lands on the local node anyway (`pick_node` in
   `src/sandfort/services/node_registry.py`). With the kit's defaults (jobs mode off) it caps
   nothing. Use the host capacity settings and org quotas to bound a node.
+- **The preview caps count work in flight, not connections or time.** A slot is taken once a
+  preview request is routed and authorized, so a request refused with 404 or 401 takes none. It
+  is freed when the response body has been sent or the websocket bridge closes, and also when
+  the upstream fails, the response headers do not arrive within
+  `SANDFORT_PREVIEW_RESPONSE_HEADER_TIMEOUT_S` or the request is cancelled. A client disconnect
+  frees it at once while a response body is relayed, while a websocket bridge is open and while
+  a request without a body waits for its response headers. A request with a body (an upload) is
+  not watched for a disconnect from the end of its body until its response headers arrive, so
+  for it the header wait is what frees the slot when the sandbox never answers. Idle keep-alive
+  connections hold no slot. An open websocket or server-sent event stream holds its slot while
+  it is open: the proxy has no idle timeout and does not close a stream when its preview token
+  expires (expiry is checked when a request or handshake starts). The caps are per process, and
+  the web terminal page (`GET /terminal`) is not counted. A slot can hold a client connection
+  and an upstream connection at once, so keep the process file descriptor limit well above
+  twice `SANDFORT_PREVIEW_MAX_CONCURRENT`.
 
 ### Measured facts that exist
 
@@ -1561,6 +1579,11 @@ summary: 8 pass, 1 warn, 1 fail
   `PASS`. The probe runs when `SANDFORT_EGRESS_PROBE` is on, which is the default in `prod`
   only. With the probe off, the check reports whether `SANDFORT_EGRESS_ACKNOWLEDGED` covers the
   host rules.
+- **One startup warning it does not report.** The server logs a warning at start when the
+  runtime of the `gvisor` tier is registered without `--overlay2=none`
+  (`src/sandfort/drivers/docker/overlay_check.py`, `deploy/node-setup.sh` registers the flag).
+  `doctor` has no row for it, so a clean `doctor` does not show that the flag is set. Read the
+  server startup log, or the runtime arguments from `docker info --format '{{json .Runtimes}}'`.
 - **The verdict line.** In `prod` the text output ends, after the `summary:` line, with one
   line: `the start gate would refuse: N failing check(s)` when any row is a `FAIL`, else
   `the start gate would start`. Outside `prod` the text output has no such line.
@@ -1797,6 +1820,19 @@ is reachable solely through the proxy. The Python SDK also upgrades a plain ws U
 the client's base URL is https on the same host. Preview URLs have their own setting,
 `SANDFORT_PUBLIC_PREVIEW_URL`.
 
+`SANDFORT_AUTH_FAILURE_LIMIT_PER_MINUTE` (off by default) counts failed authentications per
+client address, and the client address is the one uvicorn reports after this setting. Behind a
+proxy that `SANDFORT_FORWARDED_ALLOW_IPS` does not name, every client has the proxy's address,
+so one client with a bad key would lock out every other client. Turn the limit on only when
+clients reach the api directly, or when `SANDFORT_FORWARDED_ALLOW_IPS` names the proxy and the
+proxy sets `X-Forwarded-For` from the connecting address. uvicorn reads `X-Forwarded-For` only
+from a peer that `SANDFORT_FORWARDED_ALLOW_IPS` trusts. With `*`, or when a caller's own address
+falls inside that list, a caller that can reach the api port past the proxy can send its own
+`X-Forwarded-For` and pick its address. With only the proxy named, any other peer is counted
+under its real address. On `/scim/v2` paths the refusal is a SCIM Error body with `status`
+`429`, as every other SCIM error. With cross-node routing, the owning node does not count a
+forwarded request: the node that received it counted the caller already.
+
 Three URLs carry a secret in the query: a preview URL (`sandfort_preview_token`), the web
 terminal (`GET /terminal?token=`) and the pty websocket (`token`, single use). At the default
 INFO level the server never logs these values: uvicorn's access and handshake lines show
@@ -1806,6 +1842,68 @@ the api host and the preview host, or log the path without the query. On ingress
 the annotation `nginx.ingress.kubernetes.io/enable-access-log: "false"`, which
 `deploy/k8s/ingress.yaml` sets on both Ingresses; the server's access log still has one line per
 request with the client address.
+
+### Edge transport policy
+
+The hosted beta edge is ingress-nginx v1.13.3. Its transport behaviour comes from controller
+defaults and not from anything in this repository, so a controller upgrade can change it. Read
+from `api.sandfort.dev` on 2026-11-27 (about 23:06 UTC):
+
+- TLS 1.2 and TLS 1.3 are accepted. TLS 1.0 and TLS 1.1 handshakes are refused with a
+  `protocol version` alert. The probe negotiated `ECDHE-RSA-AES128-GCM-SHA256` on TLS 1.2 and
+  `AEAD-AES256-GCM-SHA384` (the LibreSSL name of `TLS_AES_256_GCM_SHA384`) on TLS 1.3. Only one
+  suite per version was probed, not the whole offered list.
+- HTTPS responses carry `strict-transport-security: max-age=31536000; includeSubDomains`, one
+  year.
+- Plain HTTP gets `308 Permanent Redirect` to the same path on https.
+- The Let's Encrypt certificate (issuer `YR2`, valid 2026-11-09 to 2027-02-07) lists a CRL
+  distribution point, `http://yr2.c.lencr.org/33.crl`, and no OCSP responder URI. A client
+  cannot check it with OCSP and there is nothing to staple, so revocation checking is by CRL
+  only.
+
+If you run your own ingress-nginx, do not rely on these defaults. Pin them in the controller
+ConfigMap (by default `ingress-nginx-controller` in the `ingress-nginx` namespace):
+
+```yaml
+data:
+  ssl-protocols: "TLSv1.2 TLSv1.3"
+  hsts: "true"
+  hsts-max-age: "31536000"
+  hsts-include-subdomains: "true"
+  ssl-redirect: "true"
+```
+
+The ConfigMap is global to the controller, so it applies to every host it serves. With
+`hsts-include-subdomains` a browser keeps every subdomain of each host that sends the header on
+https for the whole max-age, and a bare domain served by the same controller covers all of its
+subdomains. Set it only when all of them serve https.
+
+Check the policy after each controller upgrade and before each release (replace `<host>`).
+`curl -sI` on `/healthz` answers 405 because the route allows GET only, the headers are still
+the edge's:
+
+```bash
+curl -sI https://<host>/healthz | grep -i strict-transport-security
+curl -sI http://<host>/healthz | head -n 1
+echo | openssl s_client -connect <host>:443 -servername <host> -tls1_1 \
+  -cipher DEFAULT@SECLEVEL=0 2>&1 | grep -E "Protocol|Cipher is|alert|no protocols"
+for v in tls1_2 tls1_3; do
+  echo | openssl s_client -connect <host>:443 -servername <host> -$v 2>&1 \
+    | grep -E "Protocol|Cipher is|alert|no protocols"
+done
+echo | openssl s_client -connect <host>:443 -servername <host> 2>/dev/null \
+  | openssl x509 -noout -issuer -dates -text | grep -E "issuer|notAfter|CRL|OCSP|URI"
+```
+
+Expected: the HSTS header with `max-age=31536000; includeSubDomains`, a `308` status line, an
+alert and no cipher for `tls1_1`, a cipher for `tls1_2` and `tls1_3`, and a CRL URI with no
+`OCSP` line.
+
+OpenSSL 3 does not offer TLS 1.1 at its default security level, so the `tls1_1` probe lowers
+it with `-cipher DEFAULT@SECLEVEL=0`. LibreSSL, the `openssl` that macOS ships, rejects that
+cipher string with `invalid command`, so drop the flag there. A local `no protocols available`
+says nothing about the server, because the client sent no handshake. The server refusal reads
+`tlsv1 alert protocol version`.
 
 ## Client-facing errors
 
@@ -1836,6 +1934,7 @@ on the message.
 | 422 | `IDEMPOTENCY_MISMATCH` | An `Idempotency-Key` was reused with a different request body. | No | Use a new key for a different request, or send the original body again. |
 | 422 | `VALIDATION_ERROR` (`details.errors`) | A body field or a query parameter is invalid or unknown. Every list route (sandboxes, isolation, snapshots, volumes, api-keys, webhooks, webhook deliveries, nodes, jobs, usage, and the audit routes) refuses a query parameter it does not declare, with one `extra_forbidden` entry per name (`loc` `["query", name]`, value not echoed). | No | Fix the call; the message lists the accepted parameters. The check runs after authentication. |
 | 429 | `RATE_LIMITED` | The API key's token bucket is empty (`SANDFORT_RATE_LIMIT_REFILL_PER_S`, `SANDFORT_RATE_LIMIT_BURST`). Carries `Retry-After`. | Yes, after `Retry-After` seconds | Back off; raise the limits only if one key legitimately needs more. |
+| 429 | `RATE_LIMITED` (message "too many failed authentication attempts from this address") | The client address reached `SANDFORT_AUTH_FAILURE_LIMIT_PER_MINUTE` failed authentications in the current 60 second window (off by default). The refusal comes before the key is checked, so a valid key from that address is refused too. Carries `Retry-After`. | Yes, after `Retry-After` seconds | Fix the client whose key fails. If unrelated clients are refused together, they share one address: check `SANDFORT_FORWARDED_ALLOW_IPS`. |
 | 429 | `QUOTA_EXCEEDED` | The org is over its quota (`PUT /v1/org/quota`), or a label-scoped key is at its `max_sandboxes` cap (`details.limit` `key_max_sandboxes`, with `details.max` and `details.current`). No `Retry-After`. | No, until usage drops; the SDK never resends it | Delete idle sandboxes, raise the quota, or mint the key with a higher cap (1 to 1000). |
 | 503 | `NODE_UNAVAILABLE` (`details.reason`, `details.node_id`) | The node that owns the sandbox cannot serve the call now. Carries `Retry-After`. | Yes, after `Retry-After` seconds | See "Cross-node toolbox routing" for the reasons and what to check. |
 | 503 | `DNS_UNAVAILABLE` (`details.reason` `dns_unavailable`) | The server could not look up a webhook receiver's host (resolver timeout or failure) when you created or changed an endpoint, even after one retry. It is not a verdict on the URL: the host may well exist. Nothing was created or changed. Carries `Retry-After` (2 s). A host that really does not exist answers 422 `UNPROCESSABLE` with `details.reason` `not_resolved` instead. | Yes, after `Retry-After` seconds | Repeat the call. If it keeps failing, check the server's DNS resolver. |

@@ -810,7 +810,7 @@ ls: cannot access '/var/run/docker.sock': No such file or directory
     <div class="step">
       <h3>A dedicated sandbox node<small>one-node kubernetes kit</small></h3>
       <p><code>deploy/k8s/</code> runs one pod with API, workers and preview proxy on a node labelled for sandboxes. <code>deploy/node-setup.sh</code> prepares Docker storage, gVisor and optional Kata.</p>
-      <p class="lim">Replicas fixed at 1. No published container image yet: build <code>deploy/Dockerfile</code>.</p>
+      <p class="lim">Replicas are fixed at 1, and no container image is published yet, so build <code>deploy/Dockerfile</code> yourself.</p>
     </div>
     <div class="step">
       <h3>Placement and cross-node routing<small>multi-node</small></h3>

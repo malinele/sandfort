@@ -75,6 +75,10 @@ spec:
 # for SANDFORT_PREVIEW_DOMAIN in configmap.yaml, so the DNS record and the certificate must
 # be wildcards too (*.preview.sandfort.example.com). Previews serve dev servers over http and
 # websockets, so the same long timeouts apply.
+# Bodies: a request body reaches the sandbox app, and ingress-nginx refuses a body over 1 MiB
+# by default with its HTML 413 page. The preview proxy has no body cap of its own, so
+# proxy-body-size below is the only limit. 512m is the value the hosted beta uses. Lower it
+# if your previews never take large uploads.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -84,6 +88,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "512m"
     nginx.ingress.kubernetes.io/enable-access-log: "false"
 spec:
   ingressClassName: nginx

@@ -39,6 +39,7 @@ export {
 export type { CallOptions, ResilienceOptions, SleepFn } from "./resilience.js";
 export type { FetchLike } from "./transport.js";
 export { SANDBOX_ERROR_CODES } from "./error-codes.js";
+export { INSECURE_BASE_URL_WARNING } from "./insecure-url.js";
 export type { SandboxErrorCode } from "./error-codes.js";
 export type {
   DeleteResult,

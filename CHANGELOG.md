@@ -49,6 +49,126 @@ round replaces that description with the real hash from `git log`.
 
 ### Fixes outside phases
 
+#### Round 101 (after tag v0.1.0-beta.88, preview proxy cookie jar, failed authentication limit)
+- **proxy: the upstream client keeps no cookies and adds no headers of its own (B32,
+  2026-11-28).** The preview proxy shares one httpx client for every sandbox. Its cookie jar
+  kept each `Set-Cookie` an app answered and sent it as `Cookie` on later requests to the same
+  sandbox address that carried no cookie of their own. A browser that holds only the preview
+  token cookie sends none, so one viewer's app session could reach the next viewer of the same
+  preview, and a later sandbox that got the same bridge address could receive it too. The jar
+  also grew without bound. The default client now uses a jar that stores nothing, and every
+  upstream request drops what httpx added by itself (`Accept`, `Accept-Encoding`, `User-Agent`,
+  the jar's `Cookie`), so the app sees only the headers the client sent plus the proxy's three
+  `X-Forwarded-*`. The proxy also drops a client's `Forwarded`, `X-Real-IP`,
+  `X-Forwarded-Port` and `X-Forwarded-Scheme`. Found while preparing the B32 contract.
+  (`src/sandfort/proxy/app.py`, `tests/test_proxy_request_hygiene_b32.py`, this commit)
+- **proxy: caps on concurrent preview requests (B33, 2026-11-28).** Every proxied request and
+  websocket bridge holds one slot from routing until its body is sent or the bridge closes.
+  Above `SANDFORT_PREVIEW_MAX_CONCURRENT_PER_SANDBOX` (default 256) or
+  `SANDFORT_PREVIEW_MAX_CONCURRENT` for the process (default 2048) the proxy answers 503
+  `CAPACITY` with `Retry-After: 1` before it opens an upstream connection. 0 is no cap. A request
+  refused with 401 or 404 takes no slot, and the web terminal page is not counted. An open
+  websocket or event stream holds its slot while open (no idle timeout yet).
+  (`src/sandfort/proxy/limits.py`, `tests/test_proxy_caps_b33.py`,
+  `tests/test_proxy_limits_b33.py`, `docs/operations.md`, a686895e)
+- **proxy: the wait for upstream response headers is bounded (B33 follow-up, 2026-11-28).** A
+  review found that a client that disconnects before a hung upstream sends its headers kept its
+  slot until the upstream answered, possibly forever, so 256 such requests locked a preview
+  with 503. The wait now ends on a client disconnect for a request without a body, and after
+  `SANDFORT_PREVIEW_RESPONSE_HEADER_TIMEOUT_S` (default 300, 0 is no bound) for every request,
+  which answers 502. A request with a body is not watched for a disconnect during that wait,
+  because the body is read from the same channel, so only the timeout frees it.
+  (`src/sandfort/proxy/limits.py`, `tests/test_proxy_header_wait_b101c.py`, this commit)
+- **api: optional limit on failed authentication per client address (B28, 2026-11-28).** With
+  `SANDFORT_AUTH_FAILURE_LIMIT_PER_MINUTE` above 0, a client address that collects that many 401
+  answers to requests with an `Authorization` header within 60 seconds gets 429 `RATE_LIMITED`
+  with `Retry-After` for every request that carries the header, before any key lookup, until
+  the window ends. Requests without the header are never counted or refused. Off by default
+  (0), because behind a proxy that is not trusted for `X-Forwarded-For` every client shares one
+  address and the limit would lock them all out. A relayed cross-node hop is exempt. On
+  `/scim/v2` paths the refusal is a SCIM Error body (`status` `429`, `application/scim+json`),
+  like every other SCIM error.
+  (`src/sandfort/api/middleware/auth_failure_limit.py`, `tests/test_auth_failure_limit_b28.py`,
+  `docs/operations.md`, `docs/security.md`, this commit)
+- **sdk(typescript): warn on an `http://` base URL for a non-loopback host (B44, 2026-11-28).**
+  The client constructor emits a Node `InsecureBaseUrlWarning` (code
+  `SANDFORT_INSECURE_BASE_URL`) through `process.emitWarning`, the same check as the Python SDK:
+  loopback (`localhost`, 127.0.0.0/8, `::1`) stays quiet, the message names only the host, and
+  nothing is refused. In a browser there is no `process`, so nothing is emitted.
+  (`sdk/typescript/src/insecure-url.ts`, `sdk/typescript/tests/insecure-url.test.ts`,
+  `tests/test_ts_insecure_url_b44.py`, this commit)
+- **docs: review follow-ups for round 100 (2026-11-28).** The git helper window in
+  `docs/security.md` now also covers a failed credentialed call whose cleanup failed. The
+  architecture data model names the tables whose keys are not prefixed ids, the last ULID
+  wording is gone, the TLS 1.1 probe in `docs/operations.md` works with OpenSSL 3, and the
+  gvisor overlay advisory is documented as a startup log line that `admin_cli doctor` does not
+  show. (`tests/test_docs_drift_b36.py`, `tests/test_git_helper_snapshot_window_b34.py`, this
+  commit)
+
+#### Round 100 (after tag v0.1.0-beta.88, beta report follow-ups from rounds 7 to 10)
+- **proxy: the web terminal loads xterm.js with Subresource Integrity (B42, 2026-11-28).** The
+  script and stylesheet tags from jsDelivr now carry sha384 `integrity` values and
+  `crossorigin="anonymous"`, next to the existing nonce. The hashes are constants in
+  `src/sandfort/proxy/terminal.py` and must be recomputed when `XTERM_VERSION` changes.
+  (`tests/test_proxy_terminal.py`, `docs/governance.md`, this commit)
+- **sdk(python): warn on an `http://` base URL for a non-loopback host (B27 addendum,
+  2026-11-28).** `Client` and `AsyncClient` emit `InsecureBaseUrlWarning`, a `UserWarning`
+  exported from `sandfort_sdk`, before any request, because such a client sends its API key in
+  clear text on the first request. Loopback hosts stay quiet. The message names only the host.
+  The CLI shows it through the same client. There is no refusal, so self-hosters on a private
+  http network can filter it. The TypeScript SDK has no such check yet.
+  (`sdk/python/src/sandfort_sdk/insecure_url.py`, `tests/test_sdk_insecure_url_b27.py`, this
+  commit)
+- **tests: cross-org snapshot paths (B35, 2026-11-28).** A DELETE of another org's snapshot id
+  and a `POST /v1/snapshots/from-sandbox` naming another org's sandbox both answer 404 like a
+  missing id, with no side effect on the owner. A raw `sandfort-snapshot:<id>` image reference
+  answers 422 for every org, the owner included. No source change was needed.
+  (`tests/test_snapshot_cross_org_b35.py`, this commit)
+- **docs: drift found in the beta report triage (B36, 2026-11-28).** `docs/architecture.md` now
+  matches the code for id format, the snapshot image tag, the preview token route and storage,
+  and the snapshot DELETE answer. The connect guide says what a snapshot does not capture and
+  that preview expiry is checked at request or handshake start. `docs/security.md` gains a
+  "Preview content" subsection (previews are separate origins but same-site, cookies set by
+  page script reach other previews, no CSP or framing headers are added), a note that there is
+  no encryption at rest beyond the host's, and that setuid bits are inert on the `container`
+  tier only as measured. (`tests/test_docs_drift_b36.py`, this commit)
+- **docker: startup warning when gvisor snapshots can miss files (B43, 2026-11-28).** When the
+  gvisor tier runs on a runsc runtime registered without `--overlay2=none`, the driver logs one
+  warning at startup, because a commit can then miss the container's writes. Advisory only, it
+  never refuses startup, and a failed `docker info` read gives one debug line.
+  (`src/sandfort/drivers/docker/overlay_check.py`, `tests/test_docker_gvisor_overlay_b43.py`,
+  this commit)
+- **docs: a snapshot taken during a credentialed git operation can hold the token (B34,
+  2026-11-28).** The askpass helper lives under `/tmp/.sandfort-git/` while the operation runs,
+  and `/tmp` is part of the snapshot, so `docs/security.md` now names that window. Documented,
+  not prevented. (`src/sandfort/toolbox/git_credentials.py`,
+  `tests/test_git_helper_snapshot_window_b34.py`, this commit)
+- **deploy, docs: edge transport policy (B37, 2026-11-28).** The example preview Ingress sets
+  `proxy-body-size: 512m`. `docs/operations.md` gains "Edge transport policy" with the values
+  probed on the hosted beta (TLS 1.2 and 1.3, HSTS one year with `includeSubDomains`, a 308
+  redirect, Let's Encrypt certificates with a CRL and no OCSP responder), how to pin them in
+  the controller ConfigMap, and the probe commands. (`deploy/k8s/ingress.yaml`,
+  `tests/test_edge_transport_b37.py`, this commit)
+
+#### Round 99 (after tag v0.1.0-beta.88, preview token in forwarded headers)
+- **proxy: the header strip covers every form the auth path accepts (B29 follow-up,
+  2026-11-28).** A review of the first fix found that a token after a `#` in the query
+  (`/a?x=1#y&<param>=...`) still reached the app, although the auth path accepts it, and that
+  only the first `?` of a value was handled. `strip_header_token` now removes every
+  `TOKEN_PARAM` parameter, literal or percent encoded, after any `?` or `&` anywhere in the
+  value, and `X-Forwarded-Host` goes through it too. Values without the token stay byte exact.
+  (`src/sandfort/proxy/hygiene.py`, `tests/test_proxy_token_edge_headers_b29.py`, this commit)
+- **proxy: the preview token is cut from every forwarded request header (B29, 2026-11-28).** The
+  hosted beta's edge adds `X-Url` and `X-Pathname` with the full request URI, so on the first
+  open of a preview URL the token reached the sandbox app inside those headers, although the
+  proxy already cut it from the query and from `Referer`. The proxy now removes `TOKEN_PARAM`
+  from the query part of every forwarded header value (`strip_header_token` in
+  `src/sandfort/proxy/hygiene.py`), on HTTP and on the websocket handshake. Headers keep their
+  other content, and a value without the token goes on byte exact. Found while triaging the beta
+  client's round 7 report. (`src/sandfort/proxy/app.py`,
+  `tests/test_proxy_token_edge_headers_b29.py`, this commit, the hash is recorded in the next
+  round)
+
 #### Round 98 (after tag v0.1.0-beta.87, process limits per tier, host connection cap)
 - **docker: the gvisor tier gets a real guest process cap (B14 98b, 2026-11-27).** For the
   runsc family the driver now passes an `nproc` ulimit of 512 and a host `pids_limit` of 1536

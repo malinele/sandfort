@@ -55,7 +55,11 @@ class Image:
 
     @classmethod
     def debian_slim(cls) -> Self:
-        """Debian slim with Python 3.12 (the pinned ``python:3.12-slim`` base)."""
+        """Debian slim with Python 3.12 (the ``python:3.12-slim`` tag, which is mutable).
+
+        The tag is not a digest pin: the registry can point it at a newer image later. Use
+        ``Image.from_image`` with a ``name@sha256:...`` reference to pin a base.
+        """
         return cls(base_image=DEBIAN_SLIM_BASE)
 
     @classmethod

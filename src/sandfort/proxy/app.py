@@ -7,7 +7,11 @@ without a preview token for its org, sandbox and port (``TOKEN_PARAM`` query or 
 ``websockets`` client; upstream failures answer 502. A valid query token is stripped and set
 as a cookie (never forwarded). Cookie auth needs consistent Origin and Sec-Fetch-Site; upstream
 cookies lose their Domain. ``GET /terminal`` on a non-preview host serves the terminal.
-The token is also cut from a forwarded Referer and from uvicorn's log lines (``hygiene``).
+The token is also cut from every forwarded request header (a Referer, or an edge's X-Url) and
+from uvicorn's log lines (``hygiene``). Each request and websocket bridge holds a concurrency
+slot (``limits``): above the per-sandbox or the process cap the answer is 503 ``CAPACITY``.
+The upstream request carries the headers the client sent plus the three ``X-Forwarded-*`` ones
+the proxy sets, nothing httpx adds on its own (default headers, cookie jar).
 """
 
 import json
@@ -15,6 +19,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 
 import anyio
 import httpx
@@ -32,9 +37,10 @@ from sandfort.proxy import routing, terminal
 from sandfort.proxy.hygiene import (
     PROXY_RESPONSE_HEADERS,
     install_log_redaction,
-    strip_referer_token,
+    strip_header_token,
     with_token_response_headers,
 )
+from sandfort.proxy.limits import PreviewBusy, PreviewLimits, relay_response_body, send_upstream
 from sandfort.proxy.streaming import (
     HOP_BY_HOP,
     WS_INTERNAL_ERROR,
@@ -72,6 +78,7 @@ UNREACHABLE_MESSAGE = "the sandbox port is unreachable"
 # Never taken from the client: the proxy sets the forwarding headers and rebuilds the cookies.
 _REPLACED = frozenset(
     {"host", "cookie", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"}
+    | {"forwarded", "x-forwarded-port", "x-forwarded-scheme", "x-real-ip"}
 )
 # The websockets client performs its own handshake and sends the user agent it is given.
 _WS_HANDSHAKE = frozenset(
@@ -84,6 +91,7 @@ _WS_HANDSHAKE = frozenset(
 class _Upstream:
     host: str
     port: int
+    sandbox_id: str  # the slot key of the concurrency caps
     query: bytes  # the client's query string without the preview token
     token_from_query: str | None  # set as a cookie on the response
     token_in_query: bool = False  # the request URL named TOKEN_PARAM, valid or not
@@ -94,6 +102,7 @@ class _Rejected(Exception):  # a request the proxy answers itself, instead of th
     status: int
     code: str
     message: str
+    headers: tuple[tuple[bytes, bytes], ...] = ()  # extra response headers
 
 
 def _headers(scope: Scope) -> list[tuple[bytes, bytes]]:
@@ -115,24 +124,34 @@ def _request_headers(scope: Scope, *, websocket: bool = False) -> list[tuple[str
     if websocket:
         skipped |= _WS_HANDSHAKE
     headers = [
-        (key.decode("latin-1"), value.decode("latin-1"))
+        (key.decode("latin-1"), strip_header_token(value.decode("latin-1")))
         for key, value in _headers(scope)
         if key.decode("latin-1").lower() not in skipped
-    ]
-    headers = [
-        (key, strip_referer_token(value) if key.lower() == "referer" else value)
-        for key, value in headers
     ]
     _, cookies = split_cookie_token(_cookie_headers(scope))
     if cookies:
         headers.append(("cookie", cookies))
     scheme = "https" if scope.get("scheme") in ("https", "wss") else "http"
-    headers.append(("x-forwarded-host", _header(scope, b"host") or ""))
+    headers.append(("x-forwarded-host", strip_header_token(_header(scope, b"host") or "")))
     headers.append(("x-forwarded-proto", scheme))
     client = scope.get("client")
     if client:
         headers.append(("x-forwarded-for", str(client[0])))
     return headers
+
+
+def _drop_unsent_defaults(
+    request: httpx.Request, client: httpx.AsyncClient, sent: set[str]
+) -> None:
+    """Remove what httpx added on its own: its default headers and the cookie jar's Cookie.
+
+    ``build_request`` merges ``client.headers`` (Accept, Accept-Encoding, Connection and
+    User-Agent in httpx 0.28) and ``client.cookies`` into every request, and the client keeps
+    the cookies each response set, whatever the sandbox. ``sent`` holds the lowercase names the
+    proxy forwards: a header the client sent stays, one it did not send goes.
+    """
+    for name in (set(client.headers.keys()) | {"cookie"}) - sent:
+        request.headers.pop(name, None)
 
 
 def _response_headers(response: httpx.Response, cookie: str | None) -> list[tuple[bytes, bytes]]:
@@ -154,12 +173,13 @@ def _upstream_url(scheme: str, upstream: _Upstream, scope: Scope) -> str:
     return f"{scheme}://{host}:{upstream.port}{raw_path.decode('latin-1')}{query}"
 
 
-async def _reject(scope: Scope, send: Send, rejected: _Rejected) -> None:
+async def _reject(scope: Scope, send: Send, rejected: _Rejected | PreviewBusy) -> None:
     body = json.dumps(fail(rejected.code, rejected.message).model_dump(mode="json")).encode()
     headers = [
         (b"content-type", b"application/json"),
         (b"content-length", b"%d" % len(body)),
         *PROXY_RESPONSE_HEADERS,
+        *rejected.headers,
     ]
     start = {"status": rejected.status, "headers": headers}
     if scope["type"] == "http":
@@ -171,6 +191,11 @@ async def _reject(scope: Scope, send: Send, rejected: _Rejected) -> None:
     else:
         code = WS_INTERNAL_ERROR if rejected.status >= 500 else WS_POLICY_VIOLATION
         await send({"type": "websocket.close", "code": code})
+
+
+def _refusing_cookie_jar() -> CookieJar:
+    """A jar that stores nothing: one viewer's cookies never reach another request."""
+    return CookieJar(policy=DefaultCookiePolicy(allowed_domains=[]))
 
 
 class PreviewProxy:
@@ -192,11 +217,13 @@ class PreviewProxy:
         self._driver = driver
         self._owns_client = http_client is None
         self._client = http_client or httpx.AsyncClient(
+            cookies=_refusing_cookie_jar(),
             timeout=httpx.Timeout(None, connect=CONNECT_TIMEOUT_S),  # streams may idle long
             limits=httpx.Limits(max_connections=None, max_keepalive_connections=MAX_KEEPALIVE),
             trust_env=False,  # sandbox traffic never goes through the host's HTTP proxy
         )
         self._on_shutdown = on_shutdown
+        self._limits = PreviewLimits.from_settings(settings)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         kind = scope["type"]
@@ -212,13 +239,15 @@ class PreviewProxy:
             return
         try:
             upstream = await self._route(scope)
-        except _Rejected as rejected:
+            slot = self._limits.acquire(upstream.sandbox_id)  # before any upstream connection
+        except (_Rejected, PreviewBusy) as rejected:
             await _reject(scope, send, rejected)
             return
-        if kind == "http":
-            await self._proxy_http(scope, receive, send, upstream)
-        else:
-            await self._proxy_websocket(scope, receive, send, upstream)
+        with slot:  # freed when the body is sent or the bridge closes, on errors too
+            if kind == "http":
+                await self._proxy_http(scope, receive, send, upstream)
+            else:
+                await self._proxy_websocket(scope, receive, send, upstream)
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -265,6 +294,7 @@ class PreviewProxy:
         return _Upstream(
             host=host,
             port=port,
+            sandbox_id=sandbox.id,
             query=query,
             token_from_query=granted,
             token_in_query=query_token is not None,
@@ -286,17 +316,24 @@ class PreviewProxy:
         self, scope: Scope, receive: Receive, send: Send, upstream: _Upstream
     ) -> None:
         has_body = _header(scope, b"content-length") or _header(scope, b"transfer-encoding")
+        forwarded = _request_headers(scope)
         request = self._client.build_request(
             str(scope["method"]),
             _upstream_url("http", upstream, scope),
-            headers=_request_headers(scope),
+            headers=forwarded,
             content=_request_body(receive) if has_body else None,
         )
+        _drop_unsent_defaults(request, self._client, {key.lower() for key, _ in forwarded})
+        wait_s = self._limits.header_timeout_s  # 0 = wait for the response headers forever
         try:
-            response = await self._client.send(request, stream=True)
+            response = await send_upstream(
+                self._client, request, receive, timeout_s=wait_s, watch_disconnect=not has_body
+            )
         except httpx.HTTPError as exc:
             logger.warning("preview upstream request failed: %s", type(exc).__name__)
             await _reject(scope, send, _Rejected(502, BAD_GATEWAY, UNREACHABLE_MESSAGE))
+            return
+        if response is None:  # the client left before the sandbox answered
             return
         token, secure = upstream.token_from_query, scope.get("scheme") == "https"
         cookie = None if token is None else token_cookie(token, secure=secure)  # None: malformed
@@ -306,11 +343,7 @@ class PreviewProxy:
                 headers = with_token_response_headers(headers)
             status = response.status_code
             await send({"type": "http.response.start", "status": status, "headers": headers})
-            async for chunk in response.aiter_raw():
-                await send({"type": "http.response.body", "body": chunk, "more_body": True})
-            await send({"type": "http.response.body", "body": b"", "more_body": False})
-        except httpx.HTTPError as exc:  # mid-body: the status is sent, so the response is cut
-            logger.warning("preview upstream stream broke: %s", type(exc).__name__)
+            await relay_response_body(response, send, receive)  # stops early on a disconnect
         finally:
             await response.aclose()
 

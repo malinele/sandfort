@@ -55,6 +55,13 @@ await client.stopSandbox(sbx.id);
 await client.deleteSandbox(sbx.id);
 ```
 
+A `baseUrl` that starts with `http://` and names a host other than loopback (`localhost`,
+`127.0.0.0/8`, `::1`) sends the API key in clear text, so the client calls `process.emitWarning`
+once, when it is built, with a warning named `InsecureBaseUrlWarning` (code
+`SANDFORT_INSECURE_BASE_URL`, name exported as `INSECURE_BASE_URL_WARNING`). Use `https://`. On a
+trusted private network, silence it with `node --disable-warning=SANDFORT_INSECURE_BASE_URL`
+(Node 20.11 or later).
+
 ## What it covers
 
 On the client: `createSandbox`, `getSandbox`, `listSandboxes` / `listSandboxesAll`,

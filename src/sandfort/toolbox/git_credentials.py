@@ -20,6 +20,11 @@ Residual risk, stated plainly: any process inside the sandbox can still read the
 file during the operation window, because the script (and so the token) lives in the
 sandbox filesystem. Tokens must therefore be short-lived and narrowly scoped. This stays
 the documented limitation until the token moves out of the container.
+
+The helper is also part of the container root filesystem, so a snapshot committed while it
+exists (an operation in flight, or a removal that failed) holds the token. Nothing here
+prevents that, because the snapshot job can run in another process than the git call. See
+docs/security.md, "Git credentials".
 """
 
 import asyncio

@@ -2118,7 +2118,12 @@ volumes" are the volumes behind `image_mounts` (see "Volumes" below).
   `/.sandfort-reserve` and a start fills it again. Your own files are not touched.
 - On the hosted beta, files survive a stop on `gvisor` because the runtime is registered with
   `--overlay2=none` (`deploy/node-setup.sh`). On a self-hosted node, register `runsc` the same way.
-  The server does not check it.
+  At startup the server reads the runtime arguments from `docker info`. If the runtime of the
+  `gvisor` tier is registered without `--overlay2=none`, it logs one warning and carries on. It
+  never refuses to start over this, and a daemon that does not report the arguments can cause a
+  warning on a correct node. The warning appears only in the server startup log.
+  `python -m sandfort.admin_cli doctor` has no row for it, so a clean `doctor` does not show
+  that the flag is set.
 - `reset` removes the container together with the image scratch volumes and creates new, empty
   ones. Anything a `volumes` entry mounts is a named volume and is not touched.
 - `delete` removes the container, the image scratch volumes and the saved image a resize leaves
@@ -2668,6 +2673,14 @@ A sandbox created from a snapshot does not inherit the source sandbox's resource
 defaults (`cpu_millicores` 1000, `memory_mib` 512, `disk_gib` 3) unless you pass `resources=`. It
 does inherit the isolation tier. The new sandbox's disk quota counts only what it writes itself;
 the snapshot content it starts from does not count against `disk_gib`.
+
+A snapshot is a copy of the container's filesystem taken when the commit runs, and nothing more. It
+is independent of its source: the source sandbox can be stopped or deleted once the snapshot is
+`ready`, and the snapshot stays. Deleting the source is refused with 409 while the snapshot is
+`pending`. A snapshot is kept until you delete it, no timer removes it. It does not capture the
+contents of volumes mounted in the sandbox, the `/dev/shm` memory file system, running processes or
+memory. A sandbox created from it starts fresh processes with an empty `/dev/shm`, so a dev server,
+a Python session or an in-memory cache has to be started again.
 
 #### Exporting a snapshot
 
@@ -3677,13 +3690,21 @@ Treat the `url` as a credential. Whoever holds it can open that port of the sand
 they like, until `expires_at`. The lifetime is `ttl_seconds`: 1 hour by default, at least 60
 seconds and at most 7 days. No endpoint revokes a token before it expires, so choose a short
 `ttl_seconds`. On the first open, the proxy takes the token out of the query, sets it as an
-`HttpOnly` cookie and does not forward it to your app. The URL as you opened it can still stay in
-browser history and in the access logs on the way. Do not share it and do not paste it into tickets
+`HttpOnly` cookie and does not forward it to your app, neither in the query nor in a request header
+(a `Referer`, or a URL header such as `X-Url` that a front proxy adds). The URL as you opened it
+can still stay in browser history and in the access logs on the way. Do not share it and do not paste it into tickets
 or chat. Mint a new token for each person who needs one.
 
 The sandbox must be started to create a token. For a stopped or deleted sandbox the call answers 409
 `no_container`, with `details.state` and, when the sandbox is `stopping` or `stopped`,
 `details.stop_cause`. Start the sandbox and ask again.
+
+Expiry is checked when a request or a websocket handshake starts. A page, an event stream or a
+websocket that is already open keeps running after `expires_at`, and the next request on that URL
+answers 401. Tokens are kept in the memory of the server process, so a server restart ends every
+preview URL. While the sandbox is not started its preview URLs answer 404, and a URL that has not
+expired works again once you start the sandbox. A deleted sandbox ends its URLs for good. Previews
+of a public sandbox need no token, so for them only the sandbox state counts.
 
 ## 5. Beta limits
 

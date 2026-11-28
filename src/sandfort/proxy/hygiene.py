@@ -2,8 +2,11 @@
 
 The proxy strips the token from the forwarded query, but the first request still carries it in
 its URL. ``TokenRedactingFilter`` rewrites uvicorn's access and websocket log lines so the value
-reads ``REDACTED``. ``strip_referer_token`` cuts the parameter from a forwarded ``Referer``.
-``PROXY_RESPONSE_HEADERS`` go on every response the proxy builds itself, and
+reads ``REDACTED``. ``strip_referer_token`` cuts the parameter from a ``Referer`` and
+``strip_header_token`` does the same for any header value, wherever the parameter sits in it.
+The proxy runs it on every forwarded request header, so an edge's ``X-Url`` or ``X-Pathname``
+cannot carry the token to the app. ``PROXY_RESPONSE_HEADERS`` go on every response the proxy
+builds itself, and
 ``with_token_response_headers`` puts ``TOKEN_RESPONSE_HEADERS`` on the response to a
 token-bearing URL. That one says ``strict-origin``, not ``no-referrer``: under ``no-referrer``
 a browser sends ``Origin: null`` on a form POST, and the cookie check refuses that.
@@ -30,6 +33,15 @@ PROXY_RESPONSE_HEADERS: Final = (NO_REFERRER, NO_STORE)
 TOKEN_RESPONSE_HEADERS: Final = (STRICT_ORIGIN, NO_STORE)
 _REPLACED_ON_TOKEN: Final = frozenset({NO_REFERRER[0], NO_STORE[0]})
 _QUERY: Final = re.compile(r"\?([^\s\"]*)")
+# The auth path accepts the name literally or percent escaped (either hex case), so each
+# character of TOKEN_PARAM matches both forms. IGNORECASE also removes an uppercase name,
+# which strips more than auth accepts and is safe. The value stops at & # whitespace , " and '.
+_HEADER_TOKEN_NAME: Final = "".join(
+    "(?:" + re.escape(char) + "|%" + f"{ord(char):02x}" + ")" for char in TOKEN_PARAM
+)
+_HEADER_TOKEN: Final[re.Pattern[str]] = re.compile(
+    r"(?P<sep>[?&])" + _HEADER_TOKEN_NAME + r"=[^&#\s,\"']*", re.IGNORECASE
+)
 
 type Headers = list[tuple[bytes, bytes]]
 
@@ -68,6 +80,35 @@ def strip_referer_token(referer: str) -> str:
         return referer  # no token: the value goes on byte exact
     tail = "?" + kept.decode("latin-1") if kept else ""
     return f"{head}{tail}{hash_mark}{fragment}"
+
+
+def _drop_one(value: str) -> str | None:
+    """``value`` without its first token parameter, or ``None`` when it has none.
+
+    A ``?`` that would be left in front of another parameter stays, and one left with nothing
+    after it goes, so the URL stays well formed.
+    """
+    found = _HEADER_TOKEN.search(value)
+    if found is None:
+        return None
+    head, rest = value[: found.start()], value[found.end() :]
+    if found["sep"] == "?" and rest.startswith("&"):
+        return f"{head}?{rest[1:]}"
+    return head + rest
+
+
+def strip_header_token(value: str) -> str:
+    """The header value without any ``TOKEN_PARAM`` parameter, byte exact when it has none.
+
+    Removes every parameter named ``TOKEN_PARAM``, literal or percent encoded, after any ``?``
+    or ``&`` in the value, including one after a ``#``. Every pass shortens the value, so the
+    loop ends, and a header value is a few KiB at most.
+    """
+    if "=" not in value:
+        return value
+    while (stripped := _drop_one(value)) is not None:
+        value = stripped
+    return value
 
 
 def with_token_response_headers(headers: Headers) -> Headers:

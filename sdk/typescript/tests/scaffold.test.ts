@@ -17,6 +17,7 @@ describe("export surface", () => {
         "Image",
         "InvalidResponseError",
         "ISOLATION_TIERS",
+        "INSECURE_BASE_URL_WARNING",
         "InvalidState",
         "NotFound",
         "PACKAGE_NAME",

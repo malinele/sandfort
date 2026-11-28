@@ -329,6 +329,7 @@ class Settings:
     rate_limit_enabled: bool = True
     rate_limit_refill_per_s: int = 100  # tokens returned to each key's bucket per second
     rate_limit_burst: int = 1000  # bucket capacity: back-to-back requests one key may make
+    auth_failure_limit_per_minute: int = 0  # 401s per client address in 60 s, 0 = off
     max_request_body_bytes: int = 16 * 1024 * 1024  # JSON body cap; the fs upload route is exempt
     tracing_enabled: bool = True
     tracing_exporter: str = "none"  # one of VALID_TRACE_EXPORTERS
@@ -340,6 +341,11 @@ class Settings:
     proxy_port: int = 8001
     public_api_url: str = ""  # API base the web terminal dials; "" = the request's host + port
     public_preview_url: str = ""  # origin previews are served on; "" = http + proxy_port
+    # Preview requests in flight plus open preview websockets (B33), 0 = no cap.
+    preview_max_concurrent_per_sandbox: int = 256
+    preview_max_concurrent: int = 2048  # the same for the whole process
+    # Longest wait for a sandbox's response headers to a preview request, 0 = no bound.
+    preview_response_header_timeout_s: float = 300.0
     environment: str = "dev"  # one of VALID_ENVIRONMENTS; prod gates startup on isolation
     container_runtime: str = ""  # docker runtime for sandboxes (e.g. "runsc"); "" = daemon default
     isolation_runtimes: TierRuntimes = ()  # (tier, runtime) pairs; () = default tier only
@@ -563,6 +569,9 @@ class Settings:
         public_preview_url = _check_public_preview_url(
             text("PUBLIC_PREVIEW_URL", defaults.public_preview_url), preview_domain
         )
+        header_wait_s = optional_limit("PREVIEW_RESPONSE_HEADER_TIMEOUT_S", float)
+        if header_wait_s is None:  # unset or blank
+            header_wait_s = defaults.preview_response_header_timeout_s
         environment = text("ENVIRONMENT", defaults.environment).strip().lower()
         if environment not in VALID_ENVIRONMENTS:
             raise ValueError(
@@ -747,6 +756,9 @@ class Settings:
                 "RATE_LIMIT_REFILL_PER_S", defaults.rate_limit_refill_per_s
             ),
             rate_limit_burst=integer("RATE_LIMIT_BURST", defaults.rate_limit_burst),
+            auth_failure_limit_per_minute=non_negative(
+                "AUTH_FAILURE_LIMIT_PER_MINUTE", defaults.auth_failure_limit_per_minute
+            ),
             max_request_body_bytes=integer(
                 "MAX_REQUEST_BODY_BYTES", defaults.max_request_body_bytes
             ),
@@ -760,6 +772,13 @@ class Settings:
             proxy_port=integer("PROXY_PORT", defaults.proxy_port),
             public_api_url=public_api_url,
             public_preview_url=public_preview_url,
+            preview_max_concurrent_per_sandbox=non_negative(
+                "PREVIEW_MAX_CONCURRENT_PER_SANDBOX", defaults.preview_max_concurrent_per_sandbox
+            ),
+            preview_max_concurrent=non_negative(
+                "PREVIEW_MAX_CONCURRENT", defaults.preview_max_concurrent
+            ),
+            preview_response_header_timeout_s=header_wait_s,
             environment=environment,
             container_runtime=text("CONTAINER_RUNTIME", defaults.container_runtime).strip(),
             isolation_runtimes=isolation_runtimes,

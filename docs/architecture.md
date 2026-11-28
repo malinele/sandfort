@@ -15,7 +15,7 @@ This document is the authoritative architecture of the implemented system; paths
 | D5 | **Audit rows, outbox events, quota-ledger updates and usage intervals are written in the same unit of work as the state change.** | Nothing can be mutated without an audit trail. Webhooks are delivered at least once. |
 | D6 | **docker-py runs in a bounded thread pool with two lanes** (`anyio.to_thread` under a total `CapacityLimiter`, `SANDFORT_DOCKER_THREAD_LIMIT`, default 64, and a bulk lane nested inside it, `SANDFORT_DOCKER_BULK_THREADS`, default 48; see "D6 in detail" below). Its typed stubs (`types-docker`) keep `mypy --strict` passing. | It is mature and typed. aiodocker's typing is weak. One limiter for every call let log followers, uploads and pulls starve short calls such as `start` and `inspect`; the lanes separate them (`docs/driver-offload-design.md`). |
 | D7 | **Response envelope**: `{"success": bool, "data": T\|null, "error": {code,message,details,request_id}\|null, "meta": {next_cursor,...}\|null}`. Streams (SSE, WebSocket, downloads) don't use it. | One shape for SDK parsing. |
-| D8 | **IDs are prefixed ULIDs**, e.g. `sbx_01J...`, `snp_`, `vol_`, `org_`, `key_`, `job_`, `evt_`, `whk_`, `aud_`. | Sortable, readable in logs, and portable to Postgres. |
+| D8 | **IDs are prefixed, time-sortable strings**, e.g. `sbx_...`, `snap_`, `vol_`, `org_`, `key_`, `job_`, `evt_`, `whk_`, `aud_`, `stk_`. The body is 10 characters of millisecond time plus 15 random characters (75 random bits) in Crockford base32, 25 in all, so it is not a 26-character ULID (`src/sandfort/ids.py`). | Sortable, readable in logs, and portable to Postgres. |
 | D9 | **Metering is allocation-based**: resources allocated × time in state, recorded as `usage_intervals`. It is not cgroup sampling. | Deterministic, auditable and cheap. |
 | D10 | **Layering is enforced by `import-linter`** (see §2). | Packages written by AI agents can't erode the boundaries. |
 
@@ -103,7 +103,7 @@ calls it after the workers stop and before the engine is disposed; see the shutd
    Docker Engine (runtime runc | runsc(gVisor) | kata; userns-remap is a daemon option, the cgroup parent and the per-tier user-namespace opt-out are server settings, see "Container hardening")
      containers  sf-<sbx_id>   --init, cap-drop ALL, no-new-privileges, pids/cpu/mem(/swap)/disk limits
      volumes     sf-vol-<vol_id>        network sf-net (bridge, icc=false, metadata IP blocked)
-     images      sandfort/snap-<snp_id>@sha256:...   build cache keyed by spec_hash
+     images      sandfort-snapshot:<snap_id lower-cased>   build cache keyed by spec_hash
 ```
 
 ### Component responsibilities
@@ -208,7 +208,7 @@ src/sandfort/
   config.py                    Settings (pydantic-settings, prefix SANDFORT_), limits, paths
   logging.py                   structlog JSON config, request/trace id binding
   errors.py                    domain error hierarchy (NotFound, Conflict, QuotaExceeded, InvalidState, ...)
-  ids.py                       prefixed ULID generation/parsing
+  ids.py                       prefixed time-sortable id generation/parsing
   clock.py                     Clock protocol + SystemClock/FrozenClock
   admin_cli.py                 python -m sandfort.admin_cli: bootstrap org/key, migrate, reconcile-now
   domain/
@@ -227,7 +227,7 @@ src/sandfort/
     principal.py               Principal dataclass
     authenticate.py            FastAPI dependency: header -> Principal (+ last_used debounce)
     scopes.py                  require_scopes() dependency
-    connect_tokens.py          short-lived single-use tokens for WS/preview (signed, 60 s)
+    connect_tokens.py          single-use 60 s tokens for the PTY websocket and web terminal (in memory)
   db/
     base.py                    DeclarativeBase, naming convention, Timestamp/Version mixins
     engine.py                  async engine/session factory, SQLite pragmas, BEGIN IMMEDIATE hook
@@ -308,7 +308,7 @@ src/sandfort/
     deps.py                    UoW/service/driver dependencies
     errors.py                  domain/driver error -> envelope + HTTP status mapping
     envelope.py                Envelope[T] generic, ok()/fail() helpers
-    pagination.py              cursor (ULID) pagination
+    pagination.py              cursor pagination over time-sortable ids
     sse.py                     SSE encoder for AsyncIterator[OutputChunk]
     openapi.py                 OpenAPI customization + export command
     middleware/  request_id.py  rate_limit.py (token bucket, in-memory behind interface)
@@ -356,11 +356,11 @@ openapi/sandfort.v1.json       committed spec; CI fails on drift
 | POST | `/v1/sandboxes/{id}/resize` (P5, stopped only) | `{resources}` → Sandbox |
 | POST | `/v1/sandboxes/{id}/snapshot` | `{name}` → 202 Snapshot (`pending`) |
 | GET | `/v1/sandboxes/{id}/logs` | `?follow&since&tail` → SSE `event: stdout\|stderr` |
-| POST | `/v1/sandboxes/{id}/preview-urls` (P5) | `{port}` → `{url, token, expires_at}` |
+| POST | `/v1/sandboxes/{id}/preview-tokens` (P5) | `{port, ttl_seconds?}` → 201 `{token, url, port, expires_at}`. The token is multi-use, lives 60 s to 7 days (default 1 h) and is held in process memory (`proxy/tokens.py`). A sandbox that is not started answers 409 `no_container`. |
 | POST | `/v1/snapshots` | `{name, image: "python:3.12-slim"}` or `{name, build: ImageSpec}` → 202 Snapshot |
 | GET | `/v1/snapshots`, `/v1/snapshots/{id}` | list / get (`state, size_bytes, layer_count, image_digest`) |
 | GET | `/v1/snapshots/{id}/build-logs` | `?follow` → SSE |
-| DELETE | `/v1/snapshots/{id}` | 409 if referenced by non-deleted sandboxes → 202 |
+| DELETE | `/v1/snapshots/{id}` | 409 `in_use` while a sandbox that is not deleted was created from it → 200 Snapshot (`deleting`, the row is already removed when the call returns) |
 | POST | `/v1/volumes` | `{name}` → 201 Volume |
 | GET / DELETE | `/v1/volumes[/{id}]` | list/get; delete returns 409 if mounted |
 | GET | `/v1/jobs/{id}` | → `{id, type, state, attempts, error?, target}` |
@@ -432,13 +432,13 @@ Every toolbox call requires `state=started` (else 409) and touches `last_activit
 
 ## 4. Data model
 
-Conventions: PKs are prefixed ULID `TEXT(30)`. Times are tz-aware UTC. JSON columns use generic `JSON`. Enums are `TEXT` + `CHECK`. Mutable aggregates carry `created_at/updated_at` and a `version` int for optimistic locking.
+Conventions: the primary key of an entity table is a prefixed time-sortable id, `TEXT(30)` (see D8). The exceptions are in `src/sandfort/db/models/`: `nodes.id` is an operator-set `String(64)`, `usage_intervals` and `quota_ledger` use an integer autoincrement `id`, and `quotas`, `idempotency_keys`, `org_memberships` and `usage_rollups` use their `org_id` or a composite key (`(org_id, key)`, `(user_id, org_id)`, `(org_id, period_start, dimension)`) as primary key. Times are tz-aware UTC. JSON columns use generic `JSON`. Enums are `TEXT` + `CHECK`. Mutable aggregates carry `created_at/updated_at` and a `version` int for optimistic locking.
 
 | Table | Key fields |
 |---|---|
 | `organizations` | id, name, slug UNIQUE, status(active\|suspended) |
-| `org_quotas` | org_id PK/FK, max_running_cpu_millicores, max_running_memory_mib, max_total_disk_gib, max_sandboxes, max_snapshots, max_volumes, max_sandbox_cpu_millicores, max_sandbox_memory_mib, max_sandbox_disk_gib, max_concurrent_builds, rate_limit_rps |
-| `quota_ledger` | org_id PK, running_cpu_millicores, running_memory_mib, total_disk_gib, sandbox_count, snapshot_count, volume_count, version (the row locked during reservation) |
+| `quotas` | org_id PK/FK, max_vcpus, max_memory_mib, max_disk_gib, max_sandboxes, updated_at |
+| `quota_ledger` | id (integer autoincrement), org_id FK, sandbox_id, vcpus, memory_mib, disk_gib, state(reserved\|released), created_at, updated_at. One row per sandbox reservation, released and never deleted. IDX(org_id, state), IDX(sandbox_id) |
 | `api_keys` | id, org_id, name, prefix UNIQUE, secret_hash, scopes JSON, is_platform_admin, last_used_at, expires_at, revoked_at, created_by |
 | `nodes` | id, hostname, driver, capacity_cpu_millicores, capacity_memory_mib, capacity_disk_gib, cpu_overcommit, state, last_heartbeat_at (one row in MVP) |
 | `sandboxes` | id, org_id, node_id, name (UNIQUE org_id+name), state, desired_state, snapshot_id FK, image_ref, image_digest, driver, driver_ref, cpu_millicores, memory_mib, disk_gib, env JSON, labels JSON, network_policy JSON, public, auto_stop_minutes, auto_delete_minutes, last_activity_at, started_at, stopped_at, error_reason, error_code, stop_cause, deleted_at, version |
@@ -449,7 +449,7 @@ Conventions: PKs are prefixed ULID `TEXT(30)`. Times are tz-aware UTC. JSON colu
 | `exec_sessions` | id, sandbox_id, cwd, env JSON, state, closed_at |
 | `exec_commands` | id, sandbox_id, session_id NULL, command_preview(512), state, exit_code, timed_out, log_path, started_at, finished_at |
 | `pty_sessions` | id, sandbox_id, driver_exec_id, cols, rows, state, closed_at |
-| `connect_tokens` | jti PK, sandbox_id, purpose(pty\|preview), expires_at, used_at |
+| (none) | There is no token table. PTY connect tokens (single use, 60 s) and preview tokens (multi use, 60 s to 7 days) live in process memory as SHA-256 digests (`auth/connect_tokens.py`, `proxy/tokens.py`), so a restart drops them. |
 | `events` (outbox) | id, org_id, type, subject_type, subject_id, payload JSON, occurred_at, dispatched_at; IDX(dispatched_at NULL) |
 | `webhook_endpoints` | id, org_id, url, secret_ciphertext, event_types JSON, enabled, consecutive_failures, disabled_reason |
 | `webhook_deliveries` | id, endpoint_id, event_id, state(pending\|succeeded\|failed\|dead), attempts, next_attempt_at, last_status, last_latency_ms, last_error; UNIQUE(endpoint_id, event_id) |

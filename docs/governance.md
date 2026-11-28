@@ -688,8 +688,11 @@ Deleted data is unlinked by Docker, not securely wiped.
   `console`. There is no network exporter. `SANDFORT_TRACING_ENABLED` defaults to `true`.
 - `/metrics` is unauthenticated. Keep it inside the cluster.
 - The browser web terminal (`GET /terminal`, served by the preview proxy) loads xterm.js 5.5.0
-  from `cdn.jsdelivr.net`, without a subresource-integrity hash. The `/console` page
-  references no external URL.
+  from `cdn.jsdelivr.net`. The script and the stylesheet tag each carry a pinned `sha384`
+  subresource-integrity hash and `crossorigin="anonymous"`, so the browser refuses a file whose
+  bytes differ. The hashes belong to version 5.5.0 and must be recomputed when it changes. The
+  page still needs the browser to reach `cdn.jsdelivr.net`. The `/console` page references no
+  external URL.
 
 ## Isolation
 

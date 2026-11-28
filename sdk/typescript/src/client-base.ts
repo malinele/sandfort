@@ -19,6 +19,7 @@ import {
   type RunInCodeContextOptions,
 } from "./contexts.js";
 import { BinaryChannel } from "./fs.js";
+import { warnIfInsecureBaseUrl } from "./insecure-url.js";
 import type { Page } from "./models.js";
 import {
   PtyChannel,
@@ -60,6 +61,7 @@ export abstract class ClientBase {
 
   constructor(options: SandfortClientOptions) {
     this.transport = new Transport(options);
+    warnIfInsecureBaseUrl(options.baseUrl);
     this.binary = new BinaryChannel(options);
     this.snapshots = new Snapshots(this.transport);
     this.volumes = new Volumes(this.transport);

@@ -4,8 +4,9 @@ It is served only when the ``Host`` header is not a preview hostname, so sandbox
 their own ``/terminal`` paths. Three query parameters are required: ``sandbox``, ``pty`` and
 ``token`` (the single-use connect token ``POST .../toolbox/pty`` returns); a missing or blank
 one answers 400 and the values are never echoed in the error. The page loads xterm.js 5.5.0
-from pinned jsdelivr paths without integrity attributes (subresource integrity is left to the
-deployment layer) and opens the API's pty websocket at
+from pinned jsdelivr paths, each tag with a sha384 ``integrity`` attribute and
+``crossorigin="anonymous"`` (the browser refuses a file whose bytes differ), and opens the
+API's pty websocket at
 ``<api base>/v1/sandboxes/{sandbox}/toolbox/pty/{pty}/connect?token=<token>``. The API base is
 ``Settings.public_api_url`` or, when that is empty, the request's own host on the API port.
 Keystrokes go to the socket as text frames; socket bytes are written into the terminal.
@@ -38,6 +39,11 @@ XTERM_VERSION = "5.5.0"
 XTERM_BASE_URL = f"https://cdn.jsdelivr.net/npm/@xterm/xterm@{XTERM_VERSION}"
 XTERM_SCRIPT_URL = f"{XTERM_BASE_URL}/lib/xterm.js"
 XTERM_STYLESHEET_URL = f"{XTERM_BASE_URL}/css/xterm.css"
+# sha384 of the exact files at the pinned URLs above, recompute both when XTERM_VERSION changes
+XTERM_SCRIPT_INTEGRITY = "sha384-M169f14mRZOXm3hD/v2Ti0ThIT/RnAQagXA9nlE15yHAtrW19gdePJh/HaTzUOe/"
+XTERM_STYLESHEET_INTEGRITY = (
+    "sha384-8Xk9wy/gzEDUKrXtrmCFa2bBuK3BpjpDuL/p0SeKQX19Khl/M+lHOgD/CyYf7efP"
+)
 PTY_CONNECT_PATH = "/v1/sandboxes/{sandbox}/toolbox/pty/{pty}/connect"
 _WS_SCHEMES = {"http": "ws", "https": "wss", "ws": "ws", "wss": "wss"}
 
@@ -48,12 +54,14 @@ _PAGE = Template(
 <meta charset="utf-8">
 <meta name="referrer" content="no-referrer">
 <title>sandfort terminal</title>
-<link rel="stylesheet" href="${stylesheet_url}">
+<link rel="stylesheet" href="${stylesheet_url}"
+  integrity="${stylesheet_integrity}" crossorigin="anonymous">
 <style>
 html, body { margin: 0; height: 100%; background: #000; }
 #terminal { height: 100%; }
 </style>
-<script nonce="${nonce}" src="${script_url}"></script>
+<script nonce="${nonce}" src="${script_url}"
+  integrity="${script_integrity}" crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="terminal"></div>
@@ -158,7 +166,9 @@ def terminal_response(settings: Settings, request: Request) -> Response:
     nonce = secrets.token_urlsafe(NONCE_BYTES)
     page = _PAGE.substitute(
         stylesheet_url=XTERM_STYLESHEET_URL,
+        stylesheet_integrity=XTERM_STYLESHEET_INTEGRITY,
         script_url=XTERM_SCRIPT_URL,
+        script_integrity=XTERM_SCRIPT_INTEGRITY,
         websocket_url=_script_string(url),
         nonce=nonce,
     )

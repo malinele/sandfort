@@ -55,6 +55,7 @@ from sandfort_sdk.exceptions import (
     SandfortSDKError,
 )
 from sandfort_sdk.handles import check_wait_budget, create_timeout_error, with_create_request_id
+from sandfort_sdk.insecure_url import warn_if_insecure_base_url
 from sandfort_sdk.members import SSO_EXCHANGE_PATH, AsyncMembers, sso_exchange_body, sso_session
 from sandfort_sdk.models import IsolationInfo, Resources, SandboxInfo, SsoSession, StatusInfo
 from sandfort_sdk.quota import AsyncQuota
@@ -92,6 +93,7 @@ class AsyncClient:
         timeout: float = DEFAULT_TIMEOUT_S,
         max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
+        warn_if_insecure_base_url(base_url)
         self._transport = AsyncTransport(base_url, api_key, timeout, max_retries=max_retries)
         self._members = AsyncMembers(self._transport)
         self._snapshots = AsyncSnapshots(self._transport)

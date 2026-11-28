@@ -15,7 +15,13 @@ from sandfort.domain.sandbox import Sandbox
 from sandfort.drivers.fake import FakeDriver
 from sandfort.ids import new_sandbox_id
 from sandfort.proxy.app import create_proxy_app
-from sandfort.proxy.terminal import TERMINAL_PATH, XTERM_SCRIPT_URL, XTERM_STYLESHEET_URL
+from sandfort.proxy.terminal import (
+    TERMINAL_PATH,
+    XTERM_SCRIPT_INTEGRITY,
+    XTERM_SCRIPT_URL,
+    XTERM_STYLESHEET_INTEGRITY,
+    XTERM_STYLESHEET_URL,
+)
 
 SETTINGS = Settings(driver="fake")
 PROXY_HOST = "proxy.test"
@@ -25,6 +31,8 @@ TOKEN = "tok-only-once-7f3a9c"
 QUERY = {"sandbox": SANDBOX_ID, "pty": PTY_ID, "token": TOKEN}
 PINNED_SCRIPT = "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"
 PINNED_STYLESHEET = "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css"
+SCRIPT_SRI = "sha384-M169f14mRZOXm3hD/v2Ti0ThIT/RnAQagXA9nlE15yHAtrW19gdePJh/HaTzUOe/"
+STYLESHEET_SRI = "sha384-8Xk9wy/gzEDUKrXtrmCFa2bBuK3BpjpDuL/p0SeKQX19Khl/M+lHOgD/CyYf7efP"
 CONNECT_PATH = f"/v1/sandboxes/{SANDBOX_ID}/toolbox/pty/{PTY_ID}/connect?token={TOKEN}"
 
 
@@ -44,6 +52,14 @@ async def get_terminal(
         await app.aclose()
 
 
+def tag_for(html: str, url: str) -> str:
+    """The one <link> or <script> start tag whose attributes contain ``url``."""
+    found: list[str] = re.findall(r"<(?:link|script)\b[^>]*>", html)
+    tags = [tag for tag in found if url in tag]
+    assert len(tags) == 1, tags
+    return tags[0]
+
+
 async def test_page_is_served_with_the_pinned_xterm_assets() -> None:
     response = await get_terminal(QUERY)
 
@@ -52,8 +68,58 @@ async def test_page_is_served_with_the_pinned_xterm_assets() -> None:
     assert (XTERM_SCRIPT_URL, XTERM_STYLESHEET_URL) == (PINNED_SCRIPT, PINNED_STYLESHEET)
     assert f'src="{PINNED_SCRIPT}"' in response.text
     assert f'href="{PINNED_STYLESHEET}"' in response.text
-    assert "integrity=" not in response.text
     assert "resize" not in response.text.lower()
+
+
+def test_integrity_constants_are_the_computed_sha384_hashes() -> None:
+    assert XTERM_SCRIPT_INTEGRITY == SCRIPT_SRI
+    assert XTERM_STYLESHEET_INTEGRITY == STYLESHEET_SRI
+
+
+async def test_script_tag_carries_integrity_and_crossorigin() -> None:
+    response = await get_terminal(QUERY)
+
+    assert response.status_code == 200, response.text
+    tag = tag_for(response.text, PINNED_SCRIPT)
+    assert f'integrity="{SCRIPT_SRI}"' in tag
+    assert 'crossorigin="anonymous"' in tag
+    assert "nonce=" in tag
+
+
+async def test_stylesheet_tag_carries_integrity_and_crossorigin() -> None:
+    response = await get_terminal(QUERY)
+
+    assert response.status_code == 200, response.text
+    tag = tag_for(response.text, PINNED_STYLESHEET)
+    assert f'integrity="{STYLESHEET_SRI}"' in tag
+    assert 'crossorigin="anonymous"' in tag
+    assert 'rel="stylesheet"' in tag
+
+
+async def test_each_integrity_value_appears_once_and_the_two_differ() -> None:
+    response = await get_terminal(QUERY)
+
+    assert response.text.count(SCRIPT_SRI) == 1
+    assert response.text.count(STYLESHEET_SRI) == 1
+    assert SCRIPT_SRI != STYLESHEET_SRI
+
+
+async def test_csp_still_allows_the_integrity_checked_files() -> None:
+    response = await get_terminal(QUERY)
+
+    policy = response.headers["content-security-policy"]
+    match = re.search(r"script-src 'nonce-([^']+)'", policy)
+    assert match is not None, policy
+    assert f'nonce="{match.group(1)}"' in tag_for(response.text, PINNED_SCRIPT)
+    assert "style-src https://cdn.jsdelivr.net" in policy
+    assert "default-src 'none'" in policy
+
+
+async def test_an_error_page_has_no_integrity_markup() -> None:
+    response = await get_terminal({**QUERY, "pty": "  "})
+
+    assert response.status_code == 400
+    assert "integrity" not in response.text
 
 
 async def test_websocket_url_carries_sandbox_pty_and_token() -> None:

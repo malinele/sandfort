@@ -45,6 +45,7 @@ from sandfort.drivers.docker import (
     lanes,
     logs,
     oom,
+    overlay_check,
     pid_files,
     pty,
     volume_helper,
@@ -323,4 +324,5 @@ class DockerDriver:
         report = await self.capability_report()
         for finding in capabilities.advisory_findings(report, self._settings):
             logger.warning("isolation advisory (does not refuse startup): %s", finding)
+        await overlay_check.warn_gvisor_overlay(self._client, self._settings)
         return capabilities.missing_isolation(report, settings=self._settings)

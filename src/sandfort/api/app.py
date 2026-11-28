@@ -26,6 +26,7 @@ from sandfort.api.deps import DRIVER_ATTR
 from sandfort.api.docs_pages import install_docs_pages
 from sandfort.api.errors import register_exception_handlers
 from sandfort.api.metrics_auth import require_metrics_token
+from sandfort.api.middleware.auth_failure_limit import install_auth_failure_limit
 from sandfort.api.middleware.body_limit import BodyLimitMiddleware
 from sandfort.api.middleware.rate_limit import install_exchange_rate_limit
 from sandfort.api.middleware.request_id import RequestIdMiddleware
@@ -410,6 +411,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BodyLimitMiddleware, max_bytes=resolved.max_request_body_bytes)
     if resolved.rate_limit_enabled:
         install_exchange_rate_limit(app)  # pre-authentication, the sign-on exchange route only
+    if resolved.auth_failure_limit_per_minute > 0:  # off by default, see the module docstring
+        install_auth_failure_limit(
+            app,
+            resolved.auth_failure_limit_per_minute,
+            exempt_forwarded_hops=bool(resolved.routing_secret),
+        )
     app.add_middleware(TelemetryMiddleware, tracer=getattr(app.state, TRACER_ATTR))
     app.add_middleware(RequestIdMiddleware)
     # Outermost user middleware, but an unhandled exception's 500 is built by Starlette's
